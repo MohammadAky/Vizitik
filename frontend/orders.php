@@ -13,6 +13,10 @@ $apiToken = getAccessToken();
 // ۳. دریافت لیست فاکتورها از سرور
 $apiOrders = apiCall('orders');
 $orders = (!empty($apiOrders) && is_array($apiOrders)) ? $apiOrders : [];
+
+// ۴. دریافت کاتالوگ محصولات جهت امکان افزودن کالای جدید هنگام ویرایش
+$apiProducts = apiCall('products');
+$productsCatalog = (!empty($apiProducts) && is_array($apiProducts)) ? $apiProducts : [];
 ?>
 <!DOCTYPE html>
 <html dir="rtl" lang="fa">
@@ -20,7 +24,7 @@ $orders = (!empty($apiOrders) && is_array($apiOrders)) ? $apiOrders : [];
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>حسابچین — تاریخچه و اصلاح فاکتورها</title>
+    <title>حسابچین — مدیریت و ویرایش جامع فاکتورها</title>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
@@ -36,7 +40,7 @@ $orders = (!empty($apiOrders) && is_array($apiOrders)) ? $apiOrders : [];
         <header class="orders-header">
             <div class="header-title-box">
                 <h1>مدیریت و اصلاح فاکتورها</h1>
-                <span class="header-sub">مشاهده، چاپ مجدد و تغییر روش تسویه</span>
+                <span class="header-sub">ویرایش تعداد کارتن/دانه، تخفیف، تسویه و چاپ</span>
             </div>
 
             <a href="dashboard.php" class="back-btn" aria-label="بازگشت به داشبورد">
@@ -133,9 +137,9 @@ $orders = (!empty($apiOrders) && is_array($apiOrders)) ? $apiOrders : [];
 
                             <!-- دکمه‌های اقدام -->
                             <div class="order-actions-row">
-                                <button type="button" class="order-action-btn edit-pay" onclick="openEditPaymentsModal('<?php echo $ordId; ?>', '<?php echo htmlspecialchars(addslashes($custName)); ?>', <?php echo $finalAmount; ?>)">
+                                <button type="button" class="order-action-btn edit-full" onclick="openFullEditOrderModal('<?php echo $ordId; ?>')">
                                     <span class="material-symbols-outlined" style="font-size: 16px;">edit_note</span>
-                                    <span>اصلاح تسویه</span>
+                                    <span>ویرایش کامل فاکتور</span>
                                 </button>
                                 <button type="button" class="order-action-btn reprint" onclick="fetchAndPrintInvoice('<?php echo $ordId; ?>')">
                                     <span class="material-symbols-outlined" style="font-size: 16px;">print</span>
@@ -178,63 +182,129 @@ $orders = (!empty($apiOrders) && is_array($apiOrders)) ? $apiOrders : [];
             </a>
         </nav>
 
-        <!-- مدال اصلاح و تغییر روش تسویه فاکتور -->
-        <div class="modal-overlay" id="editPaymentsModal" onclick="if(event.target === this) closeEditPaymentsModal()">
-            <div class="edit-pay-sheet">
-                <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
+        <!-- مدال جامع ویرایش فاکتور (تعداد کارتن، دانه، افزودن/حذف، تخفیفات، تسویه) -->
+        <div class="modal-overlay" id="editFullOrderModal" onclick="if(event.target === this) closeFullEditOrderModal()">
+            <div class="edit-order-sheet">
+                <!-- هدر مدال -->
+                <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
                     <div>
-                        <h3 style="font-size: 15px; font-weight: 800; margin: 0;">اصلاح و تغییر روش تسویه فاکتور</h3>
-                        <span id="editCustSubtitle" style="font-size: 11px; color: var(--primary); font-weight: 700;"></span>
+                        <h3 style="font-size: 15px; font-weight: 800; margin: 0; color: var(--primary);">ویرایش و اصلاح فاکتور</h3>
+                        <span id="editFullOrderSubtitle" style="font-size: 11px; color: var(--text-muted);"></span>
                     </div>
-                    <button type="button" style="background:none; border:none; cursor:pointer;" onclick="closeEditPaymentsModal()">
+                    <button type="button" style="background:none; border:none; cursor:pointer;" onclick="closeFullEditOrderModal()">
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>
 
-                <div style="background: var(--app-background); padding: 10px 12px; border-radius: 12px; display: flex; justify-content: space-between; font-size: 13px; font-weight: 800;">
-                    <span>مبلغ نهایی فاکتور:</span>
-                    <strong id="editFinalAmountDisplay" style="color: var(--primary);">۰ تومان</strong>
-                </div>
-
-                <!-- روش‌های پرداخت -->
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <!-- نقد -->
-                    <div style="display: flex; flex-direction: column; gap: 3px;">
-                        <label style="font-size: 11px; font-weight: 700; color: #16a34a;">پرداخت نقدی (تومان):</label>
-                        <input type="text" id="editCashInput" class="pay-amount-input" oninput="onEditSplitChanged()">
+                <!-- ۱. بخش ویرایش اقلام و تعداد کالاها -->
+                <div class="edit-section-card">
+                    <div class="edit-section-title">
+                        <span>📦 اقلام سفارش (تعداد کارتن و دانه)</span>
                     </div>
 
-                    <!-- پوز -->
-                    <div style="display: flex; flex-direction: column; gap: 3px;">
-                        <label style="font-size: 11px; font-weight: 700; color: #2563eb;">کارتخوان / پوز (تومان):</label>
-                        <input type="text" id="editPosInput" class="pay-amount-input" oninput="onEditSplitChanged()">
+                    <div id="editOrderItemsList" style="display: flex; flex-direction: column; gap: 8px;">
+                        <!-- اقلام به صورت داینامیک رندر می‌شوند -->
                     </div>
 
-                    <!-- چک -->
-                    <div style="display: flex; flex-direction: column; gap: 3px;">
-                        <label style="font-size: 11px; font-weight: 700; color: #d97706;">چک صیادی (تومان):</label>
-                        <input type="text" id="editCheckInput" class="pay-amount-input" oninput="onEditSplitChanged()">
-                    </div>
-
-                    <!-- اطلاعات چک در صورت وارد کردن مبلغ -->
-                    <div id="editCheckInfoBox" style="display: none; flex-direction: column; gap: 6px; background: #fffbeb; padding: 8px; border-radius: 8px; border: 1px solid #fef3c7;">
-                        <input type="text" id="editCheckNumber" placeholder="شماره / شناسه چک صیادی..." style="height: 36px; border-radius: 6px; border: 1px solid var(--border); padding: 0 8px; font-family: inherit; font-size: 11.5px;">
-                        <input type="text" id="editCheckBank" placeholder="نام بانک صادرکننده..." style="height: 36px; border-radius: 6px; border: 1px solid var(--border); padding: 0 8px; font-family: inherit; font-size: 11.5px;">
-                    </div>
-
-                    <!-- مانده نسیه دفتری -->
-                    <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 800; padding: 6px 0; color: #ea580c;">
-                        <span>مانده در دفتر حساب (نسیه):</span>
-                        <strong id="editCreditRemaining">۰ تومان</strong>
+                    <!-- افزودن کالای جدید به فاکتور -->
+                    <div style="border-top: 1px dashed var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 6px;">
+                        <span style="font-size: 11px; font-weight: 700; color: var(--text-secondary);">+ افزودن کالا به این فاکتور:</span>
+                        <div style="display: flex; gap: 6px;">
+                            <select id="editAddProductSelect" class="add-product-dropdown">
+                                <option value="">انتخاب محصول از کاتالوگ...</option>
+                                <?php foreach ($productsCatalog as $p): ?>
+                                    <option value="<?php echo $p['id']; ?>"
+                                            data-name="<?php echo htmlspecialchars($p['name']); ?>"
+                                            data-brand="<?php echo htmlspecialchars($p['brand'] ?? 'میهن'); ?>"
+                                            data-units="<?php echo $p['unitsPerCartonDefault'] ?? 1; ?>"
+                                            data-unitprice="<?php echo $p['baseUnitPrice'] ?? 0; ?>"
+                                            data-cartonprice="<?php echo ($p['baseUnitPrice'] ?? 0) * ($p['unitsPerCartonDefault'] ?? 1); ?>">
+                                        <?php echo htmlspecialchars($p['name']); ?> (<?php echo htmlspecialchars($p['brand'] ?? 'میهن'); ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <button type="button" class="login-btn" style="width: auto; height: 38px; padding: 0 12px; font-size: 12px;" onclick="addSelectedProductToEditOrder()">
+                                افزودن
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
-                    <button type="button" class="submit-order-btn" style="height: 44px; font-size: 13.5px;" onclick="saveEditedPayments()">
+                <!-- ۲. بخش تخفیفات پلکانی فاکتور -->
+                <div class="edit-section-card">
+                    <div class="edit-section-title">
+                        <span>🎁 تخفیفات پلکانی فاکتور</span>
+                    </div>
+
+                    <div id="editDiscountStepsContainer" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        <!-- چیپ‌های تخفیف رندر می‌شوند -->
+                    </div>
+
+                    <div style="display: flex; gap: 6px; align-items: center; margin-top: 4px;">
+                        <input type="number" id="editNewDiscountPercent" placeholder="درصد تخفیف جدید (مثلاً ۳)" min="1" max="100" style="flex: 1; height: 36px; border-radius: 8px; border: 1px solid var(--border); padding: 0 8px; font-family: inherit; font-size: 11.5px;">
+                        <button type="button" class="login-btn" style="width: auto; height: 36px; padding: 0 12px; font-size: 11.5px; background: #ea580c;" onclick="addDiscountStepToEditOrder()">
+                            + پله تخفیف
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ۳. خلاصه مالی و تسویه فاکتور -->
+                <div class="edit-section-card">
+                    <div class="edit-section-title">
+                        <span>💳 خلاصه مالی و تسهیم تسویه</span>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; border-bottom: 1px dashed var(--border); padding-bottom: 6px;">
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>جمع ناخالص:</span>
+                            <strong id="editGrossSubtotalDisplay">۰ ت</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; color: #ea580c;">
+                            <span>مجموع تخفیفات:</span>
+                            <strong id="editTotalDiscountDisplay">-۰ ت</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 13.5px; font-weight: 900; color: var(--primary); padding-top: 2px;">
+                            <span>مبلغ نهایی فاکتور:</span>
+                            <strong id="editNetFinalDisplay">۰ ت</strong>
+                        </div>
+                    </div>
+
+                    <!-- روش‌های پرداخت -->
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+                        <div style="display: flex; flex-direction: column; gap: 2px;">
+                            <label style="font-size: 10.5px; font-weight: 700; color: #16a34a;">پرداخت نقدی (تومان):</label>
+                            <input type="text" id="editFullCashInput" class="pay-amount-input" oninput="onFullEditCalculations()">
+                        </div>
+
+                        <div style="display: flex; flex-direction: column; gap: 2px;">
+                            <label style="font-size: 10.5px; font-weight: 700; color: #2563eb;">کارتخوان / پوز (تومان):</label>
+                            <input type="text" id="editFullPosInput" class="pay-amount-input" oninput="onFullEditCalculations()">
+                        </div>
+
+                        <div style="display: flex; flex-direction: column; gap: 2px;">
+                            <label style="font-size: 10.5px; font-weight: 700; color: #d97706;">چک صیادی (تومان):</label>
+                            <input type="text" id="editFullCheckInput" class="pay-amount-input" oninput="onFullEditCalculations()">
+                        </div>
+
+                        <div id="editFullCheckDetailsBox" style="display: none; flex-direction: column; gap: 4px; background: #fffbeb; padding: 6px; border-radius: 8px; border: 1px solid #fef3c7;">
+                            <input type="text" id="editFullCheckNumber" placeholder="شناسه صیادی ۱۶ رقمی..." style="height: 34px; border-radius: 6px; border: 1px solid var(--border); padding: 0 8px; font-family: inherit; font-size: 11px;">
+                            <input type="text" id="editFullCheckBank" placeholder="نام بانک صادرکننده..." style="height: 34px; border-radius: 6px; border: 1px solid var(--border); padding: 0 8px; font-family: inherit; font-size: 11px;">
+                        </div>
+
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 800; color: #ea580c; background: #fff7ed; padding: 6px 8px; border-radius: 8px;">
+                            <span>مانده در دفتر حساب (نسیه):</span>
+                            <strong id="editFullCreditRemaining">۰ ت</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- دکمه‌های اقدام نهایی -->
+                <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 4px;">
+                    <button type="button" class="submit-order-btn" style="height: 44px; font-size: 13.5px;" id="saveFullOrderBtn" onclick="saveFullEditedOrder()">
                         <span class="material-symbols-outlined">save</span>
-                        <span>ثبت تغییرات تسویه و به‌روزرسانی دفتر حساب</span>
+                        <span>ذخیره تغییرات فاکتور و اعمال در انبار و حساب</span>
                     </button>
-                    <button type="button" class="confirm-cancel-btn" style="height: 38px;" onclick="closeEditPaymentsModal()">
+                    <button type="button" class="confirm-cancel-btn" style="height: 36px;" onclick="closeFullEditOrderModal()">
                         انصراف
                     </button>
                 </div>
@@ -272,6 +342,7 @@ $orders = (!empty($apiOrders) && is_array($apiOrders)) ? $apiOrders : [];
 
     <script>
         const API_TOKEN = '<?php echo $apiToken; ?>';
+        const PRODUCTS_CATALOG = <?php echo json_encode($productsCatalog); ?>;
     </script>
     <script src="./js/orders.js?v=<?php echo time(); ?>"></script>
 </body>

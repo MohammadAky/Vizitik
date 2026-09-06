@@ -6,7 +6,7 @@ import {
   Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { CreateOrderDto } from './orders.dto';
+import { CreateOrderDto, UpdateOrderDto } from './orders.dto';
 
 @Injectable()
 export class OrdersService {
@@ -166,7 +166,7 @@ export class OrdersService {
           const newUnits = Math.max(0, inv.quantityUnits - deduction.unitCount);
 
           if (newCartons === 0 && newUnits === 0) {
-            // در صورت اتمام کامل موجودی کالا در خودرو، رکورد آن پاک می‌شود تا افزونگی در دیتابیس ایجاد نشود
+            // در صورت صفر شدن کامل موجودی، رکورد پاک می‌شود تا افزونگی در دیتابیس ایجاد نشود
             await tx.vanInventory.delete({
               where: {
                 userId_productId: {
@@ -284,7 +284,7 @@ export class OrdersService {
         paymentsText = 'نسیه (مانده در دفتر حساب)';
       }
 
-      const message = `🍦 *فاکتور جدید در حساب‌چین صادر شد*\n\n` +
+      const message = `🍦 *فاکتور در حساب‌چین به‌روزرسانی / صادر شد*\n\n` +
                       `👤 *فروشگاه:* ${customerName}\n` +
                       `💵 *جمع ناخالص:* ${subtotalStr} تومان\n` +
                       `🎁 *مجموع تخفیفات:* ${discountStr} تومان\n` +
@@ -344,6 +344,7 @@ export class OrdersService {
     }
 
     return {
+      orderId: order.id,
       invoiceNumber: order.id.slice(0, 8).toUpperCase(),
       orderDate: order.orderDate,
       status: order.status,
@@ -419,6 +420,8 @@ export class OrdersService {
             product: { select: { name: true, brand: true, category: true, unitsPerCartonDefault: true } },
           },
         },
+        discountSteps: { orderBy: { stepOrder: 'asc' } },
+        payments: { include: { check: true } },
       },
       orderBy: { orderDate: 'desc' },
     });
@@ -453,12 +456,292 @@ export class OrdersService {
           unitPrice: Number(item.unitPriceSnapshot),
           lineTotal: Number(item.lineTotal),
         })),
+        discountSteps: o.discountSteps.map((d) => ({
+          step: d.stepOrder,
+          percent: Number(d.percent),
+        })),
+        payments: o.payments.map((p) => ({
+          id: p.id,
+          method: p.method,
+          amount: Number(p.amount),
+          check: p.check ? {
+            checkNumber: p.check.checkNumber,
+            bankName: p.check.bankName,
+            dueDate: p.check.dueDate,
+          } : null,
+        })),
         subtotalAmount: Number(o.subtotalAmount),
         totalDiscountAmount: Number(o.totalDiscountAmount),
         finalAmount: Number(o.finalAmount),
         status: o.status,
       };
     });
+  }
+
+  /**
+   * ویرایش جامع فاکتور (تعداد کارتن، دانه، افزودن/حذف کالا، تخفیفات و روش‌های تسویه)
+   * به همراه به‌روزرسانی هوشمند انبار خودرو و دفتر حساب مشتری
+   */
+  async updateFullOrder(visitorId: string, orderId: string, dto: UpdateOrderDto) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        customer: {
+          include: {
+            ledgerEntries: { orderBy: { createdAt: 'desc' }, take: 1 },
+          },
+        },
+        items: true,
+        discountSteps: true,
+        payments: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('فاکتور یافت نشد');
+    }
+    if (order.visitorId !== visitorId) {
+      throw new ForbiddenException('دسترسی غیرمجاز');
+    }
+
+    if (!dto.items || dto.items.length === 0) {
+      throw new BadRequestException('فاکتور باید حداقل دارای یک قلم کالا باشد');
+    }
+
+    // ۱. محاسبه مبالغ قبلی
+    const oldFinalAmount = Number(order.finalAmount);
+    const oldPaidAmount = order.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const oldCreditAmount = Math.max(0, oldFinalAmount - oldPaidAmount);
+
+    // ۲. دریافت اطلاعات محصولات جدید
+    const productIds = dto.items.map((i) => i.productId);
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds } },
+      include: {
+        userSettings: { where: { userId: visitorId } },
+      },
+    });
+
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
+    let newSubtotalAmount = 0;
+    const newOrderItemsData: any[] = [];
+
+    for (const item of dto.items) {
+      const prod = productMap.get(item.productId);
+      if (!prod) {
+        throw new BadRequestException(`کالای ${item.productId} معتبر نیست`);
+      }
+
+      const custom = prod.userSettings[0];
+      const unitsPerCarton = custom?.customUnitsPerCarton || prod.unitsPerCartonDefault;
+
+      const unitPrice = custom?.customUnitPrice !== null && custom?.customUnitPrice !== undefined
+        ? Number(custom.customUnitPrice)
+        : Number(prod.baseUnitPrice);
+
+      const defaultCartonPrice = unitPrice * unitsPerCarton;
+      const cartonPrice = custom?.customCartonPrice !== null && custom?.customCartonPrice !== undefined
+        ? Number(custom.customCartonPrice)
+        : defaultCartonPrice;
+
+      const lineTotal = item.cartonCount * cartonPrice + item.unitCount * unitPrice;
+      newSubtotalAmount += lineTotal;
+
+      newOrderItemsData.push({
+        orderId: order.id,
+        productId: prod.id,
+        cartonCount: item.cartonCount,
+        unitCount: item.unitCount,
+        cartonPriceSnapshot: cartonPrice,
+        unitPriceSnapshot: unitPrice,
+        lineTotal,
+      });
+    }
+
+    // ۳. محاسبه تخفیفات جدید
+    const newDiscountStepsData: any[] = [];
+    let currentAmount = newSubtotalAmount;
+    let newTotalDiscountAmount = 0;
+
+    if (dto.discountPercentages && dto.discountPercentages.length > 0) {
+      dto.discountPercentages.forEach((percent, idx) => {
+        if (percent > 0) {
+          const stepDiscount = (currentAmount * percent) / 100;
+          const afterStep = currentAmount - stepDiscount;
+
+          newDiscountStepsData.push({
+            orderId: order.id,
+            stepOrder: idx + 1,
+            percent,
+            amountBeforeStep: currentAmount,
+            amountAfterStep: afterStep,
+          });
+
+          newTotalDiscountAmount += stepDiscount;
+          currentAmount = afterStep;
+        }
+      });
+    }
+
+    if (dto.fixedDiscountAmount && dto.fixedDiscountAmount > 0) {
+      const fixedDiscount = Math.min(dto.fixedDiscountAmount, currentAmount);
+      const afterStep = currentAmount - fixedDiscount;
+
+      newDiscountStepsData.push({
+        orderId: order.id,
+        stepOrder: newDiscountStepsData.length + 1,
+        percent: 0,
+        amountBeforeStep: currentAmount,
+        amountAfterStep: afterStep,
+      });
+
+      newTotalDiscountAmount += fixedDiscount;
+      currentAmount = afterStep;
+    }
+
+    const newFinalAmount = Math.round(currentAmount);
+    const newPaidAmount = (dto.payments || []).reduce((sum, p) => sum + Number(p.amount), 0);
+    const newCreditAmount = Math.max(0, newFinalAmount - newPaidAmount);
+
+    // ۴. محاسبه اختلاف دفتر حساب مشتری
+    const currentCustomerDebt = order.customer.ledgerEntries.length > 0
+      ? Number(order.customer.ledgerEntries[0].balanceAfter)
+      : 0;
+
+    const debtDifference = newCreditAmount - oldCreditAmount;
+    const newCustomerBalance = Math.max(0, currentCustomerDebt + debtDifference);
+
+    // ۵. اجرای تراکنش جامع
+    await this.prisma.$transaction(async (tx) => {
+      // الف: بازگردانی موجودی اقلام قبلی به انبار خودرو
+      for (const oldItem of order.items) {
+        const inv = await tx.vanInventory.findUnique({
+          where: {
+            userId_productId: {
+              userId: visitorId,
+              productId: oldItem.productId,
+            },
+          },
+        });
+
+        if (inv) {
+          await tx.vanInventory.update({
+            where: { id: inv.id },
+            data: {
+              quantityCartons: inv.quantityCartons + oldItem.cartonCount,
+              quantityUnits: inv.quantityUnits + oldItem.unitCount,
+            },
+          });
+        } else {
+          await tx.vanInventory.create({
+            data: {
+              userId: visitorId,
+              productId: oldItem.productId,
+              quantityCartons: oldItem.cartonCount,
+              quantityUnits: oldItem.unitCount,
+            },
+          });
+        }
+      }
+
+      // ب: کسر مقادیر جدید از انبار خودرو
+      for (const newItem of dto.items) {
+        const inv = await tx.vanInventory.findUnique({
+          where: {
+            userId_productId: {
+              userId: visitorId,
+              productId: newItem.productId,
+            },
+          },
+        });
+
+        if (inv) {
+          const finalCartons = Math.max(0, inv.quantityCartons - newItem.cartonCount);
+          const finalUnits = Math.max(0, inv.quantityUnits - newItem.unitCount);
+
+          if (finalCartons === 0 && finalUnits === 0) {
+            await tx.vanInventory.delete({ where: { id: inv.id } });
+          } else {
+            await tx.vanInventory.update({
+              where: { id: inv.id },
+              data: {
+                quantityCartons: finalCartons,
+                quantityUnits: finalUnits,
+              },
+            });
+          }
+        }
+      }
+
+      // ج: به‌روزرسانی اقلام فاکتور
+      await tx.orderItem.deleteMany({ where: { orderId: order.id } });
+      await tx.orderItem.createMany({ data: newOrderItemsData });
+
+      // د: به‌روزرسانی پله‌های تخفیف
+      await tx.orderDiscountStep.deleteMany({ where: { orderId: order.id } });
+      if (newDiscountStepsData.length > 0) {
+        await tx.orderDiscountStep.createMany({ data: newDiscountStepsData });
+      }
+
+      // ه: به‌روزرسانی پرداخت‌ها و چک‌ها
+      await tx.payment.deleteMany({ where: { orderId: order.id } });
+      for (const p of dto.payments || []) {
+        if (p.method === 'CHECK' && p.checkDetails) {
+          await tx.payment.create({
+            data: {
+              orderId: order.id,
+              method: 'CHECK',
+              amount: p.amount,
+              check: {
+                create: {
+                  checkNumber: p.checkDetails.checkNumber || '---',
+                  bankName: p.checkDetails.bankName || 'بانک',
+                  dueDate: new Date(p.checkDetails.dueDate || new Date()),
+                  status: 'PENDING',
+                },
+              },
+            },
+          });
+        } else {
+          await tx.payment.create({
+            data: {
+              orderId: order.id,
+              method: p.method as any,
+              amount: p.amount,
+            },
+          });
+        }
+      }
+
+      // و: به‌روزرسانی دفتر حساب در صورت تغییر نسیه
+      if (debtDifference !== 0) {
+        await tx.customerLedger.create({
+          data: {
+            customerId: order.customerId,
+            relatedOrderId: order.id,
+            type: debtDifference < 0 ? 'PAYMENT_CREDIT' : 'ORDER_DEBIT',
+            amount: Math.abs(debtDifference),
+            balanceAfter: newCustomerBalance,
+          },
+        });
+      }
+
+      // ز: به‌روزرسانی مقادیر هدر فاکتور
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          subtotalAmount: newSubtotalAmount,
+          totalDiscountAmount: newTotalDiscountAmount,
+          finalAmount: newFinalAmount,
+          status: 'CONFIRMED',
+        },
+      });
+    });
+
+    const updatedInvoice = await this.getOrderInvoice(visitorId, order.id);
+    this.sendOrderNotificationToBale(visitorId, updatedInvoice).catch(() => {});
+    return updatedInvoice;
   }
 
   /**
