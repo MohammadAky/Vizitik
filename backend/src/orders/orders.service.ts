@@ -1,0 +1,557 @@
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+  Inject,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma.service';
+import { CreateOrderDto } from './orders.dto';
+
+@Injectable()
+export class OrdersService {
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+
+  async createOrder(visitorId: string, dto: CreateOrderDto) {
+    const existingOrder = await this.prisma.order.findUnique({
+      where: { localUuid: dto.localUuid },
+    });
+    if (existingOrder) {
+      return this.getOrderInvoice(visitorId, existingOrder.id);
+    }
+
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: dto.customerId },
+      include: {
+        ledgerEntries: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+    if (!customer) {
+      throw new NotFoundException('مشتری یافت نشد');
+    }
+    if (customer.assignedVisitorId !== visitorId) {
+      throw new ForbiddenException('شما دسترسی به این مشتری را ندارید');
+    }
+
+    if (!dto.items || dto.items.length === 0) {
+      throw new BadRequestException('حداقل یک محصول باید در سفارش ثبت شود');
+    }
+
+    const productIds = dto.items.map((i) => i.productId);
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds } },
+      include: {
+        userSettings: { where: { userId: visitorId } },
+      },
+    });
+
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
+    let subtotalAmount = 0;
+    const orderItemsData: any[] = [];
+    const inventoryDeductions: { productId: string; cartonCount: number; unitCount: number }[] = [];
+
+    for (const item of dto.items) {
+      const prod = productMap.get(item.productId);
+      if (!prod) {
+        throw new BadRequestException(`محصول با شناسه ${item.productId} معتبر نیست`);
+      }
+
+      const custom = prod.userSettings[0];
+      const unitsPerCarton = custom?.customUnitsPerCarton || prod.unitsPerCartonDefault;
+      
+      const unitPrice = custom?.customUnitPrice !== null && custom?.customUnitPrice !== undefined
+        ? Number(custom.customUnitPrice)
+        : Number(prod.baseUnitPrice);
+
+      const defaultCartonPrice = unitPrice * unitsPerCarton;
+      const cartonPrice = custom?.customCartonPrice !== null && custom?.customCartonPrice !== undefined
+        ? Number(custom.customCartonPrice)
+        : defaultCartonPrice;
+
+      const lineTotal = item.cartonCount * cartonPrice + item.unitCount * unitPrice;
+      subtotalAmount += lineTotal;
+
+      orderItemsData.push({
+        productId: prod.id,
+        cartonCount: item.cartonCount,
+        unitCount: item.unitCount,
+        cartonPriceSnapshot: cartonPrice,
+        unitPriceSnapshot: unitPrice,
+        lineTotal,
+      });
+
+      inventoryDeductions.push({
+        productId: prod.id,
+        cartonCount: item.cartonCount,
+        unitCount: item.unitCount,
+      });
+    }
+
+    const discountStepsData: any[] = [];
+    let currentAmount = subtotalAmount;
+    let totalDiscountAmount = 0;
+
+    if (dto.discountPercentages && dto.discountPercentages.length > 0) {
+      dto.discountPercentages.forEach((percent, idx) => {
+        if (percent > 0) {
+          const stepDiscount = (currentAmount * percent) / 100;
+          const afterStep = currentAmount - stepDiscount;
+
+          discountStepsData.push({
+            stepOrder: idx + 1,
+            percent,
+            amountBeforeStep: currentAmount,
+            amountAfterStep: afterStep,
+          });
+
+          totalDiscountAmount += stepDiscount;
+          currentAmount = afterStep;
+        }
+      });
+    }
+
+    if (dto.fixedDiscountAmount && dto.fixedDiscountAmount > 0) {
+      const fixedDiscount = Math.min(dto.fixedDiscountAmount, currentAmount);
+      const afterStep = currentAmount - fixedDiscount;
+
+      discountStepsData.push({
+        stepOrder: discountStepsData.length + 1,
+        percent: 0,
+        amountBeforeStep: currentAmount,
+        amountAfterStep: afterStep,
+      });
+
+      totalDiscountAmount += fixedDiscount;
+      currentAmount = afterStep;
+    }
+
+    const finalAmount = Math.round(currentAmount);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.create({
+        data: {
+          localUuid: dto.localUuid,
+          customerId: customer.id,
+          visitorId,
+          status: 'CONFIRMED',
+          subtotalAmount,
+          totalDiscountAmount,
+          finalAmount,
+          isSynced: true,
+          items: {
+            create: orderItemsData,
+          },
+          discountSteps: {
+            create: discountStepsData,
+          },
+        },
+      });
+
+      for (const deduction of inventoryDeductions) {
+        const inv = await tx.vanInventory.findUnique({
+          where: {
+            userId_productId: {
+              userId: visitorId,
+              productId: deduction.productId,
+            },
+          },
+        });
+
+        if (inv) {
+          const newCartons = Math.max(0, inv.quantityCartons - deduction.cartonCount);
+          const newUnits = Math.max(0, inv.quantityUnits - deduction.unitCount);
+
+          if (newCartons === 0 && newUnits === 0) {
+            // در صورت اتمام کامل موجودی کالا در خودرو، رکورد آن پاک می‌شود تا افزونگی در دیتابیس ایجاد نشود
+            await tx.vanInventory.delete({
+              where: {
+                userId_productId: {
+                  userId: visitorId,
+                  productId: deduction.productId,
+                },
+              },
+            });
+          } else {
+            await tx.vanInventory.update({
+              where: {
+                userId_productId: {
+                  userId: visitorId,
+                  productId: deduction.productId,
+                },
+              },
+              data: {
+                quantityCartons: newCartons,
+                quantityUnits: newUnits,
+              },
+            });
+          }
+        }
+      }
+
+      const previousBalance = customer.ledgerEntries.length > 0
+        ? Number(customer.ledgerEntries[0].balanceAfter)
+        : 0;
+
+      let runningBalance = previousBalance + finalAmount;
+
+      await tx.customerLedger.create({
+        data: {
+          customerId: customer.id,
+          type: 'ORDER_DEBIT',
+          relatedOrderId: order.id,
+          amount: finalAmount,
+          balanceAfter: runningBalance,
+        },
+      });
+
+      if (dto.payments && dto.payments.length > 0) {
+        for (const p of dto.payments) {
+          const payment = await tx.payment.create({
+            data: {
+              orderId: order.id,
+              method: p.method as any,
+              amount: p.amount,
+            },
+          });
+
+          if (p.method === 'CHECK' && p.checkDetails) {
+            await tx.check.create({
+              data: {
+                paymentId: payment.id,
+                checkNumber: p.checkDetails.checkNumber,
+                bankName: p.checkDetails.bankName,
+                dueDate: new Date(p.checkDetails.dueDate),
+                status: 'PENDING',
+              },
+            });
+          }
+
+          if (p.method === 'CASH' || p.method === 'CARD') {
+            runningBalance -= p.amount;
+            await tx.customerLedger.create({
+              data: {
+                customerId: customer.id,
+                type: 'PAYMENT_CREDIT',
+                relatedOrderId: order.id,
+                relatedPaymentId: payment.id,
+                amount: -p.amount,
+                balanceAfter: runningBalance,
+              },
+            });
+          }
+        }
+      }
+
+      return order;
+    });
+
+    const invoice = await this.getOrderInvoice(visitorId, result.id);
+
+    // ارسال اعلان فوری فاکتور به ربات بله
+    this.sendOrderNotificationToBale(visitorId, invoice).catch(() => {});
+
+    return invoice;
+  }
+
+  private async sendOrderNotificationToBale(visitorId: string, orderDetails: any) {
+    const baleToken = process.env.BALE_BOT_TOKEN || '2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc';
+    const fallbackChatId = process.env.BALE_ADMIN_CHAT_ID || '542633638';
+
+    try {
+      const visitor = await this.prisma.user.findUnique({
+        where: { id: visitorId },
+      });
+
+      const chatId = visitor?.baleChatId || fallbackChatId;
+      if (!chatId) return;
+
+      const customerName = orderDetails.customer?.name || 'مشتری';
+      const finalAmountStr = Number(orderDetails.finalAmount).toLocaleString('fa-IR');
+      const subtotalStr = Number(orderDetails.subtotalAmount).toLocaleString('fa-IR');
+      const discountStr = Number(orderDetails.totalDiscountAmount).toLocaleString('fa-IR');
+
+      let paymentsText = '';
+      if (orderDetails.payments && orderDetails.payments.length > 0) {
+        paymentsText = orderDetails.payments.map((p: any) => {
+          const methodTitle = p.method === 'CASH' ? 'نقدی' : p.method === 'CARD' ? 'کارتخوان' : p.method === 'CHECK' ? 'چک صیادی' : 'نسیه';
+          return `${methodTitle}: ${Number(p.amount).toLocaleString('fa-IR')} ت`;
+        }).join(' | ');
+      } else {
+        paymentsText = 'نسیه (مانده در دفتر حساب)';
+      }
+
+      const message = `🍦 *فاکتور جدید در حساب‌چین صادر شد*\n\n` +
+                      `👤 *فروشگاه:* ${customerName}\n` +
+                      `💵 *جمع ناخالص:* ${subtotalStr} تومان\n` +
+                      `🎁 *مجموع تخفیفات:* ${discountStr} تومان\n` +
+                      `🧾 *مبلغ نهایی فاکتور:* *${finalAmountStr} تومان*\n` +
+                      `💳 *روش تسویه:* ${paymentsText}\n\n` +
+                      `✅ اطلاعات در سیستم ثبت گردید.`;
+
+      await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: message,
+          parse_mode: 'Markdown',
+        }),
+      });
+    } catch (err) {
+      console.error('خطا در ارسال پیام فاکتور به بله:', err);
+    }
+  }
+
+  async getOrderInvoice(visitorId: string, orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        customer: true,
+        visitor: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+          },
+        },
+        items: {
+          include: {
+            product: true,
+          },
+        },
+        discountSteps: {
+          orderBy: { stepOrder: 'asc' },
+        },
+        payments: {
+          include: {
+            check: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('فاکتور یافت نشد');
+    }
+
+    if (order.visitorId !== visitorId) {
+      throw new ForbiddenException('دسترسی غیرمجاز');
+    }
+
+    return {
+      invoiceNumber: order.id.slice(0, 8).toUpperCase(),
+      orderDate: order.orderDate,
+      status: order.status,
+      customer: {
+        id: order.customer.id,
+        name: order.customer.name,
+        address: order.customer.address,
+        phone: order.customer.phone,
+      },
+      visitor: {
+        name: `${order.visitor.firstName} ${order.visitor.lastName}`,
+        phone: order.visitor.phone,
+      },
+      items: order.items.map((i) => {
+        const unitsPerCarton = i.product.unitsPerCartonDefault || 1;
+        const totalUnits = (i.cartonCount * unitsPerCarton) + i.unitCount;
+
+        return {
+          productId: i.productId,
+          productName: i.product.name,
+          brand: i.product.brand,
+          category: i.product.category,
+          unitsPerCarton,
+          cartonCount: i.cartonCount,
+          unitCount: i.unitCount,
+          totalUnits,
+          cartonPrice: Number(i.cartonPriceSnapshot),
+          unitPrice: Number(i.unitPriceSnapshot),
+          lineTotal: Number(i.lineTotal),
+        };
+      }),
+      pricing: {
+        subtotal: Number(order.subtotalAmount),
+        discountSteps: order.discountSteps.map((s) => ({
+          step: s.stepOrder,
+          percent: Number(s.percent),
+          before: Number(s.amountBeforeStep),
+          after: Number(s.amountAfterStep),
+        })),
+        totalDiscount: Number(order.totalDiscountAmount),
+        finalAmount: Number(order.finalAmount),
+      },
+      payments: order.payments.map((p) => ({
+        id: p.id,
+        method: p.method,
+        amount: Number(p.amount),
+        paidAt: p.paidAt,
+        check: p.check ? {
+          checkNumber: p.check.checkNumber,
+          bankName: p.check.bankName,
+          dueDate: p.check.dueDate,
+          status: p.check.status,
+        } : null,
+      })),
+    };
+  }
+
+  async getOrders(visitorId: string, startDate?: string, endDate?: string) {
+    const whereClause: any = { visitorId };
+
+    if (startDate || endDate) {
+      whereClause.orderDate = {};
+      if (startDate) whereClause.orderDate.gte = new Date(startDate);
+      if (endDate) whereClause.orderDate.lte = new Date(endDate);
+    }
+
+    const orders = await this.prisma.order.findMany({
+      where: whereClause,
+      include: {
+        customer: { select: { id: true, name: true, phone: true } },
+        items: {
+          include: {
+            product: { select: { name: true, brand: true, category: true, unitsPerCartonDefault: true } },
+          },
+        },
+      },
+      orderBy: { orderDate: 'desc' },
+    });
+
+    return orders.map((o) => {
+      const totalCartons = o.items.reduce((sum, item) => sum + item.cartonCount, 0);
+      const totalIndividualUnits = o.items.reduce((sum, item) => sum + item.unitCount, 0);
+
+      return {
+        id: o.id,
+        orderDate: o.orderDate,
+        customer: {
+          id: o.customer.id,
+          name: o.customer.name,
+          phone: o.customer.phone,
+        },
+        summary: {
+          totalCartons,
+          totalIndividualUnits,
+          totalItemsCount: o.items.length,
+        },
+        items: o.items.map((item) => ({
+          productId: item.productId,
+          productName: item.product.name,
+          brand: item.product.brand,
+          category: item.product.category,
+          cartonCount: item.cartonCount,
+          unitCount: item.unitCount,
+          unitsPerCarton: item.product.unitsPerCartonDefault,
+          totalUnits: (item.cartonCount * item.product.unitsPerCartonDefault) + item.unitCount,
+          cartonPrice: Number(item.cartonPriceSnapshot),
+          unitPrice: Number(item.unitPriceSnapshot),
+          lineTotal: Number(item.lineTotal),
+        })),
+        subtotalAmount: Number(o.subtotalAmount),
+        totalDiscountAmount: Number(o.totalDiscountAmount),
+        finalAmount: Number(o.finalAmount),
+        status: o.status,
+      };
+    });
+  }
+
+  /**
+   * ویرایش و اصلاح روش‌های تسویه فاکتور و اعمال آن در دفتر حساب مشتری
+   */
+  async updateOrderPayments(
+    visitorId: string,
+    orderId: string,
+    dto: { payments: { method: string; amount: number; checkDetails?: any }[] },
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        customer: {
+          include: {
+            ledgerEntries: { orderBy: { createdAt: 'desc' }, take: 1 },
+          },
+        },
+        payments: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('فاکتور یافت نشد');
+    }
+    if (order.visitorId !== visitorId) {
+      throw new ForbiddenException('دسترسی غیرمجاز');
+    }
+
+    const finalAmount = Number(order.finalAmount);
+    const oldPaidAmount = order.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+    const oldCreditAmount = Math.max(0, finalAmount - oldPaidAmount);
+
+    const newPaidAmount = (dto.payments || []).reduce((sum, p) => sum + Number(p.amount), 0);
+    const newCreditAmount = Math.max(0, finalAmount - newPaidAmount);
+
+    const currentCustomerDebt = order.customer.ledgerEntries.length > 0
+      ? Number(order.customer.ledgerEntries[0].balanceAfter)
+      : 0;
+
+    // مابه‌التفاوت نسیه در دفتر حساب
+    const debtDifference = newCreditAmount - oldCreditAmount;
+    const newCustomerBalance = Math.max(0, currentCustomerDebt + debtDifference);
+
+    await this.prisma.$transaction(async (tx) => {
+      // ۱. حذف پرداخت‌های قبلی
+      await tx.payment.deleteMany({
+        where: { orderId },
+      });
+
+      // ۲. ثبت پرداخت‌های جدید اصلاح‌شده
+      for (const p of dto.payments || []) {
+        if (p.method === 'CHECK' && p.checkDetails) {
+          await tx.payment.create({
+            data: {
+              orderId,
+              method: 'CHECK',
+              amount: p.amount,
+              check: {
+                create: {
+                  checkNumber: p.checkDetails.checkNumber || '---',
+                  bankName: p.checkDetails.bankName || 'بانک',
+                  dueDate: new Date(p.checkDetails.dueDate || new Date()),
+                  status: 'PENDING',
+                },
+              },
+            },
+          });
+        } else {
+          await tx.payment.create({
+            data: {
+              orderId,
+              method: p.method as any,
+              amount: p.amount,
+            },
+          });
+        }
+      }
+
+      // ۳. ثبت مابه‌التفاوت در دفتر حساب مشتری
+      if (debtDifference !== 0) {
+        await tx.customerLedger.create({
+          data: {
+            customerId: order.customerId,
+            relatedOrderId: order.id,
+            type: debtDifference < 0 ? 'PAYMENT_CREDIT' : 'ORDER_DEBIT',
+            amount: Math.abs(debtDifference),
+            balanceAfter: newCustomerBalance,
+          },
+        });
+      }
+    });
+
+    return this.getOrderInvoice(visitorId, orderId);
+  }
+}

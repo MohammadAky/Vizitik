@@ -1,0 +1,854 @@
+/* ============================================================
+   حساب‌چین — استایل ماژول یکپارچه مشتریان و پرونده هوشمند (customers.css)
+============================================================ */
+
+/* هدر صفحه مشتریان */
+.customers-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: #001d31;
+  color: #ffffff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 12px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.header-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.header-title-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.header-left-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-title-box h1 {
+  font-size: 17px;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+}
+
+.header-sub {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.back-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  text-decoration: none;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.back-btn:active {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.back-btn .material-symbols-outlined {
+  font-size: 22px;
+  transform: scaleX(-1);
+}
+  transition: 0.2s;
+}
+
+.back-btn:active {
+  background: var(--surface-variant);
+  transform: scale(0.96);
+}
+
+.header-stat-badge {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  padding: 5px 10px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.header-stat-badge .material-symbols-outlined {
+  font-size: 16px;
+}
+
+/* نوار جستجوی سریع */
+.search-box {
+  position: relative;
+  width: 100%;
+}
+
+.search-box input {
+  width: 100%;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--app-background);
+  padding: 0 40px 0 36px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.search-box input:focus {
+  border-color: var(--primary);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px rgba(0, 97, 148, 0.12);
+}
+
+.search-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 20px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.clear-search-btn {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+/* ردیف چیپ‌های فیلتر */
+.chips-scroll-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+
+.chips-scroll-container::-webkit-scrollbar {
+  display: none;
+}
+
+.chips-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.chips-track {
+  display: flex;
+  gap: 6px;
+}
+
+.filter-chip {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.filter-chip.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.filter-chip.debtor-chip {
+  border-color: #fecaca;
+  color: #dc2626;
+  background: #fff5f5;
+}
+
+.filter-chip.debtor-chip.active {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #dc2626;
+}
+
+.filter-chip.settled-chip {
+  border-color: #bbf7d0;
+  color: #15803d;
+  background: #f0fdf4;
+}
+
+.filter-chip.settled-chip.active {
+  background: #16a34a;
+  color: #ffffff;
+  border-color: #16a34a;
+}
+
+/* بدنه اصلی لیست مشتریان */
+.customers-content {
+  padding: 12px 14px 90px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* کارت هر فروشگاه / مشتری — شیک، مرتب و خلوت */
+.customer-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.customer-card:active {
+  transform: scale(0.985);
+  background: #fafbfc;
+  border-color: #cbd5e1;
+}
+
+/* ردیف بالای کارت: آیکون، نام، و بج مانده حساب */
+.customer-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.customer-main-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.customer-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--primary-light);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.customer-avatar.has-debt {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.customer-avatar.is-settled {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.customer-avatar .material-symbols-outlined {
+  font-size: 24px;
+}
+
+.customer-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.customer-shop-name {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.customer-owner-name {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* بج مانده حساب */
+.balance-badge {
+  padding: 4px 10px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.balance-badge.debtor {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+}
+
+.balance-badge.settled {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #15803d;
+}
+
+.balance-badge.creditor {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+}
+
+.balance-title {
+  font-size: 9px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.balance-amount {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* اطلاعات تماس، آدرس و میانبرهای سریع */
+.customer-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.customer-address-sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.customer-address-sub .material-symbols-outlined {
+  font-size: 15px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.quick-tools-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.mini-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.mini-icon-btn.call-btn {
+  color: #059669;
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+.mini-icon-btn.map-btn {
+  color: #0284c7;
+  background: #f0f9ff;
+  border-color: #bae6fd;
+}
+
+.mini-icon-btn:active {
+  transform: scale(0.92);
+}
+
+/* دکمه شناور افزودن مشتری جدید (FAB) */
+.fab-add-customer {
+  position: fixed;
+  bottom: 84px;
+  left: 20px;
+  z-index: 40;
+  height: 48px;
+  padding: 0 18px;
+  border-radius: 24px;
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  box-shadow: 0 6px 16px rgba(0, 97, 148, 0.35);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.fab-add-customer:active {
+  transform: scale(0.95);
+  background: var(--primary-dark);
+}
+
+/* استیت خالی و عدم نتیجه */
+.empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.empty-box .material-symbols-outlined {
+  font-size: 52px;
+  color: #cbd5e1;
+  margin-bottom: 12px;
+}
+
+.empty-box h3 {
+  font-size: 15px;
+  color: var(--text-primary);
+  margin: 0 0 6px;
+}
+
+.empty-box p {
+  font-size: 12px;
+  margin: 0 0 16px;
+}
+
+/* ============================================================
+   مودال و کشوی پرونده مشتری (Customer Sheet & Recent Orders)
+============================================================ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 480px;
+  background: var(--surface);
+  border-radius: 24px 24px 0 0;
+  padding: 20px 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.modal-shop-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.modal-shop-heading h3 {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.modal-shop-heading span {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+/* کارت وضعیت مالی مشتری در مودال */
+.modal-balance-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.modal-balance-banner.settled {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.banner-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.banner-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.banner-amount {
+  font-size: 14px;
+  font-weight: 800;
+  color: #dc2626;
+}
+
+.modal-balance-banner.settled .banner-amount {
+  color: #16a34a;
+}
+
+/* دکمه اصلی و شاخص صدور فاکتور */
+.primary-invoice-cta {
+  width: 100%;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 97, 148, 0.25);
+  transition: 0.2s;
+}
+
+.primary-invoice-cta:active {
+  background: var(--primary-dark);
+  transform: scale(0.98);
+}
+
+.primary-invoice-cta .material-symbols-outlined {
+  font-size: 22px;
+}
+
+/* بخش ۵ خرید آخر مشتری */
+.recent-purchases-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recent-purchases-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.recent-purchases-header strong {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.view-all-ledger-link {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ice-blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.recent-orders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recent-order-item {
+  background: var(--app-background);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.recent-order-right {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.recent-order-no {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.recent-order-summary {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.recent-order-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.recent-order-amount {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.recent-order-status {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.recent-order-status.settled {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.recent-order-status.credit {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* ردیف دکمه‌های ثانویه (ویرایش مشخصات و کاردکس) */
+.modal-secondary-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.sec-btn {
+  flex: 1;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: 0.15s;
+}
+
+.sec-btn:active {
+  background: var(--surface-variant);
+}
+
+.sec-btn.edit-btn {
+  color: var(--primary);
+  border-color: #bae6fd;
+  background: var(--primary-light);
+}
+
+/* ============================================================
+   فرم ثبت و ویرایش مشتری
+============================================================ */
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.input-group label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.input-group label .req {
+  color: #dc2626;
+}
+
+.input-group input,
+.input-group select,
+.input-group textarea {
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--app-background);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.input-group textarea {
+  height: 60px;
+  padding: 8px 12px;
+  resize: none;
+}
+
+.input-group input:focus,
+.input-group select:focus,
+.input-group textarea:focus {
+  border-color: var(--primary);
+  background: var(--surface);
+}
+
+.input-row {
+  display: flex;
+  gap: 10px;
+}
+
+.input-row .input-group {
+  flex: 1;
+}
+
+.submit-btn {
+  height: 44px;
+  border-radius: 12px;
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  margin-top: 6px;
+  transition: 0.2s;
+}
+
+.submit-btn:active {
+  background: var(--primary-dark);
+}
+
+.modal-delete-btn {
+  height: 42px;
+  border-radius: 12px;
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: 0.15s;
+  margin-top: 4px;
+}
+
+.modal-delete-btn:active {
+  background: #fecaca;
+  transform: scale(0.98);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
