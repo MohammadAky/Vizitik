@@ -3,6 +3,8 @@
 // ============================================================
 
 let currentOrder = null;
+let activePaymentMode = 'cash'; // 'cash' | 'pos' | 'check' | 'credit' | 'custom'
+
 let paymentState = {
     cash: 0,
     pos: 0,
@@ -208,11 +210,11 @@ function applyDiscountFromInputs() {
         });
     }
 
-    // پاک کردن فیلدهای ورودی طبق خواسته شما
+    // پاک کردن فیلدهای ورودی
     if (percentInput) percentInput.value = '';
     if (fixedInput) fixedInput.value = '';
 
-    // محاسبه مجدد و به‌روزرسانی ردیف‌های زیر هم
+    // محاسبه مجدد آنی و به‌روزرسانی ردیف‌ها و مبالغ پرداختی
     recalcAllCalculations();
 }
 
@@ -224,7 +226,7 @@ function removeDiscountStep(index) {
     }
 }
 
-// محاسبه مجدد تخفیف‌های پلکانی، مبلغ نهایی، و بالانس تسویه
+// محاسبه مجدد تخفیف‌های پلکانی، مبلغ نهایی، و همگام‌سازی آنی ورودی‌های تسویه
 function recalcAllCalculations() {
     const subtotal = currentOrder.subtotal || 0;
     let currentAmount = subtotal;
@@ -297,36 +299,102 @@ function recalcAllCalculations() {
         if (list) list.innerHTML = '';
     }
 
-    // به‌روزرسانی مبلغ نهایی فاکتور
+    // به‌روزرسانی نمایشگر مبلغ نهایی فاکتور
     const finalElem = document.getElementById('finalPayableAmount');
     if (finalElem) finalElem.textContent = formatPrice(finalAmount);
+
+    // همگام‌سازی آنی ورودی روش پرداخت فعال با مبلغ نهایی جدید
+    syncActivePaymentInputsWithNewFinal(finalAmount);
+}
+
+// همگام‌سازی آنی مقدار ورودی‌های پرداخت متناسب با مبلغ خالص جدید فاکتور
+function syncActivePaymentInputsWithNewFinal(finalAmount) {
+    const cashInput = document.getElementById('cashInput');
+    const posInput = document.getElementById('posInput');
+    const checkInput = document.getElementById('checkInput');
+
+    if (activePaymentMode === 'cash') {
+        paymentState.cash = finalAmount;
+        paymentState.pos = 0;
+        paymentState.check = 0;
+        paymentState.credit = 0;
+        if (cashInput) cashInput.value = finalAmount > 0 ? finalAmount.toLocaleString('en-US') : '';
+        if (posInput) posInput.value = '';
+        if (checkInput) checkInput.value = '';
+    } else if (activePaymentMode === 'pos') {
+        paymentState.pos = finalAmount;
+        paymentState.cash = 0;
+        paymentState.check = 0;
+        paymentState.credit = 0;
+        if (posInput) posInput.value = finalAmount > 0 ? finalAmount.toLocaleString('en-US') : '';
+        if (cashInput) cashInput.value = '';
+        if (checkInput) checkInput.value = '';
+    } else if (activePaymentMode === 'check') {
+        paymentState.check = finalAmount;
+        paymentState.cash = 0;
+        paymentState.pos = 0;
+        paymentState.credit = 0;
+        if (checkInput) checkInput.value = finalAmount > 0 ? finalAmount.toLocaleString('en-US') : '';
+        if (cashInput) cashInput.value = '';
+        if (posInput) posInput.value = '';
+    } else if (activePaymentMode === 'credit') {
+        paymentState.cash = 0;
+        paymentState.pos = 0;
+        paymentState.check = 0;
+        paymentState.credit = finalAmount;
+        if (cashInput) cashInput.value = '';
+        if (posInput) posInput.value = '';
+        if (checkInput) checkInput.value = '';
+    } else {
+        // حالت چندحالته دستی: اگر مجموع پرداختی‌ها از مبلغ نهایی بیشتر شده بود، تراز شود
+        const totalPaid = paymentState.cash + paymentState.pos + paymentState.check;
+        if (totalPaid > finalAmount) {
+            // کسر اضافه از پرداخت نقدی یا پوز
+            if (paymentState.cash >= (totalPaid - finalAmount)) {
+                paymentState.cash -= (totalPaid - finalAmount);
+                if (cashInput) cashInput.value = paymentState.cash > 0 ? paymentState.cash.toLocaleString('en-US') : '';
+            } else {
+                paymentState.cash = 0;
+                if (cashInput) cashInput.value = '';
+                paymentState.pos = Math.min(paymentState.pos, finalAmount);
+                if (posInput) posInput.value = paymentState.pos > 0 ? paymentState.pos.toLocaleString('en-US') : '';
+            }
+        }
+    }
 
     recalcPaymentSplit();
 }
 
-// پر کردن سریع مبالغ
+// پر کردن سریع مبالغ با انتخاب یک دکمه
 function quickFillMethod(method) {
-    const finalAmount = currentOrder.finalAmount || 0;
+    activePaymentMode = method;
+    const finalAmount = currentOrder ? (currentOrder.finalAmount || 0) : 0;
 
     paymentState.cash = 0;
     paymentState.pos = 0;
     paymentState.check = 0;
     paymentState.credit = 0;
 
-    document.getElementById('cashInput').value = '';
-    document.getElementById('posInput').value = '';
-    document.getElementById('checkInput').value = '';
+    const cashInput = document.getElementById('cashInput');
+    const posInput = document.getElementById('posInput');
+    const checkInput = document.getElementById('checkInput');
+    const checkFields = document.getElementById('checkFieldsBox');
+
+    if (cashInput) cashInput.value = '';
+    if (posInput) posInput.value = '';
+    if (checkInput) checkInput.value = '';
+    if (checkFields) checkFields.style.display = 'none';
 
     if (method === 'cash') {
         paymentState.cash = finalAmount;
-        document.getElementById('cashInput').value = finalAmount.toLocaleString('en-US');
+        if (cashInput) cashInput.value = finalAmount > 0 ? finalAmount.toLocaleString('en-US') : '';
     } else if (method === 'pos') {
         paymentState.pos = finalAmount;
-        document.getElementById('posInput').value = finalAmount.toLocaleString('en-US');
+        if (posInput) posInput.value = finalAmount > 0 ? finalAmount.toLocaleString('en-US') : '';
     } else if (method === 'check') {
         paymentState.check = finalAmount;
-        document.getElementById('checkInput').value = finalAmount.toLocaleString('en-US');
-        document.getElementById('checkFieldsBox').style.display = 'flex';
+        if (checkInput) checkInput.value = finalAmount > 0 ? finalAmount.toLocaleString('en-US') : '';
+        if (checkFields) checkFields.style.display = 'flex';
     } else if (method === 'credit') {
         paymentState.credit = finalAmount;
     }
@@ -334,8 +402,10 @@ function quickFillMethod(method) {
     recalcPaymentSplit();
 }
 
-// واکنش به تغییر دستی مبالغ پرداخت
+// واکنش به تغییر دستی مبالغ پرداخت در فیلدها
 function onPaymentInputChanged(method) {
+    activePaymentMode = 'custom';
+
     const cashInput = document.getElementById('cashInput');
     const posInput = document.getElementById('posInput');
     const checkInput = document.getElementById('checkInput');
@@ -350,9 +420,9 @@ function onPaymentInputChanged(method) {
 
     const checkFields = document.getElementById('checkFieldsBox');
     if (paymentState.check > 0) {
-        checkFields.style.display = 'flex';
+        if (checkFields) checkFields.style.display = 'flex';
     } else {
-        checkFields.style.display = 'none';
+        if (checkFields) checkFields.style.display = 'none';
     }
 
     recalcPaymentSplit();
@@ -360,7 +430,7 @@ function onPaymentInputChanged(method) {
 
 // محاسبه تقسیم مبالغ و مانده نسیه
 function recalcPaymentSplit() {
-    const finalAmount = currentOrder.finalAmount || 0;
+    const finalAmount = currentOrder ? (currentOrder.finalAmount || 0) : 0;
     const paidSum = paymentState.cash + paymentState.pos + paymentState.check;
     const remaining = Math.max(0, finalAmount - paidSum);
     paymentState.credit = remaining;
@@ -372,11 +442,11 @@ function recalcPaymentSplit() {
     if (creditPill) creditPill.textContent = remaining > 0 ? formatPrice(remaining) : '۰ تومان (تسویه کامل)';
 
     if (remaining === 0) {
-        balanceCard.className = 'final-balance-card settled';
-        balanceStatus.innerHTML = '<span style="color:#15803d;">تسویه کامل نقدی و بانکی</span>';
+        if (balanceCard) balanceCard.className = 'final-balance-card settled';
+        if (balanceStatus) balanceStatus.innerHTML = '<span style="color:#15803d;">تسویه کامل نقدی و بانکی</span>';
     } else {
-        balanceCard.className = 'final-balance-card';
-        balanceStatus.innerHTML = `<span style="color:#ea580c;">مانده در دفتر حساب (نسیه): ${formatPrice(remaining)}</span>`;
+        if (balanceCard) balanceCard.className = 'final-balance-card';
+        if (balanceStatus) balanceStatus.innerHTML = `<span style="color:#ea580c;">مانده در دفتر حساب (نسیه): ${formatPrice(remaining)}</span>`;
     }
 }
 

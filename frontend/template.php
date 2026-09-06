@@ -49,7 +49,7 @@ $subtitle = "توضیح کوتاه صفحه";
 
                 <!-- دکمه بازگشت به داشبورد (سمت چپ) -->
                 <a href="dashboard.php" class="back-btn" aria-label="بازگشت">
-                    <span class="material-symbols-outlined">arrow_back</span>
+                    <span class="material-symbols-outlined">arrow_forward</span>
                 </a>
             </div>
 

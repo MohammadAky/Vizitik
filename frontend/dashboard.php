@@ -70,10 +70,7 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
-        integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
-        crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="./css/style.css?v=<?php echo time(); ?>">
 </head>
 
 <body>
@@ -100,6 +97,10 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
                 <a href="orders.php" class="side-menu-item">
                     <span class="material-symbols-outlined">receipt_long</span>
                     مدیریت و اصلاح فاکتورها
+                </a>
+                <a href="bale-bot.php" class="side-menu-item">
+                    <span class="material-symbols-outlined">smart_toy</span>
+                    مدیریت ربات بله
                 </a>
                 <a href="settings.php" class="side-menu-item">
                     <span class="material-symbols-outlined">settings</span>
@@ -160,7 +161,7 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
                 </div>
             </section>
 
-            <!-- دکمه‌های دسترسی سریع -->
+            <!-- دکمه‌های دسترسی سریع (بدون گزینه‌های تکراری و به همراه مدیریت ربات بله کنار کالا) -->
             <section class="quick-actions">
                 <a href="products.php" class="action-btn animate-item">
                     <div class="action-icon">
@@ -168,17 +169,17 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
                     </div>
                     <span>لیست کالاها</span>
                 </a>
-                <a href="orders.php" class="action-btn animate-item">
-                    <div class="action-icon" style="background: #eff6ff; color: #2563eb;">
-                        <span class="material-symbols-outlined icon-fill">receipt_long</span>
+                <a href="bale-bot.php" class="action-btn animate-item">
+                    <div class="action-icon" style="background: #f0fdf4; color: #16a34a;">
+                        <span class="material-symbols-outlined icon-fill">smart_toy</span>
                     </div>
-                    <span>سفارشات</span>
+                    <span>مدیریت ربات بله</span>
                 </a>
-                <a href="collections.php" class="action-btn animate-item">
-                    <div class="action-icon danger">
-                        <span class="material-symbols-outlined icon-fill">payments</span>
+                <a href="van-loading.php" class="action-btn animate-item">
+                    <div class="action-icon" style="background: #eff6ff; color: #2563eb;">
+                        <span class="material-symbols-outlined icon-fill">local_shipping</span>
                     </div>
-                    <span>وصول مطالبات</span>
+                    <span>بارگیری خودرو</span>
                 </a>
             </section>
 
@@ -212,7 +213,7 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
                         <div class="empty-orders-box animate-item">
                             <span class="material-symbols-outlined">receipt_long</span>
                             <p>هنوز سفارشی برای امروز ثبت نشده است</p>
-                            <a href="ice-cream-selection.php" class="empty-action-link">ثبت اولین سفارش</a>
+                            <a href="new-order.php" class="empty-action-link">ثبت اولین سفارش</a>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -226,23 +227,23 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
             ثبت فاکتور جدید
         </a>
 
-        <!-- نوار ناوبری پایینی -->
+        <!-- نوار ناوبری پایینی با دکمه وسط مشتریان به رنگ آبی -->
         <nav class="app-nav animate-item">
             <a href="dashboard.php" class="nav-item active">
                 <span class="material-symbols-outlined icon-fill">dashboard</span>
                 <span>داشبورد</span>
             </a>
-            <a href="van-loading.php" class="nav-item">
-                <span class="material-symbols-outlined">local_shipping</span>
-                <span>بارگیری خودرو</span>
-            </a>
             <a href="orders.php" class="nav-item">
                 <span class="material-symbols-outlined">receipt_long</span>
                 <span>سفارشات</span>
             </a>
-            <a href="customers.php" class="nav-item">
-                <span class="material-symbols-outlined">group</span>
+            <a href="customers.php" class="nav-item nav-item-center" title="پرونده مشتریان و ثبت سفارش" aria-label="مشتریان">
+                <span class="material-symbols-outlined icon-fill">group</span>
                 <span>مشتریان</span>
+            </a>
+            <a href="van-loading.php" class="nav-item">
+                <span class="material-symbols-outlined">local_shipping</span>
+                <span>بارگیری خودرو</span>
             </a>
             <a href="collections.php" class="nav-item">
                 <span class="material-symbols-outlined">payments</span>
