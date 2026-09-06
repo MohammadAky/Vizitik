@@ -85,7 +85,30 @@ export class CreateOrderDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  fixedDiscountAmount?: number; // تخفیف مبلغی مستقیم مثلا ۵۰۰,۰۰۰ تومان
+  fixedDiscountAmount?: number; // تخفیف مبلغی مستقیم
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PaymentInputDto)
+  payments?: PaymentInputDto[];
+}
+
+export class UpdateOrderDto {
+  @IsArray({ message: 'لیست اقلام سفارش باید آرایه باشد' })
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemInputDto)
+  items: OrderItemInputDto[];
+
+  @IsOptional()
+  @IsArray()
+  @IsNumber({}, { each: true })
+  discountPercentages?: number[];
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  fixedDiscountAmount?: number;
 
   @IsOptional()
   @IsArray()

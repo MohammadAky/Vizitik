@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Body, Param, Query, UseGuards, Inject } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { OrdersService } from './orders.service';
-import { CreateOrderDto } from './orders.dto';
+import { CreateOrderDto, UpdateOrderDto } from './orders.dto';
 import { GetUser } from '../auth/get-user.decorator';
 
 @Controller('api/orders')
@@ -32,6 +32,15 @@ export class OrdersController {
     @Param('id') orderId: string,
   ) {
     return this.ordersService.getOrderInvoice(visitorId, orderId);
+  }
+
+  @Put(':id')
+  updateFullOrder(
+    @GetUser('id') visitorId: string,
+    @Param('id') orderId: string,
+    @Body() dto: UpdateOrderDto,
+  ) {
+    return this.ordersService.updateFullOrder(visitorId, orderId, dto);
   }
 
   @Put(':id/payments')

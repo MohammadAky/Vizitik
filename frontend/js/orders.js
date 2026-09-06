@@ -1,9 +1,18 @@
 // ============================================================
-// حساب‌چین — اسکریپت مدیریت و اصلاح فاکتورها (orders.js)
+// حساب‌چین — اسکریپت مدیریت و ویرایش جامع فاکتورها (orders.js)
 // ============================================================
 
 let currentEditOrderId = null;
-let currentEditFinalAmount = 0;
+let editOrderState = {
+    orderId: null,
+    customerName: '',
+    items: [],
+    discountPercentages: [],
+    fixedDiscountAmount: 0,
+    grossSubtotal: 0,
+    totalDiscount: 0,
+    finalAmount: 0,
+};
 
 function toPersianNum(num) {
     if (num === null || num === undefined) return '';
@@ -32,49 +41,339 @@ function filterOrdersList() {
     });
 }
 
-function openEditPaymentsModal(orderId, custName, finalAmount) {
-    currentEditOrderId = orderId;
-    currentEditFinalAmount = finalAmount;
+// ============================================================
+// باز کردن مدال جامع ویرایش فاکتور
+// ============================================================
+async function openFullEditOrderModal(orderId) {
+    try {
+        const res = await fetch(`http://localhost:3000/api/orders/${orderId}/invoice`, {
+            headers: { 'Authorization': `Bearer ${API_TOKEN}` }
+        });
 
-    document.getElementById('editCustSubtitle').textContent = `مشتری: ${custName}`;
-    document.getElementById('editFinalAmountDisplay').textContent = formatPrice(finalAmount);
+        if (!res.ok) {
+            alert('دریافت جزئیات فاکتور با خطا مواجه شد.');
+            return;
+        }
 
-    document.getElementById('editCashInput').value = '';
-    document.getElementById('editPosInput').value = '';
-    document.getElementById('editCheckInput').value = '';
-    document.getElementById('editCheckInfoBox').style.display = 'none';
+        const invoice = await res.json();
+        currentEditOrderId = orderId;
 
-    onEditSplitChanged();
-    document.getElementById('editPaymentsModal').style.display = 'flex';
+        editOrderState.orderId = orderId;
+        editOrderState.customerName = invoice.customer?.name || 'مشتری';
+        editOrderState.items = (invoice.items || []).map(i => ({
+            productId: i.productId,
+            productName: i.productName,
+            brand: i.brand || 'میهن',
+            unitsPerCarton: i.unitsPerCarton || 1,
+            cartonCount: i.cartonCount || 0,
+            unitCount: i.unitCount || 0,
+            cartonPrice: i.cartonPrice || 0,
+            unitPrice: i.unitPrice || 0,
+            lineTotal: i.lineTotal || 0
+        }));
+
+        editOrderState.discountPercentages = (invoice.pricing?.discountSteps || []).map(s => Number(s.percent)).filter(p => p > 0);
+        editOrderState.fixedDiscountAmount = 0;
+
+        document.getElementById('editFullOrderSubtitle').textContent = `فروشگاه ${editOrderState.customerName} (فاکتور #${toPersianNum(invoice.invoiceNumber)})`;
+
+        // پر کردن فیلدهای پرداخت قبلی
+        let prevCash = 0, prevPos = 0, prevCheck = 0;
+        let prevCheckNum = '', prevCheckBank = '';
+
+        (invoice.payments || []).forEach(p => {
+            if (p.method === 'CASH') prevCash += p.amount;
+            if (p.method === 'CARD') prevPos += p.amount;
+            if (p.method === 'CHECK') {
+                prevCheck += p.amount;
+                if (p.check) {
+                    prevCheckNum = p.check.checkNumber || '';
+                    prevCheckBank = p.check.bankName || '';
+                }
+            }
+        });
+
+        document.getElementById('editFullCashInput').value = prevCash > 0 ? prevCash.toLocaleString('en-US') : '';
+        document.getElementById('editFullPosInput').value = prevPos > 0 ? prevPos.toLocaleString('en-US') : '';
+        document.getElementById('editFullCheckInput').value = prevCheck > 0 ? prevCheck.toLocaleString('en-US') : '';
+        document.getElementById('editFullCheckNumber').value = prevCheckNum;
+        document.getElementById('editFullCheckBank').value = prevCheckBank;
+
+        renderEditItemsList();
+        renderEditDiscountChips();
+        onFullEditCalculations();
+
+        document.getElementById('editFullOrderModal').style.display = 'flex';
+    } catch (e) {
+        console.error(e);
+        alert('خطا در ارتباط با سرور.');
+    }
 }
 
-function closeEditPaymentsModal() {
-    document.getElementById('editPaymentsModal').style.display = 'none';
+function closeFullEditOrderModal() {
+    document.getElementById('editFullOrderModal').style.display = 'none';
 }
 
-function onEditSplitChanged() {
-    const cashVal = parseFloat((document.getElementById('editCashInput').value || '').replace(/[^0-9]/g, '')) || 0;
-    const posVal = parseFloat((document.getElementById('editPosInput').value || '').replace(/[^0-9]/g, '')) || 0;
-    const checkVal = parseFloat((document.getElementById('editCheckInput').value || '').replace(/[^0-9]/g, '')) || 0;
+// ============================================================
+// رندر اقلام در حال ویرایش
+// ============================================================
+function renderEditItemsList() {
+    const container = document.getElementById('editOrderItemsList');
+    if (!editOrderState.items || editOrderState.items.length === 0) {
+        container.innerHTML = `<div style="text-align:center; padding:12px; font-size:11.5px; color:var(--text-muted);">هیچ کالایی در سفارش وجود ندارد.</div>`;
+        return;
+    }
 
-    if (cashVal > 0) document.getElementById('editCashInput').value = cashVal.toLocaleString('en-US');
-    if (posVal > 0) document.getElementById('editPosInput').value = posVal.toLocaleString('en-US');
-    if (checkVal > 0) document.getElementById('editCheckInput').value = checkVal.toLocaleString('en-US');
+    let html = '';
+    editOrderState.items.forEach((item, idx) => {
+        const itemLineTotal = (item.cartonCount * item.cartonPrice) + (item.unitCount * item.unitPrice);
+        item.lineTotal = itemLineTotal;
 
-    document.getElementById('editCheckInfoBox').style.display = checkVal > 0 ? 'flex' : 'none';
+        html += `
+            <div class="edit-item-row" id="editItemRow_${idx}">
+                <div class="edit-item-header">
+                    <div class="edit-item-name">${item.productName} (${item.brand})</div>
+                    <button type="button" class="edit-item-delete-btn" onclick="removeEditItem(${idx})" title="حذف کالا">
+                        <span class="material-symbols-outlined" style="font-size: 18px;">delete</span>
+                    </button>
+                </div>
+
+                <div class="edit-steppers-grid">
+                    <!-- کارتن -->
+                    <div class="stepper-box">
+                        <div class="stepper-label">
+                            <span>کارتن:</span>
+                            <span>${toPersianNum(item.unitsPerCarton)} عددی</span>
+                        </div>
+                        <div class="stepper-controls">
+                            <button type="button" class="stepper-btn" onclick="changeEditItemCarton(${idx}, -1)">-</button>
+                            <input type="number" class="stepper-input" value="${item.cartonCount}" min="0" onchange="setEditItemCarton(${idx}, this.value)">
+                            <button type="button" class="stepper-btn" onclick="changeEditItemCarton(${idx}, 1)">+</button>
+                        </div>
+                    </div>
+
+                    <!-- دانه -->
+                    <div class="stepper-box">
+                        <div class="stepper-label">
+                            <span>دانه (خرده):</span>
+                            <span>سقف ${toPersianNum(item.unitsPerCarton - 1)}</span>
+                        </div>
+                        <div class="stepper-controls">
+                            <button type="button" class="stepper-btn" onclick="changeEditItemUnit(${idx}, -1)">-</button>
+                            <input type="number" class="stepper-input" value="${item.unitCount}" min="0" max="${item.unitsPerCarton - 1}" onchange="setEditItemUnit(${idx}, this.value)">
+                            <button type="button" class="stepper-btn" onclick="changeEditItemUnit(${idx}, 1)">+</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="edit-item-footer">
+                    <span>فی کارتن: ${formatPrice(item.cartonPrice)}</span>
+                    <strong>جمع: ${formatPrice(itemLineTotal)}</strong>
+                </div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
+function changeEditItemCarton(idx, delta) {
+    if (!editOrderState.items[idx]) return;
+    editOrderState.items[idx].cartonCount = Math.max(0, editOrderState.items[idx].cartonCount + delta);
+    renderEditItemsList();
+    onFullEditCalculations();
+}
+
+function setEditItemCarton(idx, val) {
+    if (!editOrderState.items[idx]) return;
+    const num = Math.max(0, parseInt(val) || 0);
+    editOrderState.items[idx].cartonCount = num;
+    renderEditItemsList();
+    onFullEditCalculations();
+}
+
+function changeEditItemUnit(idx, delta) {
+    if (!editOrderState.items[idx]) return;
+    const maxUnits = Math.max(0, editOrderState.items[idx].unitsPerCarton - 1);
+    let newUnit = editOrderState.items[idx].unitCount + delta;
+    if (newUnit < 0) newUnit = 0;
+    if (newUnit > maxUnits) {
+        alert(`تعداد دانه نمی‌تواند مساوی یا بیشتر از ظرفیت کارتن (${toPersianNum(editOrderState.items[idx].unitsPerCarton)}) باشد.`);
+        newUnit = maxUnits;
+    }
+    editOrderState.items[idx].unitCount = newUnit;
+    renderEditItemsList();
+    onFullEditCalculations();
+}
+
+function setEditItemUnit(idx, val) {
+    if (!editOrderState.items[idx]) return;
+    const maxUnits = Math.max(0, editOrderState.items[idx].unitsPerCarton - 1);
+    let num = parseInt(val) || 0;
+    if (num < 0) num = 0;
+    if (num > maxUnits) {
+        alert(`تعداد دانه نمی‌تواند مساوی یا بیشتر از ظرفیت کارتن (${toPersianNum(editOrderState.items[idx].unitsPerCarton)}) باشد.`);
+        num = maxUnits;
+    }
+    editOrderState.items[idx].unitCount = num;
+    renderEditItemsList();
+    onFullEditCalculations();
+}
+
+function removeEditItem(idx) {
+    if (confirm('آیا از حذف این کالا از فاکتور اطمینان دارید؟')) {
+        editOrderState.items.splice(idx, 1);
+        renderEditItemsList();
+        onFullEditCalculations();
+    }
+}
+
+// افزودن محصول جدید از کاتالوگ
+function addSelectedProductToEditOrder() {
+    const select = document.getElementById('editAddProductSelect');
+    const prodId = select.value;
+    if (!prodId) {
+        alert('لطفاً ابتدا یک محصول را انتخاب کنید.');
+        return;
+    }
+
+    const opt = select.selectedOptions[0];
+    const name = opt.dataset.name;
+    const brand = opt.dataset.brand;
+    const unitsPerCarton = parseInt(opt.dataset.units) || 1;
+    const unitPrice = parseFloat(opt.dataset.unitprice) || 0;
+    const cartonPrice = parseFloat(opt.dataset.cartonprice) || (unitPrice * unitsPerCarton);
+
+    // بررسی آیا محصول از قبل وجود دارد
+    const existing = editOrderState.items.find(i => i.productId === prodId);
+    if (existing) {
+        existing.cartonCount += 1;
+    } else {
+        editOrderState.items.push({
+            productId: prodId,
+            productName: name,
+            brand: brand,
+            unitsPerCarton: unitsPerCarton,
+            cartonCount: 1,
+            unitCount: 0,
+            cartonPrice: cartonPrice,
+            unitPrice: unitPrice,
+            lineTotal: cartonPrice
+        });
+    }
+
+    select.value = '';
+    renderEditItemsList();
+    onFullEditCalculations();
+}
+
+// ============================================================
+// مدیریت تخفیف‌های پلکانی
+// ============================================================
+function renderEditDiscountChips() {
+    const container = document.getElementById('editDiscountStepsContainer');
+    if (!editOrderState.discountPercentages || editOrderState.discountPercentages.length === 0) {
+        container.innerHTML = `<span style="font-size:11px; color:var(--text-muted);">هیچ تخفیف پلکانی ثبت نشده است.</span>`;
+        return;
+    }
+
+    let html = '';
+    editOrderState.discountPercentages.forEach((pct, idx) => {
+        html += `
+            <div class="discount-chip">
+                <span>پله ${toPersianNum(idx + 1)}: ${toPersianNum(pct)}٪</span>
+                <button type="button" class="discount-chip-remove" onclick="removeEditDiscountStep(${idx})" title="حذف پله">×</button>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+}
+
+function addDiscountStepToEditOrder() {
+    const input = document.getElementById('editNewDiscountPercent');
+    const val = parseFloat(input.value) || 0;
+    if (val <= 0 || val > 100) {
+        alert('لطفاً درصد تخفیف معتبر بین ۱ تا ۱۰۰ وارد کنید.');
+        return;
+    }
+
+    editOrderState.discountPercentages.push(val);
+    input.value = '';
+    renderEditDiscountChips();
+    onFullEditCalculations();
+}
+
+function removeEditDiscountStep(idx) {
+    editOrderState.discountPercentages.splice(idx, 1);
+    renderEditDiscountChips();
+    onFullEditCalculations();
+}
+
+// ============================================================
+// محاسبات لحظه‌ای و تسویه مالی
+// ============================================================
+function onFullEditCalculations() {
+    // ۱. محاسبه جمع ناخالص
+    let gross = 0;
+    (editOrderState.items || []).forEach(item => {
+        gross += (item.cartonCount * item.cartonPrice) + (item.unitCount * item.unitPrice);
+    });
+    editOrderState.grossSubtotal = gross;
+
+    // ۲. محاسبه تخفیفات پلکانی
+    let currentAmount = gross;
+    let totalDiscount = 0;
+
+    (editOrderState.discountPercentages || []).forEach(pct => {
+        if (pct > 0) {
+            const stepDiscount = (currentAmount * pct) / 100;
+            totalDiscount += stepDiscount;
+            currentAmount -= stepDiscount;
+        }
+    });
+
+    editOrderState.totalDiscount = totalDiscount;
+    const finalAmount = Math.round(currentAmount);
+    editOrderState.finalAmount = finalAmount;
+
+    // به‌روزرسانی نمایشگرها
+    document.getElementById('editGrossSubtotalDisplay').textContent = formatPrice(gross);
+    document.getElementById('editTotalDiscountDisplay').textContent = totalDiscount > 0 ? `-${formatPrice(totalDiscount)}` : '۰ تومان';
+    document.getElementById('editNetFinalDisplay').textContent = formatPrice(finalAmount);
+
+    // ۳. خواندن ورودی‌های پرداخت
+    const cashVal = parseFloat((document.getElementById('editFullCashInput').value || '').replace(/[^0-9]/g, '')) || 0;
+    const posVal = parseFloat((document.getElementById('editFullPosInput').value || '').replace(/[^0-9]/g, '')) || 0;
+    const checkVal = parseFloat((document.getElementById('editFullCheckInput').value || '').replace(/[^0-9]/g, '')) || 0;
+
+    if (cashVal > 0) document.getElementById('editFullCashInput').value = cashVal.toLocaleString('en-US');
+    if (posVal > 0) document.getElementById('editFullPosInput').value = posVal.toLocaleString('en-US');
+    if (checkVal > 0) document.getElementById('editFullCheckInput').value = checkVal.toLocaleString('en-US');
+
+    document.getElementById('editFullCheckDetailsBox').style.display = checkVal > 0 ? 'flex' : 'none';
 
     const paidSum = cashVal + posVal + checkVal;
-    const remainingCredit = Math.max(0, currentEditFinalAmount - paidSum);
+    const remainingCredit = Math.max(0, finalAmount - paidSum);
 
-    document.getElementById('editCreditRemaining').textContent = remainingCredit > 0 ? formatPrice(remainingCredit) : '۰ تومان (تسویه کامل)';
+    document.getElementById('editFullCreditRemaining').textContent = remainingCredit > 0 ? formatPrice(remainingCredit) : '۰ تومان (تسویه کامل)';
 }
 
-async function saveEditedPayments() {
+// ============================================================
+// ذخیره نهایی ویرایش فاکتور
+// ============================================================
+async function saveFullEditedOrder() {
     if (!currentEditOrderId) return;
 
-    const cashVal = parseFloat((document.getElementById('editCashInput').value || '').replace(/[^0-9]/g, '')) || 0;
-    const posVal = parseFloat((document.getElementById('editPosInput').value || '').replace(/[^0-9]/g, '')) || 0;
-    const checkVal = parseFloat((document.getElementById('editCheckInput').value || '').replace(/[^0-9]/g, '')) || 0;
+    // اعتبارسنجی اقلام
+    const validItems = editOrderState.items.filter(i => i.cartonCount > 0 || i.unitCount > 0);
+    if (validItems.length === 0) {
+        alert('فاکتور باید حداقل دارای یک قلم کالا با تعداد مثبت باشد.');
+        return;
+    }
+
+    const cashVal = parseFloat((document.getElementById('editFullCashInput').value || '').replace(/[^0-9]/g, '')) || 0;
+    const posVal = parseFloat((document.getElementById('editFullPosInput').value || '').replace(/[^0-9]/g, '')) || 0;
+    const checkVal = parseFloat((document.getElementById('editFullCheckInput').value || '').replace(/[^0-9]/g, '')) || 0;
 
     const paymentsPayload = [];
     if (cashVal > 0) paymentsPayload.push({ method: 'CASH', amount: cashVal });
@@ -84,42 +383,63 @@ async function saveEditedPayments() {
             method: 'CHECK',
             amount: checkVal,
             checkDetails: {
-                checkNumber: document.getElementById('editCheckNumber').value || '---',
-                bankName: document.getElementById('editCheckBank').value || 'بانک',
+                checkNumber: document.getElementById('editFullCheckNumber').value || '---',
+                bankName: document.getElementById('editFullCheckBank').value || 'بانک',
                 dueDate: new Date().toISOString()
             }
         });
     }
 
+    const payload = {
+        items: validItems.map(i => ({
+            productId: i.productId,
+            cartonCount: i.cartonCount,
+            unitCount: i.unitCount
+        })),
+        discountPercentages: editOrderState.discountPercentages,
+        fixedDiscountAmount: 0,
+        payments: paymentsPayload
+    };
+
+    const saveBtn = document.getElementById('saveFullOrderBtn');
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span>در حال ثبت تغییرات فاکتور و همگام‌سازی انبار...</span>';
+
     try {
-        const res = await fetch(`http://localhost:3000/api/orders/${currentEditOrderId}/payments`, {
+        const res = await fetch(`http://localhost:3000/api/orders/${currentEditOrderId}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${API_TOKEN}`
             },
-            body: JSON.stringify({ payments: paymentsPayload })
+            body: JSON.stringify(payload)
         });
 
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
-            alert('روش‌های تسویه فاکتور با موفقیت اصلاح و در دفتر حساب مشتری به‌روزرسانی شد.');
-            closeEditPaymentsModal();
+            alert('فاکتور با موفقیت ویرایش شد و تغییرات موجودی خودرو و دفتر حساب مشتری اعمال گردید.');
+            closeFullEditOrderModal();
             window.location.reload();
         } else {
-            alert(data.message || 'خطا در ویرایش تسویه فاکتور.');
+            alert(data.message || 'خطا در ویرایش فاکتور.');
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<span class="material-symbols-outlined">save</span><span>ذخیره تغییرات فاکتور و اعمال در انبار و حساب</span>';
         }
     } catch (e) {
+        console.error(e);
         alert('خطا در برقراری ارتباط با سرور.');
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<span class="material-symbols-outlined">save</span><span>ذخیره تغییرات فاکتور و اعمال در انبار و حساب</span>';
     }
 }
 
+// ============================================================
+// چاپ فاکتور حرارتی ۸۰ میلی‌متری
+// ============================================================
 async function fetchAndPrintInvoice(orderId) {
     try {
         const res = await fetch(`http://localhost:3000/api/orders/${orderId}/invoice`, {
-            headers: {
-                'Authorization': `Bearer ${API_TOKEN}`
-            }
+            headers: { 'Authorization': `Bearer ${API_TOKEN}` }
         });
 
         if (!res.ok) {
