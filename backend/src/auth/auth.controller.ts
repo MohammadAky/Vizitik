@@ -8,6 +8,7 @@ import {
   SendResetPasswordOtpDto,
   ResetPasswordDto,
   ChangePasswordDto,
+  UpdateProfileDto,
 } from './auth.dto';
 import { GetUser } from './get-user.decorator';
 
@@ -65,5 +66,17 @@ export class AuthController {
     @Body() dto: ChangePasswordDto,
   ) {
     return this.authService.changePassword(userId, dto);
+  }
+
+  /**
+   * به‌روزرسانی اطلاعات حساب و ذخیره چت‌آیدی بله در پایگاه‌داده
+   */
+  @Put('profile')
+  @UseGuards(AuthGuard('jwt'))
+  updateProfile(
+    @GetUser('id') userId: string,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    return this.authService.updateProfile(userId, dto);
   }
 }

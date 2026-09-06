@@ -70,3 +70,17 @@ export class ChangePasswordDto {
   @MinLength(6, { message: 'رمز عبور جدید باید حداقل ۶ کاراکتر باشد' })
   newPassword: string;
 }
+
+export class UpdateProfileDto {
+  @IsOptional()
+  @IsString()
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
+  @IsOptional()
+  @IsString()
+  baleChatId?: string;
+}

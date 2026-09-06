@@ -240,6 +240,32 @@ export class AuthService {
     };
   }
 
+  async updateProfile(userId: string, dto: { firstName?: string; lastName?: string; baleChatId?: string }) {
+    const updateData: any = {};
+    if (dto.firstName !== undefined) updateData.firstName = dto.firstName.trim();
+    if (dto.lastName !== undefined) updateData.lastName = dto.lastName.trim();
+    if (dto.baleChatId !== undefined) updateData.baleChatId = dto.baleChatId.trim();
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        baleChatId: true,
+        role: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'اطلاعات پروفایل و شناسه بله با موفقیت در دیتابیس به‌روزرسانی شد.',
+      user: updatedUser,
+    };
+  }
+
   // ============================================================
   // متدهای کمکی داخلی
   // ============================================================

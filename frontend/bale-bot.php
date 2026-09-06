@@ -179,10 +179,32 @@ $botUsername = 'HesabchinBot';
             }
         }
 
-        function saveChatId() {
+        async function saveChatId() {
             const chatId = document.getElementById('baleChatIdInput').value.trim();
-            localStorage.setItem('hesabchin_bale_chat_id', chatId);
-            alert('شناسه بله در مرورگر شما ذخیره شد.');
+            if (!chatId) {
+                alert('لطفاً شناسه چت بله را وارد نمایید.');
+                return;
+            }
+
+            try {
+                const res = await fetch('http://localhost:3000/api/auth/profile', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_TOKEN}`
+                    },
+                    body: JSON.stringify({ baleChatId: chatId })
+                });
+
+                const data = await res.json().catch(() => ({}));
+                if (res.ok) {
+                    alert('شناسه بله با موفقیت در پایگاه‌داده ذخیره شد و تمامی اعلان‌ها به این حساب ارسال خواهند شد. ✅');
+                } else {
+                    alert(data.message || 'خطا در ذخیره شناسه در سرور.');
+                }
+            } catch (e) {
+                alert('خطا در برقراری ارتباط با سرور.');
+            }
         }
     </script>
 </body>
