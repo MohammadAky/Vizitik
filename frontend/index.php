@@ -209,6 +209,11 @@ header("Pragma: no-cache");
                     </div>
 
                     <div class="input-group">
+                        <label for="regBaleChatId">شناسه کاربری بله (Chat ID)</label>
+                        <input type="text" id="regBaleChatId" placeholder="مثلاً: 542633638" value="542633638" required>
+                    </div>
+
+                    <div class="input-group">
                         <label for="regPassword">رمز عبور دلخواه (حداقل ۶ کاراکتر)</label>
                         <div class="password-wrap">
                             <input type="password" id="regPassword" placeholder="حداقل ۶ کاراکتر" minlength="6" required>
@@ -452,6 +457,7 @@ header("Pragma: no-cache");
             regData.firstName = document.getElementById('regFirstName').value.trim();
             regData.lastName = document.getElementById('regLastName').value.trim();
             regData.phone = document.getElementById('regPhone').value.trim();
+            regData.baleChatId = document.getElementById('regBaleChatId').value.trim();
             regData.password = document.getElementById('regPassword').value;
 
             const btn = document.getElementById('sendRegOtpBtn');
@@ -506,6 +512,7 @@ header("Pragma: no-cache");
                         firstName: regData.firstName,
                         lastName: regData.lastName,
                         phone: regData.phone,
+                        baleChatId: regData.baleChatId || '542633638',
                         password: regData.password,
                         code
                     })
