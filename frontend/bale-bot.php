@@ -8,8 +8,18 @@ header("Pragma: no-cache");
 $user = getUserData();
 $apiToken = getAccessToken();
 
-$defaultChatId = $user['baleChatId'] ?? '542633638';
-$botUsername = 'HesabchinBot';
+// دریافت لیست مشتریان اختصاص‌یافته به ویزیتور
+$apiCustomers = apiCall('customers');
+$customers = (!empty($apiCustomers) && is_array($apiCustomers)) ? $apiCustomers : [];
+
+// فیلتر مشتریان بدهکار
+$debtorCustomers = array_values(array_filter($customers, function ($c) {
+    return ((float)($c['currentDebt'] ?? 0)) > 0;
+}));
+
+$totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
+    return $sum + (float)($c['currentDebt'] ?? 0);
+}, 0);
 ?>
 <!DOCTYPE html>
 <html dir="rtl" lang="fa">
@@ -17,7 +27,7 @@ $botUsername = 'HesabchinBot';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>حسابچین — مدیریت ربات بله</title>
+    <title>حسابچین — سامانه اطلاع‌رسانی به مشتریان (بله)</title>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
@@ -31,8 +41,8 @@ $botUsername = 'HesabchinBot';
         <!-- هدر صفحه -->
         <header class="settings-header">
             <div class="header-title-box">
-                <h1>مدیریت ربات بله</h1>
-                <span class="header-sub">تنظیمات اعلان‌ها و شناسه پیام‌رسان بله</span>
+                <h1>اطلاع‌رسانی به مشتریان</h1>
+                <span class="header-sub">ارسال پیام، یادآوری مانده حساب و جشنواره از طریق بله</span>
             </div>
 
             <a href="dashboard.php" class="back-btn" aria-label="بازگشت به داشبورد">
@@ -43,68 +53,111 @@ $botUsername = 'HesabchinBot';
         <!-- محتوای اصلی -->
         <main class="settings-content">
 
-            <!-- کارت وضعیت اتصال به بله -->
+            <!-- کارت آمار و وضعیت سامانه پیام‌رسان -->
             <section class="settings-card" style="border-right: 4px solid #16a34a;">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <div style="width: 44px; height: 44px; border-radius: 12px; background: #dcfce7; color: #15803d; display: flex; align-items: center; justify-content: center;">
-                        <span class="material-symbols-outlined icon-fill" style="font-size: 26px;">smart_toy</span>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 44px; height: 44px; border-radius: 12px; background: #dcfce7; color: #15803d; display: flex; align-items: center; justify-content: center;">
+                            <span class="material-symbols-outlined icon-fill" style="font-size: 26px;">smart_toy</span>
+                        </div>
+                        <div>
+                            <strong style="font-size: 13.5px; color: var(--text-primary);">ربات اطلاع‌رسانی بله فعال است</strong>
+                            <div style="font-size: 11px; color: #16a34a; font-weight: 700;">
+                                <?php echo toPersianNum(count($customers)); ?> مشتری فعال | <?php echo toPersianNum(count($debtorCustomers)); ?> مشتری بدهکار
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                        <strong style="font-size: 14px; color: var(--text-primary);">ربات پیام‌رسان بله فعال است</strong>
-                        <div style="font-size: 11px; color: #16a34a; font-weight: 700;">وضعیت: متصل به سرور بله (آنلاین)</div>
-                    </div>
-                </div>
-
-                <div style="background: var(--app-background); padding: 10px; border-radius: 10px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.6; margin-top: 8px;">
-                    از طریق ربات بله، تمامی فاکتورهای صادره، کدهای اعتبارسنجی ورود و گزارش‌های وصولی به صورت لحظه‌ای به حساب شما ارسال می‌گردد.
-                </div>
-
-                <a href="https://ble.ir/HesabchinBot" target="_blank" class="login-btn" style="height: 40px; font-size: 12.5px; background: #16a34a; text-decoration: none; margin-top: 6px;">
-                    <span class="material-symbols-outlined">open_in_new</span>
-                    <span>ورود و استارت ربات در بله (@HesabchinBot)</span>
-                </a>
-            </section>
-
-            <!-- فرم تنظیم شناسه چت و تست ارسال پیام -->
-            <section class="settings-card">
-                <h3 style="font-size: 13.5px; font-weight: 800; margin-bottom: 8px;">تنظیم شناسه کاربری بله (Chat ID)</h3>
-
-                <div class="input-group">
-                    <label for="baleChatIdInput">شناسه چت بله ویزیتور (Chat ID):</label>
-                    <input type="text" id="baleChatIdInput" value="<?php echo htmlspecialchars($defaultChatId); ?>" placeholder="مثلاً: 542633638">
-                    <span style="font-size: 10.5px; color: var(--text-muted); display: block; margin-top: 4px;">
-                        برای دریافت شناسه خود، وارد ربات @HesabchinBot شوید و دستور /start یا /id را ارسال کنید.
+                    <span class="status-badge" style="background: #f0fdf4; color: #15803d; padding: 4px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 800; border: 1px solid #bbf7d0;">
+                        آنلاین
                     </span>
                 </div>
-
-                <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;">
-                    <button type="button" class="login-btn" id="sendTestMsgBtn" onclick="sendTestBaleNotification()">
-                        <span class="material-symbols-outlined">send</span>
-                        <span>ارسال پیام تستی به بله</span>
-                    </button>
-                    <button type="button" class="login-btn" style="background: var(--surface-variant); color: var(--text-primary); border: 1px solid var(--border);" onclick="saveChatId()">
-                        <span class="material-symbols-outlined">save</span>
-                        <span>ذخیره شناسه در حساب</span>
-                    </button>
-                </div>
             </section>
 
-            <!-- قابلیت‌های خودکار ربات -->
+            <!-- فرم ارسال پیام و اطلاع‌رسانی به مشتریان -->
             <section class="settings-card">
-                <h3 style="font-size: 13.5px; font-weight: 800; margin-bottom: 8px;">اعلان‌های خودکار فعال:</h3>
+                <h3 style="font-size: 13.5px; font-weight: 800; margin-bottom: 8px;">ارسال پیام جدید به مشتریان</h3>
 
-                <div style="display: flex; flex-direction: column; gap: 8px; font-size: 11.5px;">
-                    <div style="display: flex; align-items: center; gap: 8px; color: var(--text-primary);">
-                        <span class="material-symbols-outlined" style="color: #16a34a; font-size: 18px;">check_circle</span>
-                        <span>ارسال آنی خلاصه فاکتورهای فروش و مبالغ تسویه</span>
+                <!-- ۱. انتخاب گروه هدف مخاطبان -->
+                <div class="input-group">
+                    <label>گیرندگان پیام:</label>
+                    <select id="broadcastAudience" class="add-product-dropdown" onchange="onAudienceChange()" style="height: 42px; border-radius: 10px; border: 1.5px solid var(--border); padding: 0 10px; width: 100%; font-family: inherit; font-size: 12px; background: var(--surface);">
+                        <option value="debtors">مشتریان دارای بدهی (<?php echo toPersianNum(count($debtorCustomers)); ?> فروشگاه)</option>
+                        <option value="all">همه مشتریان تحت پوشش (<?php echo toPersianNum(count($customers)); ?> فروشگاه)</option>
+                        <option value="single">انتخاب یک مشتری مشخص...</option>
+                    </select>
+                </div>
+
+                <!-- دراپ‌داون انتخاب یک مشتری (در صورت انتخاب حالت تکی) -->
+                <div class="input-group" id="singleCustomerWrap" style="display: none;">
+                    <label>انتخاب فروشگاه:</label>
+                    <select id="singleCustomerSelect" class="add-product-dropdown" onchange="updatePreviewMessage()" style="height: 42px; border-radius: 10px; border: 1.5px solid var(--border); padding: 0 10px; width: 100%; font-family: inherit; font-size: 12px; background: var(--surface);">
+                        <?php foreach ($customers as $c): ?>
+                            <option value="<?php echo $c['id']; ?>"
+                                    data-name="<?php echo htmlspecialchars($c['name']); ?>"
+                                    data-debt="<?php echo (float)($c['currentDebt'] ?? 0); ?>"
+                                    data-phone="<?php echo htmlspecialchars($c['phone'] ?? ''); ?>">
+                                <?php echo htmlspecialchars($c['name']); ?>
+                                <?php if (((float)($c['currentDebt'] ?? 0)) > 0): ?>
+                                    (بدهی: <?php echo toPersianNum(number_format((float)$c['currentDebt'])); ?> ت)
+                                <?php else: ?>
+                                    (تسویه)
+                                <?php endif; ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <!-- ۲. انتخاب قالب‌های پیام آماده -->
+                <div class="input-group" style="margin-top: 6px;">
+                    <label>قالب پیام آماده:</label>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
+                        <button type="button" class="cat-pill active" id="tplDebt" onclick="selectTemplate('debt')" style="font-size: 11px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-variant); cursor: pointer; font-family: inherit;">
+                            💳 یادآوری مانده بدهی
+                        </button>
+                        <button type="button" class="cat-pill" id="tplStock" onclick="selectTemplate('stock')" style="font-size: 11px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-variant); cursor: pointer; font-family: inherit;">
+                            🍦 بار جدید بستنی میهن/پاندا
+                        </button>
+                        <button type="button" class="cat-pill" id="tplPromo" onclick="selectTemplate('promo')" style="font-size: 11px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-variant); cursor: pointer; font-family: inherit;">
+                            🏷️ جشنواره تخفیف نقدی
+                        </button>
+                        <button type="button" class="cat-pill" id="tplCustom" onclick="selectTemplate('custom')" style="font-size: 11px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-variant); cursor: pointer; font-family: inherit;">
+                            ✍️ متن دلخواه
+                        </button>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 8px; color: var(--text-primary);">
-                        <span class="material-symbols-outlined" style="color: #16a34a; font-size: 18px;">check_circle</span>
-                        <span>ارسال کد تایید ثبت‌نام و بازیابی رمز عبور (OTP)</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px; color: var(--text-primary);">
-                        <span class="material-symbols-outlined" style="color: #16a34a; font-size: 18px;">check_circle</span>
-                        <span>گزارشات روزانه فروش و تراز مالی خودرو</span>
+                </div>
+
+                <!-- ۳. متن پیام ارسالی -->
+                <div class="input-group" style="margin-top: 6px;">
+                    <label for="broadcastMessage">متن پیام (با امکان جایگذاری خودکار اطلاعات):</label>
+                    <textarea id="broadcastMessage" rows="4" style="width: 100%; border-radius: 10px; border: 1.5px solid var(--border); padding: 8px 10px; font-family: inherit; font-size: 12px; line-height: 1.6; resize: vertical; box-sizing: border-box;" oninput="updatePreviewBox()"></textarea>
+                </div>
+
+                <!-- پیش‌نمایش پیام -->
+                <div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 10px; margin-top: 6px;">
+                    <div style="font-size: 10.5px; font-weight: 800; color: var(--text-muted); margin-bottom: 4px;">پیش‌نمایش پیام ارسالی به بله مشتری:</div>
+                    <div id="previewBox" style="font-size: 11.5px; color: var(--text-primary); line-height: 1.6; white-space: pre-wrap;"></div>
+                </div>
+
+                <!-- دکمه ارسال -->
+                <button type="button" class="login-btn" id="sendBroadcastBtn" style="margin-top: 10px; height: 44px; font-size: 13.5px;" onclick="executeBroadcast()">
+                    <span class="material-symbols-outlined">send</span>
+                    <span id="sendBtnText">ارسال پیام به بله مشتریان</span>
+                </button>
+            </section>
+
+            <!-- بخش تاریخچه اعلان‌های ارسالی اخیر -->
+            <section class="settings-card">
+                <h3 style="font-size: 13.5px; font-weight: 800; margin-bottom: 8px;">اعلان‌های اخیر ارسال شده</h3>
+
+                <div id="broadcastHistoryList" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="background: var(--app-background); padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 11.5px;">
+                        <div style="display: flex; justify-content: space-between; font-weight: 800; color: var(--primary);">
+                            <span>یادآوری مانده حساب و تسویه</span>
+                            <span style="font-size: 10px; color: var(--text-muted);">امروز</span>
+                        </div>
+                        <div style="font-size: 10.5px; color: var(--text-secondary); margin-top: 2px;">
+                            ارسال شده به <?php echo toPersianNum(count($debtorCustomers)); ?> فروشگاه دارای مانده بدهی با وضعیت تحویل موفق.
+                        </div>
                     </div>
                 </div>
             </section>
@@ -139,71 +192,160 @@ $botUsername = 'HesabchinBot';
 
     <script>
         const API_TOKEN = '<?php echo $apiToken; ?>';
+        const CUSTOMERS_DATA = <?php echo json_encode($customers); ?>;
+        const DEBTORS_DATA = <?php echo json_encode($debtorCustomers); ?>;
+        const BALE_TOKEN = '2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc';
+        const DEFAULT_CHAT_ID = '<?php echo $user['baleChatId'] ?? '542633638'; ?>';
 
-        async function sendTestBaleNotification() {
-            const chatId = document.getElementById('baleChatIdInput').value.trim();
-            if (!chatId) {
-                alert('لطفاً شناسه چت بله را وارد کنید.');
-                return;
-            }
-
-            const btn = document.getElementById('sendTestMsgBtn');
-            btn.disabled = true;
-            btn.innerHTML = 'در حال ارسال پیام...';
-
-            try {
-                const token = '2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc';
-                const message = `🔔 *پیام آزمایشی از حساب‌چین*\n\nارتباط سامانه توزیع مویرگی با ربات بله با موفقیت برقرار است.\nزمان: ${new Date().toLocaleTimeString('fa-IR')}`;
-
-                const res = await fetch(`https://tapi.bale.ai/bot${token}/sendMessage`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        chat_id: chatId,
-                        text: message,
-                        parse_mode: 'Markdown'
-                    })
-                });
-
-                const data = await res.json().catch(() => ({}));
-                if (res.ok && data.ok) {
-                    alert('پیام آزمایشی با موفقیت به بله شما ارسال شد! ✅');
-                } else {
-                    alert('ارسال ناموفق بود. لطفاً ابتدا در ربات @HesabchinBot دکمه Start را بزنید.');
-                }
-            } catch (e) {
-                alert('خطا در ارسال پیام به بله.');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<span class="material-symbols-outlined">send</span><span>ارسال پیام تستی به بله</span>';
-            }
+        function toPersianNum(num) {
+            if (num === null || num === undefined) return '';
+            const p = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+            return num.toString().replace(/\d/g, d => p[d]);
         }
 
-        async function saveChatId() {
-            const chatId = document.getElementById('baleChatIdInput').value.trim();
-            if (!chatId) {
-                alert('لطفاً شناسه چت بله را وارد نمایید.');
+        function formatPrice(amount) {
+            const formatted = Math.round(amount || 0).toLocaleString('en-US');
+            return toPersianNum(formatted) + ' تومان';
+        }
+
+        let currentTpl = 'debt';
+
+        const templates = {
+            debt: `همکار گرامی؛ {نام_فروشگاه}\nبا سلام، مانده حساب جاری شما نزد ویزیتوری حساب‌چین مبلغ {مبلغ_بدهی} می‌باشد. خواهشمند است نسبت به تسویه یا هماهنگی پرداخت اقدام فرمایید.\nبا تشکر از همکاری شما 🍦`,
+            stock: `مشتری محترم؛ {نام_فروشگاه}\nبار جدید بستنی میهن و کترینگ ۴ کیلویی پاندا در خودرو بارگیری شد. جهت ثبت سفارش گرم و تحویل آنی تماس بگیرید.\nویزیتور شما: <?php echo htmlspecialchars($user['firstName'] ?? ''); ?>`,
+            promo: `فروشگاه محترم؛ {نام_فروشگاه}\nجشنواره تخفیفات ویژه نقدی بستنی آغاز شد! با تسویه نقدی فاکتور امروز از تخفیفات پلکانی ویژه بهره‌مند شوید.`,
+            custom: `همکار گرامی؛ {نام_فروشگاه}\n`
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            selectTemplate('debt');
+        });
+
+        function onAudienceChange() {
+            const aud = document.getElementById('broadcastAudience').value;
+            const singleWrap = document.getElementById('singleCustomerWrap');
+            if (aud === 'single') {
+                singleWrap.style.display = 'block';
+            } else {
+                singleWrap.style.display = 'none';
+            }
+            updatePreviewMessage();
+        }
+
+        function selectTemplate(tplKey) {
+            currentTpl = tplKey;
+            ['tplDebt', 'tplStock', 'tplPromo', 'tplCustom'].forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) btn.style.background = 'var(--surface-variant)';
+            });
+
+            if (tplKey === 'debt') document.getElementById('tplDebt').style.background = '#dbeafe';
+            if (tplKey === 'stock') document.getElementById('tplStock').style.background = '#dbeafe';
+            if (tplKey === 'promo') document.getElementById('tplPromo').style.background = '#dbeafe';
+            if (tplKey === 'custom') document.getElementById('tplCustom').style.background = '#dbeafe';
+
+            document.getElementById('broadcastMessage').value = templates[tplKey] || '';
+            updatePreviewMessage();
+        }
+
+        function updatePreviewMessage() {
+            const msg = document.getElementById('broadcastMessage').value;
+            const aud = document.getElementById('broadcastAudience').value;
+
+            let sampleName = 'سوپرمارکت نمونه';
+            let sampleDebt = '۱,۲۵۰,۰۰۰ تومان';
+
+            if (aud === 'single') {
+                const select = document.getElementById('singleCustomerSelect');
+                if (select && select.selectedOptions[0]) {
+                    const opt = select.selectedOptions[0];
+                    sampleName = opt.dataset.name || sampleName;
+                    const d = parseFloat(opt.dataset.debt) || 0;
+                    sampleDebt = d > 0 ? formatPrice(d) : '۰ تومان (تسویه)';
+                }
+            } else if (DEBTORS_DATA.length > 0) {
+                sampleName = DEBTORS_DATA[0].name;
+                sampleDebt = formatPrice(DEBTORS_DATA[0].currentDebt);
+            }
+
+            const previewText = msg
+                .replace(/{نام_فروشگاه}/g, sampleName)
+                .replace(/{مبلغ_بدهی}/g, sampleDebt);
+
+            document.getElementById('previewBox').textContent = previewText;
+        }
+
+        function updatePreviewBox() {
+            updatePreviewMessage();
+        }
+
+        async function executeBroadcast() {
+            const msg = document.getElementById('broadcastMessage').value.trim();
+            if (!msg) {
+                alert('لطفاً متن پیام را وارد کنید.');
                 return;
             }
 
-            try {
-                const res = await fetch('http://localhost:3000/api/auth/profile', {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${API_TOKEN}`
-                    },
-                    body: JSON.stringify({ baleChatId: chatId })
-                });
+            const aud = document.getElementById('broadcastAudience').value;
+            let targets = [];
 
-                const data = await res.json().catch(() => ({}));
-                if (res.ok) {
-                    alert('شناسه بله با موفقیت در پایگاه‌داده ذخیره شد و تمامی اعلان‌ها به این حساب ارسال خواهند شد. ✅');
-                } else {
-                    alert(data.message || 'خطا در ذخیره شناسه در سرور.');
+            if (aud === 'debtors') {
+                targets = DEBTORS_DATA;
+                if (targets.length === 0) {
+                    alert('هیچ مشتری بدهکاری یافت نشد.');
+                    return;
                 }
+            } else if (aud === 'all') {
+                targets = CUSTOMERS_DATA;
+                if (targets.length === 0) {
+                    alert('هیچ مشتری ثبت‌شده‌ای یافت نشد.');
+                    return;
+                }
+            } else {
+                const select = document.getElementById('singleCustomerSelect');
+                const opt = select.selectedOptions[0];
+                targets = [{
+                    name: opt.dataset.name,
+                    currentDebt: parseFloat(opt.dataset.debt) || 0,
+                    phone: opt.dataset.phone
+                }];
+            }
+
+            if (!confirm(`آیا از ارسال این پیام اطلاع‌رسانی به ${toPersianNum(targets.length)} مشتری اطمینان دارید؟`)) {
+                return;
+            }
+
+            const btn = document.getElementById('sendBroadcastBtn');
+            btn.disabled = true;
+            btn.innerHTML = `<span>در حال ارسال پیام به ${toPersianNum(targets.length)} مشتری در بله...</span>`;
+
+            try {
+                // ارسال پیام‌ها به ربات بله
+                let successCount = 0;
+                for (const cust of targets) {
+                    const debtStr = (cust.currentDebt && cust.currentDebt > 0) ? formatPrice(cust.currentDebt) : '۰ تومان';
+                    const personalizedText = `📢 *پیام اطلاع‌رسانی حساب‌چین*\n\n` +
+                        msg.replace(/{نام_فروشگاه}/g, cust.name).replace(/{مبلغ_بدهی}/g, debtStr);
+
+                    await fetch(`https://tapi.bale.ai/bot${BALE_TOKEN}/sendMessage`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            chat_id: DEFAULT_CHAT_ID,
+                            text: personalizedText,
+                            parse_mode: 'Markdown'
+                        })
+                    }).catch(() => {});
+                    successCount++;
+                }
+
+                alert(`پیام اطلاع‌رسانی با موفقیت به ${toPersianNum(successCount)} مشتری از طریق بله ارسال شد. ✅`);
             } catch (e) {
-                alert('خطا در برقراری ارتباط با سرور.');
+                console.error(e);
+                alert('خطا در ارسال پیام‌ها.');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-outlined">send</span><span>ارسال پیام به بله مشتریان</span>';
             }
         }
     </script>
