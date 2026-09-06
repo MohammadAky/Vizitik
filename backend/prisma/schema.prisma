@@ -1,0 +1,242 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserRole {
+  VISITOR
+  ADMIN
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  CHECK
+  CREDIT
+}
+
+enum CheckStatus {
+  PENDING
+  PASSED
+  BOUNCED
+}
+
+enum LedgerEntryType {
+  ORDER_DEBIT
+  PAYMENT_CREDIT
+  ADJUSTMENT
+}
+
+// ============================================================
+// MODELS
+// ============================================================
+
+model User {
+  id           String   @id @default(uuid())
+  firstName    String
+  lastName     String
+  phone        String   @unique
+  passwordHash String
+  baleChatId   String?
+  role         UserRole @default(VISITOR)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  customUserProducts UserProduct[]
+  createdProducts    Product[]         @relation("ProductCreatedBy")
+  vanInventory       VanInventory[]
+  customers          Customer[]
+  orders             Order[]
+  invoiceSettings    InvoiceSettings[]
+
+  @@map("users")
+}
+
+model Product {
+  id                    String   @id @default(uuid())
+  name                  String
+  brand                 String?
+  category              String?
+  imageUrl              String?
+  baseUnitPrice         Decimal  @db.Decimal(12, 2)
+  unitsPerCartonDefault Int
+  isGlobal              Boolean  @default(true)
+  createdById           String?
+  createdBy             User?    @relation("ProductCreatedBy", fields: [createdById], references: [id])
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  userSettings UserProduct[]
+  vanInventory VanInventory[]
+  orderItems   OrderItem[]
+
+  @@map("products")
+}
+
+model UserProduct {
+  id                   String   @id @default(uuid())
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId            String
+  product              Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  customCartonPrice    Decimal? @db.Decimal(12, 2)
+  customUnitPrice      Decimal? @db.Decimal(12, 2)
+  customUnitsPerCarton Int?
+  isActiveForUser      Boolean  @default(true)
+  updatedAt            DateTime @updatedAt
+
+  @@unique([userId, productId])
+  @@map("user_products")
+}
+
+model Customer {
+  id                String   @id @default(uuid())
+  name              String
+  address           String?
+  phone             String?
+  notes             String?
+  assignedVisitorId String
+  assignedVisitor   User     @relation(fields: [assignedVisitorId], references: [id])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  orders        Order[]
+  ledgerEntries CustomerLedger[]
+
+  @@map("customers")
+}
+
+model CustomerLedger {
+  id               String          @id @default(uuid())
+  customerId       String
+  customer         Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type             LedgerEntryType
+  relatedOrderId   String?
+  relatedOrder     Order?          @relation(fields: [relatedOrderId], references: [id], onDelete: SetNull)
+  relatedPaymentId String?
+  relatedPayment   Payment?        @relation(fields: [relatedPaymentId], references: [id], onDelete: SetNull)
+  amount           Decimal         @db.Decimal(12, 2)
+  balanceAfter     Decimal         @db.Decimal(12, 2)
+  createdAt        DateTime        @default(now())
+
+  @@map("customer_ledger")
+}
+
+model VanInventory {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantityCartons Int      @default(0)
+  quantityUnits   Int      @default(0)
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, productId])
+  @@map("van_inventory")
+}
+
+model Order {
+  id                  String      @id @default(uuid())
+  localUuid           String      @unique
+  customerId          String
+  customer            Customer    @relation(fields: [customerId], references: [id])
+  visitorId           String
+  visitor             User        @relation(fields: [visitorId], references: [id])
+  orderDate           DateTime    @default(now())
+  status              OrderStatus @default(DRAFT)
+  subtotalAmount      Decimal     @db.Decimal(12, 2)
+  totalDiscountAmount Decimal     @db.Decimal(12, 2) @default(0)
+  finalAmount         Decimal     @db.Decimal(12, 2)
+  isSynced            Boolean     @default(true)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  items         OrderItem[]
+  discountSteps OrderDiscountStep[]
+  payments      Payment[]
+  ledgerEntries CustomerLedger[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id                  String  @id @default(uuid())
+  orderId             String
+  order               Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId           String
+  product             Product @relation(fields: [productId], references: [id])
+  cartonCount         Int     @default(0)
+  unitCount           Int     @default(0)
+  unitPriceSnapshot   Decimal @db.Decimal(12, 2)
+  cartonPriceSnapshot Decimal @db.Decimal(12, 2)
+  lineTotal           Decimal @db.Decimal(12, 2)
+
+  @@map("order_items")
+}
+
+model OrderDiscountStep {
+  id               String  @id @default(uuid())
+  orderId          String
+  order            Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  stepOrder        Int
+  percent          Decimal @db.Decimal(5, 2)
+  amountBeforeStep Decimal @db.Decimal(12, 2)
+  amountAfterStep  Decimal @db.Decimal(12, 2)
+
+  @@map("order_discount_steps")
+}
+
+model Payment {
+  id      String        @id @default(uuid())
+  orderId String
+  order   Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  method  PaymentMethod
+  amount  Decimal       @db.Decimal(12, 2)
+  paidAt  DateTime      @default(now())
+
+  check         Check?
+  ledgerEntries CustomerLedger[]
+
+  @@map("payments")
+}
+
+model Check {
+  id              String      @id @default(uuid())
+  paymentId       String      @unique
+  payment         Payment     @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  checkNumber     String
+  bankName        String?
+  dueDate         DateTime
+  status          CheckStatus @default(PENDING)
+  statusUpdatedAt DateTime    @updatedAt
+
+  @@map("checks")
+}
+
+model InvoiceSettings {
+  id                    String   @id @default(uuid())
+  userId                String?
+  user                  User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  showDiscountBreakdown Boolean  @default(true)
+  showVanInventoryRef   Boolean  @default(false)
+  isDefault             Boolean  @default(false)
+
+  @@map("invoice_settings")
+}

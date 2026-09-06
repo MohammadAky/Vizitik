@@ -1,0 +1,669 @@
+/* ============================================================
+   حساب‌چین — استایل اختصاصی صفحه ثبت سفارش بر اساس موجودی خودرو (new-order.css)
+============================================================ */
+
+/* هدر صفحه سفارش */
+.order-header {
+  flex-shrink: 0;
+  background: #001d31;
+  color: #ffffff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 12px 16px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.order-header .header-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.order-header .header-title-box h1 {
+  font-size: 17px;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+}
+
+.order-header .header-title-box .header-sub {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.order-header .back-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  text-decoration: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.order-header .back-btn:active {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.order-header .back-btn .material-symbols-outlined {
+  font-size: 22px;
+  transform: scaleX(-1);
+}
+
+/* کارت انتخاب مشتری */
+.customer-select-card {
+  background: var(--app-background);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.customer-select-card:hover {
+  border-color: var(--primary);
+  background: var(--surface);
+}
+
+.customer-info-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cust-avatar-mini {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--primary-light);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cust-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cust-name {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.cust-debt-badge {
+  font-size: 10.5px;
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.cust-debt-badge.cleared {
+  color: #16a34a;
+}
+
+.change-cust-text {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* اسکرول ناحیه سفارش */
+.order-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 16px 130px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* حالت خالی بودن بار ون */
+.empty-van-box {
+  background: var(--surface);
+  border: 1.5px dashed #fed7aa;
+  border-radius: 20px;
+  padding: 36px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 12px;
+  margin: auto 0;
+  box-shadow: 0 4px 20px rgba(234, 88, 12, 0.05);
+}
+
+.empty-van-box .material-symbols-outlined {
+  font-size: 54px;
+  color: #ea580c;
+}
+
+.empty-van-box h3 {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.empty-van-box p {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0;
+  max-width: 280px;
+}
+
+.goto-loading-btn {
+  height: 46px;
+  padding: 0 24px;
+  border-radius: 14px;
+  background: #ea580c;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 800;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.28);
+  transition: all 0.2s;
+}
+
+.goto-loading-btn:active {
+  transform: scale(0.97);
+}
+
+/* نوار جستجو و دسته‌ها */
+.search-filter-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-input-wrap .material-symbols-outlined {
+  position: absolute;
+  right: 12px;
+  color: var(--text-muted);
+  font-size: 20px;
+}
+
+.search-input-wrap input {
+  width: 100%;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0 40px 0 12px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.category-pills-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.category-pills-row::-webkit-scrollbar {
+  display: none;
+}
+
+.cat-pill {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cat-pill.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+}
+
+/* لیست کارت‌های محصولات موجود در ون */
+.order-product-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.product-order-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 18px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s;
+}
+
+.product-order-card.has-quantity {
+  border-color: var(--primary);
+  background: #f8fbff;
+  box-shadow: 0 4px 12px rgba(0, 97, 148, 0.09);
+}
+
+.prod-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.prod-main-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.prod-title-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.prod-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.prod-brand-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.prod-brand-tag.panda {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.prod-prices-line {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.prod-prices-line strong {
+  color: var(--text-primary);
+  font-weight: 800;
+}
+
+.van-stock-badge {
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+  white-space: nowrap;
+}
+
+/* بخش استپرها: اول کارتن بعد دانه */
+.prod-steppers-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--surface-variant);
+}
+
+.steppers-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stepper-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stepper-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.stepper-control {
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+
+.step-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: var(--app-background);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 800;
+  transition: 0.15s;
+}
+
+.step-btn:active {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.step-input {
+  width: 44px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--primary);
+  outline: none;
+}
+
+/* نوار اختصاصی جمع ردیف در پایین کارت */
+.line-total-badge-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 11.5px;
+  display: none;
+}
+
+.line-total-badge-row.show {
+  display: flex;
+}
+
+.line-total-badge-row .calc-label {
+  color: #166534;
+  font-weight: 700;
+}
+
+.line-total-badge-row .calc-amount {
+  color: #15803d;
+  font-weight: 900;
+  font-size: 13px;
+}
+
+/* نوار شناور پایین صفحه */
+.order-bottom-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 12px 16px;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.order-calc-breakdown {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+}
+
+.calc-row-left {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.calc-subtotal {
+  color: var(--text-muted);
+}
+
+.calc-row-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.calc-final-label {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.calc-final-amount {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--primary);
+}
+
+.checkout-cta-btn {
+  height: 48px;
+  border-radius: 14px;
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(0, 97, 148, 0.25);
+  transition: all 0.2s;
+}
+
+.checkout-cta-btn:active {
+  background: var(--primary-dark);
+  transform: scale(0.98);
+}
+
+.checkout-cta-btn:disabled {
+  background: #cbd5e1;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* مدال تایید اقلام قبل از رفتن به پرداخت */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.confirm-order-sheet {
+  background: var(--surface);
+  border-radius: 24px 24px 0 0;
+  width: 100%;
+  max-width: 420px;
+  max-height: 85vh;
+  padding: 18px 18px 24px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.25);
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.confirm-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--app-background);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.confirm-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.confirm-item-row:last-child {
+  border-bottom: none;
+}
+
+.confirm-actions-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.confirm-submit-btn {
+  height: 46px;
+  border-radius: 12px;
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.confirm-cancel-btn {
+  height: 40px;
+  border-radius: 12px;
+  background: var(--app-background);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* مدال انتخاب و تغییر مشتری */
+.customer-picker-sheet {
+  background: var(--surface);
+  border-radius: 24px 24px 0 0;
+  width: 100%;
+  max-width: 440px;
+  max-height: 85vh;
+  padding: 18px 18px 24px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.25);
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.picker-cust-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  max-height: 55vh;
+  padding: 4px 2px;
+}
+
+.picker-cust-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--app-background);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.picker-cust-item:hover,
+.picker-cust-item:active {
+  border-color: var(--primary);
+  background: #f0f7ff;
+  transform: translateY(-1px);
+}
+
+.picker-cust-item div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}

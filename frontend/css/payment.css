@@ -1,0 +1,698 @@
+/* ============================================================
+   حساب‌چین — بازطراحی کامل صفحه پرداخت و تسویه (payment.css)
+============================================================ */
+
+/* هدر صفحه پرداخت */
+.payment-header {
+  flex-shrink: 0;
+  background: #001d31;
+  color: #ffffff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 12px 16px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.payment-header .header-title-box h1 {
+  font-size: 17px;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+}
+
+.payment-header .header-title-box .header-sub {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.payment-header .back-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  text-decoration: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.payment-header .back-btn:active {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.payment-header .back-btn .material-symbols-outlined {
+  font-size: 22px;
+  transform: scaleX(-1);
+}
+
+/* اسکرول ناحیه پرداخت */
+.payment-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 16px 40px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ۱. کارت اطلاعات مشتری و جمع سفارش */
+.customer-summary-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 18px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+.cust-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--surface-variant);
+  padding-bottom: 8px;
+}
+
+.cust-summary-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cust-summary-name strong {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.cust-summary-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.cust-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-secondary);
+}
+
+.cust-summary-row strong {
+  color: var(--text-primary);
+}
+
+.cust-summary-row.total-row {
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--primary);
+}
+
+/* ۲. بخش ۴ روش پرداخت (نقد، پوز، چک، نسیه) */
+.payment-methods-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pay-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pay-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pay-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.pay-card-title .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.pay-card-title.cash .material-symbols-outlined { color: #16a34a; }
+.pay-card-title.pos .material-symbols-outlined { color: #2563eb; }
+.pay-card-title.check .material-symbols-outlined { color: #d97706; }
+.pay-card-title.credit .material-symbols-outlined { color: #475569; }
+
+.quick-btn {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--primary-light);
+  border: none;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pay-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.pay-amount-input {
+  width: 100%;
+  height: 42px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: var(--app-background);
+  padding: 0 12px 0 50px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text-primary);
+  outline: none;
+  direction: ltr;
+  text-align: right;
+  transition: all 0.2s;
+}
+
+.pay-amount-input:focus {
+  border-color: var(--primary);
+  background: var(--surface);
+}
+
+.input-unit {
+  position: absolute;
+  left: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* چک صیادی و تاریخ شمسی */
+.check-fields-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+.persian-date-group {
+  display: flex;
+  gap: 6px;
+  direction: rtl;
+}
+
+.p-date-select {
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  padding: 0 6px;
+  outline: none;
+}
+
+.p-date-select.day { flex: 1; }
+.p-date-select.month { flex: 1.5; }
+.p-date-select.year { flex: 1.2; }
+
+.due-pills-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.due-pill {
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid #fde68a;
+}
+
+/* ۳. بخش تخفیفات (سمت راست درصد، وسط مبلغی، سمت چپ علامت ثبت) */
+.discounts-container-card {
+  background: var(--surface);
+  border: 1.5px solid #fed7aa;
+  border-radius: 18px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.04);
+}
+
+.discounts-inputs-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.discount-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.discount-field label {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.discount-input-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.discount-input-box input {
+  width: 100%;
+  height: 40px;
+  border-radius: 10px;
+  border: 1.5px solid #fed7aa;
+  background: #fffaf5;
+  padding: 0 8px 0 24px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  color: #c2410c;
+  outline: none;
+  direction: ltr;
+  text-align: right;
+  transition: all 0.2s;
+}
+
+.discount-input-box input:focus {
+  border-color: #ea580c;
+  background: #ffffff;
+}
+
+.discount-unit-tag {
+  position: absolute;
+  left: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ea580c;
+  pointer-events: none;
+}
+
+.discount-action-wrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-end;
+}
+
+.apply-discount-btn {
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: #ea580c;
+  color: #ffffff;
+  border: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.25);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.apply-discount-btn:active {
+  transform: scale(0.96);
+  background: #c2410c;
+}
+
+.apply-discount-btn .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* لیست تخفیف‌های ثبت‌شده زیر هم با امکان حذف هر کدام */
+.applied-discounts-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px dashed #fed7aa;
+  padding-top: 8px;
+}
+
+.applied-discounts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.applied-discount-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #fff7ed;
+  border: 1px solid #ffedd5;
+  border-radius: 10px;
+  padding: 6px 10px;
+  transition: all 0.2s;
+}
+
+.applied-discount-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.discount-step-num {
+  font-size: 10px;
+  font-weight: 800;
+  background: #ffedd5;
+  color: #c2410c;
+  padding: 1px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.applied-discount-info .discount-tag-icon {
+  font-size: 16px;
+  color: #ea580c;
+  flex-shrink: 0;
+}
+
+.applied-discount-text {
+  font-size: 11px;
+  font-weight: 800;
+  color: #c2410c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.remove-discount-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.remove-discount-btn:hover {
+  background: #fca5a5;
+  color: #991b1b;
+}
+
+.remove-discount-btn:active {
+  transform: scale(0.95);
+}
+
+.remove-discount-btn .material-symbols-outlined {
+  font-size: 15px;
+}
+
+.applied-discounts-total {
+  font-size: 11px;
+  font-weight: 800;
+  color: #9a3412;
+  background: #ffedd5;
+  padding: 6px 10px;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ۴. کارت وضعیت تسویه و مبلغ نهایی */
+.final-balance-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.final-balance-card.settled {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.final-balance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.final-balance-row .amount {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--primary);
+}
+
+/* ۵. دکمه ثبت نهایی زیر تمام بخش‌ها */
+.submit-order-box {
+  margin-top: 4px;
+}
+
+.submit-order-btn {
+  width: 100%;
+  height: 48px;
+  border-radius: 14px;
+  background: #16a34a;
+  color: #ffffff;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.25);
+  transition: all 0.2s;
+}
+
+.submit-order-btn:hover {
+  background: #15803d;
+}
+
+.submit-order-btn:active {
+  transform: scale(0.98);
+}
+
+.submit-order-btn:disabled {
+  background: #cbd5e1;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* مدال تایید نهایی پرداخت */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.confirm-pay-sheet {
+  background: var(--surface);
+  border-radius: 24px 24px 0 0;
+  width: 100%;
+  max-width: 420px;
+  padding: 18px 18px 24px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.confirm-recap-box {
+  background: var(--app-background);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.confirm-recap-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.confirm-recap-row.highlight {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--primary);
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+/* مدال فاکتور حرارتی ۸۰ میلی‌متری */
+.invoice-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 120;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(4px);
+}
+
+.thermal-invoice-container {
+  background: #ffffff;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 360px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.thermal-invoice-header {
+  background: var(--primary);
+  color: #ffffff;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.thermal-receipt-paper {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  background: #ffffff;
+  font-family: 'Courier New', Courier, monospace, 'Vazirmatn';
+  font-size: 11.5px;
+  color: #000000;
+  line-height: 1.5;
+  border-bottom: 2px dashed #cbd5e1;
+}
+
+.receipt-center {
+  text-align: center;
+}
+
+.receipt-title {
+  font-size: 14px;
+  font-weight: 900;
+  margin-bottom: 2px;
+}
+
+.receipt-sub {
+  font-size: 10px;
+  color: #475569;
+}
+
+.receipt-divider {
+  border-top: 1px dashed #000000;
+  margin: 8px 0;
+}
+
+.receipt-row {
+  display: flex;
+  justify-content: space-between;
+  margin: 2px 0;
+}
+
+.thermal-modal-actions {
+  padding: 12px 16px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.print-receipt-btn {
+  height: 44px;
+  border-radius: 12px;
+  background: var(--primary);
+  color: #ffffff;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.close-receipt-btn {
+  height: 40px;
+  border-radius: 12px;
+  background: #e2e8f0;
+  color: #334155;
+  border: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
