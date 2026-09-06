@@ -41,6 +41,11 @@
   transform: scale(0.94);
 }
 
+.back-btn .material-symbols-outlined {
+  font-size: 22px;
+  transform: scaleX(-1);
+}
+
 .header-title-box {
   flex: 1;
   display: flex;

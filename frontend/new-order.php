@@ -60,9 +60,14 @@ $categories = array_values(array_unique(array_filter(array_column($loadedProduct
         <!-- هدر تیره صفحه ثبت سفارش -->
         <header class="order-header">
             <div class="header-top-row">
-                <div class="header-title-box">
-                    <h1>ثبت سفارش و صدور فاکتور</h1>
-                    <span class="header-sub">انتخاب از موجودی بار خودرو</span>
+                <div class="header-right-group">
+                    <a href="van-loading.php" class="header-van-btn" title="مشاهده و بارگیری کالاهای خودرو" aria-label="بارگیری خودرو">
+                        <span class="material-symbols-outlined">local_shipping</span>
+                    </a>
+                    <div class="header-title-box">
+                        <h1>ثبت سفارش و صدور فاکتور</h1>
+                        <span class="header-sub">انتخاب از موجودی بار خودرو</span>
+                    </div>
                 </div>
 
                 <a href="dashboard.php" class="back-btn" onclick="return handleSafeBack(event)" aria-label="بازگشت به داشبورد">

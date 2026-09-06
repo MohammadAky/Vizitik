@@ -175,7 +175,7 @@ if (empty($categories)) {
                 </div>
 
                 <a href="dashboard.php" class="back-btn" aria-label="بازگشت به داشبورد">
-                    <span class="material-symbols-outlined">arrow_back</span>
+                    <span class="material-symbols-outlined">arrow_forward</span>
                 </a>
             </div>
 
