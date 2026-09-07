@@ -967,7 +967,7 @@ body {
   display: flex;
   justify-content: space-around;
   align-items: center;
-  z-index: 100;
+  z-index: 50;
 }
 
 .nav-item {
@@ -975,52 +975,28 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 3px;
   color: var(--text-muted);
   text-decoration: none;
-  font-size: 10px;
+  font-size: 10.5px;
+  font-weight: 600;
   flex: 1;
   height: 100%;
+  transition: all 0.15s ease;
+}
+
+.nav-item .material-symbols-outlined {
+  font-size: 22px;
+  color: inherit;
 }
 
 .nav-item.active {
   color: var(--primary);
-  font-weight: 700;
+  font-weight: 800;
 }
 
-/* دکمه برجسته و آبی مشتریان در مرکز نوار ناوبری برای دسترسی سریع */
-.nav-item.nav-item-center {
-  position: relative;
-  top: -12px;
-  background: linear-gradient(135deg, #0284c7 0%, #006194 100%);
-  color: #ffffff !important;
-  width: 52px;
-  height: 52px;
-  max-width: 52px;
-  border-radius: 50%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.45);
-  border: 3.5px solid var(--surface);
-  flex: 0 0 52px;
-  transition: all 0.15s ease;
-  z-index: 110;
-}
-
-.nav-item.nav-item-center:active {
-  transform: scale(0.92);
-  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
-}
-
-.nav-item.nav-item-center .material-symbols-outlined {
-  font-size: 26px;
-  color: #ffffff;
-}
-
-.nav-item.nav-item-center span:not(.material-symbols-outlined) {
-  display: none;
+.nav-item:active {
+  transform: scale(0.95);
 }
 
 /* =========================

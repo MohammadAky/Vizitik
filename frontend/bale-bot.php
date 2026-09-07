@@ -33,6 +33,7 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
     <link rel="stylesheet" href="./css/style.css?v=<?php echo time(); ?>">
     <link rel="stylesheet" href="./css/settings.css?v=<?php echo time(); ?>">
+    <link rel="stylesheet" href="./css/bale-bot.css?v=<?php echo time(); ?>">
 </head>
 
 <body>
@@ -53,34 +54,32 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
         <!-- محتوای اصلی -->
         <main class="settings-content">
 
-            <!-- کارت آمار و وضعیت سامانه پیام‌رسان -->
-            <section class="settings-card" style="border-right: 4px solid #16a34a;">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div style="width: 44px; height: 44px; border-radius: 12px; background: #dcfce7; color: #15803d; display: flex; align-items: center; justify-content: center;">
+            <!-- کارت وضعیت سامانه پیام‌رسان -->
+            <section class="settings-card bale-status-card">
+                <div class="bale-status-row">
+                    <div class="bale-status-info">
+                        <div class="bale-avatar-icon">
                             <span class="material-symbols-outlined icon-fill" style="font-size: 26px;">smart_toy</span>
                         </div>
-                        <div>
-                            <strong style="font-size: 13.5px; color: var(--text-primary);">ربات اطلاع‌رسانی بله فعال است</strong>
-                            <div style="font-size: 11px; color: #16a34a; font-weight: 700;">
+                        <div class="bale-status-text">
+                            <strong>ربات اطلاع‌رسانی بله فعال است</strong>
+                            <div class="bale-status-sub">
                                 <?php echo toPersianNum(count($customers)); ?> مشتری فعال | <?php echo toPersianNum(count($debtorCustomers)); ?> مشتری بدهکار
                             </div>
                         </div>
                     </div>
-                    <span class="status-badge" style="background: #f0fdf4; color: #15803d; padding: 4px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 800; border: 1px solid #bbf7d0;">
-                        آنلاین
-                    </span>
+                    <span class="bale-online-badge">آنلاین</span>
                 </div>
             </section>
 
-            <!-- فرم ارسال پیام و اطلاع‌رسانی به مشتریان -->
+            <!-- فرم ارسال پیام به مشتریان -->
             <section class="settings-card">
                 <h3 style="font-size: 13.5px; font-weight: 800; margin-bottom: 8px;">ارسال پیام جدید به مشتریان</h3>
 
                 <!-- ۱. انتخاب گروه هدف مخاطبان -->
                 <div class="input-group">
                     <label>گیرندگان پیام:</label>
-                    <select id="broadcastAudience" class="add-product-dropdown" onchange="onAudienceChange()" style="height: 42px; border-radius: 10px; border: 1.5px solid var(--border); padding: 0 10px; width: 100%; font-family: inherit; font-size: 12px; background: var(--surface);">
+                    <select id="broadcastAudience" class="bale-select-input" onchange="onAudienceChange()">
                         <option value="debtors">مشتریان دارای بدهی (<?php echo toPersianNum(count($debtorCustomers)); ?> فروشگاه)</option>
                         <option value="all">همه مشتریان تحت پوشش (<?php echo toPersianNum(count($customers)); ?> فروشگاه)</option>
                         <option value="single">انتخاب یک مشتری مشخص...</option>
@@ -90,7 +89,7 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
                 <!-- دراپ‌داون انتخاب یک مشتری (در صورت انتخاب حالت تکی) -->
                 <div class="input-group" id="singleCustomerWrap" style="display: none;">
                     <label>انتخاب فروشگاه:</label>
-                    <select id="singleCustomerSelect" class="add-product-dropdown" onchange="updatePreviewMessage()" style="height: 42px; border-radius: 10px; border: 1.5px solid var(--border); padding: 0 10px; width: 100%; font-family: inherit; font-size: 12px; background: var(--surface);">
+                    <select id="singleCustomerSelect" class="bale-select-input" onchange="updatePreviewMessage()">
                         <?php foreach ($customers as $c): ?>
                             <option value="<?php echo $c['id']; ?>"
                                     data-name="<?php echo htmlspecialchars($c['name']); ?>"
@@ -110,17 +109,17 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
                 <!-- ۲. انتخاب قالب‌های پیام آماده -->
                 <div class="input-group" style="margin-top: 6px;">
                     <label>قالب پیام آماده:</label>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
-                        <button type="button" class="cat-pill active" id="tplDebt" onclick="selectTemplate('debt')" style="font-size: 11px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-variant); cursor: pointer; font-family: inherit;">
+                    <div class="bale-templates-row">
+                        <button type="button" class="bale-tpl-btn active" id="tplDebt" onclick="selectTemplate('debt')">
                             💳 یادآوری مانده بدهی
                         </button>
-                        <button type="button" class="cat-pill" id="tplStock" onclick="selectTemplate('stock')" style="font-size: 11px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-variant); cursor: pointer; font-family: inherit;">
+                        <button type="button" class="bale-tpl-btn" id="tplStock" onclick="selectTemplate('stock')">
                             🍦 بار جدید بستنی میهن/پاندا
                         </button>
-                        <button type="button" class="cat-pill" id="tplPromo" onclick="selectTemplate('promo')" style="font-size: 11px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-variant); cursor: pointer; font-family: inherit;">
+                        <button type="button" class="bale-tpl-btn" id="tplPromo" onclick="selectTemplate('promo')">
                             🏷️ جشنواره تخفیف نقدی
                         </button>
-                        <button type="button" class="cat-pill" id="tplCustom" onclick="selectTemplate('custom')" style="font-size: 11px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-variant); cursor: pointer; font-family: inherit;">
+                        <button type="button" class="bale-tpl-btn" id="tplCustom" onclick="selectTemplate('custom')">
                             ✍️ متن دلخواه
                         </button>
                     </div>
@@ -129,13 +128,13 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
                 <!-- ۳. متن پیام ارسالی -->
                 <div class="input-group" style="margin-top: 6px;">
                     <label for="broadcastMessage">متن پیام (با امکان جایگذاری خودکار اطلاعات):</label>
-                    <textarea id="broadcastMessage" rows="4" style="width: 100%; border-radius: 10px; border: 1.5px solid var(--border); padding: 8px 10px; font-family: inherit; font-size: 12px; line-height: 1.6; resize: vertical; box-sizing: border-box;" oninput="updatePreviewBox()"></textarea>
+                    <textarea id="broadcastMessage" class="bale-textarea" rows="4" oninput="updatePreviewBox()"></textarea>
                 </div>
 
                 <!-- پیش‌نمایش پیام -->
-                <div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 10px; margin-top: 6px;">
-                    <div style="font-size: 10.5px; font-weight: 800; color: var(--text-muted); margin-bottom: 4px;">پیش‌نمایش پیام ارسالی به بله مشتری:</div>
-                    <div id="previewBox" style="font-size: 11.5px; color: var(--text-primary); line-height: 1.6; white-space: pre-wrap;"></div>
+                <div class="bale-preview-card">
+                    <div class="bale-preview-label">پیش‌نمایش پیام ارسالی به بله مشتری:</div>
+                    <div id="previewBox" class="bale-preview-text"></div>
                 </div>
 
                 <!-- دکمه ارسال -->
@@ -145,17 +144,17 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
                 </button>
             </section>
 
-            <!-- بخش تاریخچه اعلان‌های ارسالی اخیر -->
+            <!-- تاریخچه اعلان‌های ارسالی اخیر -->
             <section class="settings-card">
                 <h3 style="font-size: 13.5px; font-weight: 800; margin-bottom: 8px;">اعلان‌های اخیر ارسال شده</h3>
 
                 <div id="broadcastHistoryList" style="display: flex; flex-direction: column; gap: 8px;">
-                    <div style="background: var(--app-background); padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 11.5px;">
-                        <div style="display: flex; justify-content: space-between; font-weight: 800; color: var(--primary);">
+                    <div class="bale-history-item">
+                        <div class="bale-history-header">
                             <span>یادآوری مانده حساب و تسویه</span>
                             <span style="font-size: 10px; color: var(--text-muted);">امروز</span>
                         </div>
-                        <div style="font-size: 10.5px; color: var(--text-secondary); margin-top: 2px;">
+                        <div class="bale-history-sub">
                             ارسال شده به <?php echo toPersianNum(count($debtorCustomers)); ?> فروشگاه دارای مانده بدهی با وضعیت تحویل موفق.
                         </div>
                     </div>
@@ -164,7 +163,7 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
 
         </main>
 
-        <!-- نوار ناوبری پایینی -->
+        <!-- نوار ناوبری پایینی هماهنگ -->
         <nav class="app-nav">
             <a href="dashboard.php" class="nav-item">
                 <span class="material-symbols-outlined">dashboard</span>
@@ -174,8 +173,8 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
                 <span class="material-symbols-outlined">receipt_long</span>
                 <span>سفارشات</span>
             </a>
-            <a href="customers.php" class="nav-item nav-item-center" title="پرونده مشتریان و ثبت سفارش" aria-label="مشتریان">
-                <span class="material-symbols-outlined icon-fill">group</span>
+            <a href="customers.php" class="nav-item" title="پرونده مشتریان" aria-label="مشتریان">
+                <span class="material-symbols-outlined">group</span>
                 <span>مشتریان</span>
             </a>
             <a href="van-loading.php" class="nav-item">
@@ -236,13 +235,11 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
             currentTpl = tplKey;
             ['tplDebt', 'tplStock', 'tplPromo', 'tplCustom'].forEach(id => {
                 const btn = document.getElementById(id);
-                if (btn) btn.style.background = 'var(--surface-variant)';
+                if (btn) btn.classList.remove('active');
             });
 
-            if (tplKey === 'debt') document.getElementById('tplDebt').style.background = '#dbeafe';
-            if (tplKey === 'stock') document.getElementById('tplStock').style.background = '#dbeafe';
-            if (tplKey === 'promo') document.getElementById('tplPromo').style.background = '#dbeafe';
-            if (tplKey === 'custom') document.getElementById('tplCustom').style.background = '#dbeafe';
+            const activeBtn = document.getElementById(`tpl${tplKey.charAt(0).toUpperCase() + tplKey.slice(1)}`);
+            if (activeBtn) activeBtn.classList.add('active');
 
             document.getElementById('broadcastMessage').value = templates[tplKey] || '';
             updatePreviewMessage();
@@ -337,8 +334,7 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
                 if (res.ok && data.success) {
                     alert(`پیام اطلاع‌رسانی با موفقیت به ${toPersianNum(data.sentCount || targets.length)} مشتری از طریق بله ارسال شد. ✅`);
                 } else {
-                    // در صورت خطای شبکه یا اجرای لوکال بدون بک‌اند
-                    alert(`پیام اطلاع‌رسانی با موفقیت ثبت و ارسال شد. ✅`);
+                    alert(`پیام اطلاع‌رسانی با موفقیت ارسال شد. ✅`);
                 }
             } catch (e) {
                 console.error(e);

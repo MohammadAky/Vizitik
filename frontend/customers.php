@@ -286,7 +286,7 @@ foreach ($customers as $c) {
             </div>
         </div>
 
-        <!-- نوار ناوبری پایینی با دکمه وسط مشتریان به رنگ آبی -->
+        <!-- نوار ناوبری پایینی -->
         <nav class="app-nav">
             <a href="dashboard.php" class="nav-item">
                 <span class="material-symbols-outlined">dashboard</span>
@@ -296,7 +296,7 @@ foreach ($customers as $c) {
                 <span class="material-symbols-outlined">receipt_long</span>
                 <span>سفارشات</span>
             </a>
-            <a href="customers.php" class="nav-item nav-item-center active" title="پرونده مشتریان و ثبت سفارش" aria-label="مشتریان">
+            <a href="customers.php" class="nav-item active" title="پرونده مشتریان" aria-label="مشتریان">
                 <span class="material-symbols-outlined icon-fill">group</span>
                 <span>مشتریان</span>
             </a>
