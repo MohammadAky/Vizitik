@@ -110,6 +110,7 @@ model Customer {
   name              String
   address           String?
   phone             String?
+  baleChatId        String?
   notes             String?
   assignedVisitorId String
   assignedVisitor   User     @relation(fields: [assignedVisitorId], references: [id])
