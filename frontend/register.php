@@ -119,15 +119,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         <input type="tel" name="phone" placeholder="09xxxxxxxxx" maxlength="11" autocomplete="tel" required>
                     </div>
 
-                    <!-- شناسه چت بله (دریافت و قفل در زمان ثبت نام) -->
-                    <div class="input-group">
-                        <label>شناسه کاربری پیام‌رسان بله (Chat ID)</label>
-                        <input type="text" name="bale_chat_id" placeholder="مثلاً: 542633638" value="542633638" required>
-                        <span style="font-size: 10px; color: var(--text-muted); display: block; margin-top: 3px;">
-                            جهت دریافت آنی فاکتورها و اعلان‌ها به چت بله شما
-                        </span>
-                    </div>
-
                     <!-- رمز عبور جدید -->
                     <div class="input-group">
                         <label>رمز عبور (حداقل ۶ کاراکتر)</label>
