@@ -46,3 +46,6 @@ Thumbs.db
 
 # TypeScript Cache
 *.tsbuildinfo
+
+# Archives
+*.zip
