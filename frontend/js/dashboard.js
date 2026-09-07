@@ -52,7 +52,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const newInvoiceBtn = document.getElementById("newInvoiceBtn");
   if (newInvoiceBtn) {
     newInvoiceBtn.addEventListener("click", () => {
-      window.location.href = "invoice-new.php";
+      window.location.href = "new-order.php";
     });
   }
 });
