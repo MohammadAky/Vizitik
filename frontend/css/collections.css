@@ -13,6 +13,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 
 .collections-header .header-top-row {
@@ -128,7 +129,7 @@
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
 }
 
-/* لیست بدهکاران */
+/* لیست بدهکاران و چک‌ها */
 .debtors-list, .checks-list {
   display: flex;
   flex-direction: column;
@@ -328,6 +329,52 @@
 .check-action-btn.bounce {
   background: #dc2626;
   color: #ffffff;
+}
+
+/* کادرهای خالی (Empty States) شیک با آیکون‌های گوگل */
+.empty-state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 16px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  gap: 8px;
+  text-align: center;
+}
+
+.empty-state-card .empty-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: var(--surface-variant);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.empty-state-card .empty-icon.success {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.empty-state-card .empty-icon .material-symbols-outlined {
+  font-size: 28px;
+}
+
+.empty-state-card strong {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.empty-state-card span {
+  font-size: 11.5px;
+  color: var(--text-muted);
 }
 
 /* مدال ثبت دریافت وجه به صورت Bottom Sheet بی‌نقص */

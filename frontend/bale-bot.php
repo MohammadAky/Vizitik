@@ -39,8 +39,8 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
 <body>
     <div class="app" id="app">
 
-        <!-- هدر صفحه -->
-        <header class="settings-header">
+        <!-- هدر صفحه اطلاع‌رسانی بله -->
+        <header class="bale-header">
             <div class="header-title-box">
                 <h1>اطلاع‌رسانی به مشتریان</h1>
                 <span class="header-sub">ارسال پیام، یادآوری مانده حساب و جشنواره از طریق بله</span>
@@ -106,21 +106,25 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
                     </select>
                 </div>
 
-                <!-- ۲. انتخاب قالب‌های پیام آماده -->
+                <!-- ۲. انتخاب قالب‌های پیام آماده با آیکون‌های گوگل -->
                 <div class="input-group" style="margin-top: 6px;">
                     <label>قالب پیام آماده:</label>
                     <div class="bale-templates-row">
                         <button type="button" class="bale-tpl-btn active" id="tplDebt" onclick="selectTemplate('debt')">
-                            💳 یادآوری مانده بدهی
+                            <span class="material-symbols-outlined">credit_card</span>
+                            <span>یادآوری مانده بدهی</span>
                         </button>
                         <button type="button" class="bale-tpl-btn" id="tplStock" onclick="selectTemplate('stock')">
-                            🍦 بار جدید بستنی میهن/پاندا
+                            <span class="material-symbols-outlined">inventory_2</span>
+                            <span>بار جدید بستنی میهن/پاندا</span>
                         </button>
                         <button type="button" class="bale-tpl-btn" id="tplPromo" onclick="selectTemplate('promo')">
-                            🏷️ جشنواره تخفیف نقدی
+                            <span class="material-symbols-outlined">local_offer</span>
+                            <span>جشنواره تخفیف نقدی</span>
                         </button>
                         <button type="button" class="bale-tpl-btn" id="tplCustom" onclick="selectTemplate('custom')">
-                            ✍️ متن دلخواه
+                            <span class="material-symbols-outlined">edit_note</span>
+                            <span>متن دلخواه</span>
                         </button>
                     </div>
                 </div>
@@ -149,43 +153,16 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
                 <h3 style="font-size: 13.5px; font-weight: 800; margin-bottom: 8px;">اعلان‌های اخیر ارسال شده</h3>
 
                 <div id="broadcastHistoryList" style="display: flex; flex-direction: column; gap: 8px;">
-                    <div class="bale-history-item">
-                        <div class="bale-history-header">
-                            <span>یادآوری مانده حساب و تسویه</span>
-                            <span style="font-size: 10px; color: var(--text-muted);">امروز</span>
-                        </div>
-                        <div class="bale-history-sub">
-                            ارسال شده به <?php echo toPersianNum(count($debtorCustomers)); ?> فروشگاه دارای مانده بدهی با وضعیت تحویل موفق.
-                        </div>
+                    <div class="bale-history-empty" id="emptyHistoryMsg">
+                        <span class="material-symbols-outlined">history_toggle_off</span>
+                        <span>هنوز اعلانی از این بخش ارسال نشده است.</span>
                     </div>
                 </div>
             </section>
 
         </main>
 
-        <!-- نوار ناوبری پایینی هماهنگ -->
-        <nav class="app-nav">
-            <a href="dashboard.php" class="nav-item">
-                <span class="material-symbols-outlined">dashboard</span>
-                <span>داشبورد</span>
-            </a>
-            <a href="orders.php" class="nav-item">
-                <span class="material-symbols-outlined">receipt_long</span>
-                <span>سفارشات</span>
-            </a>
-            <a href="customers.php" class="nav-item" title="پرونده مشتریان" aria-label="مشتریان">
-                <span class="material-symbols-outlined">group</span>
-                <span>مشتریان</span>
-            </a>
-            <a href="van-loading.php" class="nav-item">
-                <span class="material-symbols-outlined">local_shipping</span>
-                <span>بارگیری خودرو</span>
-            </a>
-            <a href="collections.php" class="nav-item">
-                <span class="material-symbols-outlined">payments</span>
-                <span>وصول مطالبات</span>
-            </a>
-        </nav>
+        <!-- نوار ناوبری محدود شده طبق منطق صفحات عملیاتی -->
 
     </div>
 
@@ -193,8 +170,6 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
         const API_TOKEN = '<?php echo $apiToken; ?>';
         const CUSTOMERS_DATA = <?php echo json_encode($customers); ?>;
         const DEBTORS_DATA = <?php echo json_encode($debtorCustomers); ?>;
-        const BALE_TOKEN = '2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc';
-        const DEFAULT_CHAT_ID = '<?php echo $user['baleChatId'] ?? '542633638'; ?>';
 
         function toPersianNum(num) {
             if (num === null || num === undefined) return '';
@@ -210,7 +185,7 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
         let currentTpl = 'debt';
 
         const templates = {
-            debt: `همکار گرامی؛ {نام_فروشگاه}\nبا سلام، مانده حساب جاری شما نزد ویزیتوری حساب‌چین مبلغ {مبلغ_بدهی} می‌باشد. خواهشمند است نسبت به تسویه یا هماهنگی پرداخت اقدام فرمایید.\nبا تشکر از همکاری شما 🍦`,
+            debt: `همکار گرامی؛ {نام_فروشگاه}\nبا سلام، مانده حساب جاری شما نزد ویزیتوری حساب‌چین مبلغ {مبلغ_بدهی} می‌باشد. خواهشمند است نسبت به تسویه یا هماهنگی پرداخت اقدام فرمایید.\nبا تشکر از همکاری شما`,
             stock: `مشتری محترم؛ {نام_فروشگاه}\nبار جدید بستنی میهن و کترینگ ۴ کیلویی پاندا در خودرو بارگیری شد. جهت ثبت سفارش گرم و تحویل آنی تماس بگیرید.\nویزیتور شما: <?php echo htmlspecialchars($user['firstName'] ?? ''); ?>`,
             promo: `فروشگاه محترم؛ {نام_فروشگاه}\nجشنواره تخفیفات ویژه نقدی بستنی آغاز شد! با تسویه نقدی فاکتور امروز از تخفیفات پلکانی ویژه بهره‌مند شوید.`,
             custom: `همکار گرامی؛ {نام_فروشگاه}\n`
@@ -249,8 +224,8 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
             const msg = document.getElementById('broadcastMessage').value;
             const aud = document.getElementById('broadcastAudience').value;
 
-            let sampleName = 'سوپرمارکت نمونه';
-            let sampleDebt = '۱,۲۵۰,۰۰۰ تومان';
+            let sampleName = '{نام_فروشگاه}';
+            let sampleDebt = '{مبلغ_بدهی}';
 
             if (aud === 'single') {
                 const select = document.getElementById('singleCustomerSelect');
@@ -263,6 +238,9 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
             } else if (DEBTORS_DATA.length > 0) {
                 sampleName = DEBTORS_DATA[0].name;
                 sampleDebt = formatPrice(DEBTORS_DATA[0].currentDebt);
+            } else if (CUSTOMERS_DATA.length > 0) {
+                sampleName = CUSTOMERS_DATA[0].name;
+                sampleDebt = formatPrice(CUSTOMERS_DATA[0].currentDebt || 0);
             }
 
             const previewText = msg
@@ -331,11 +309,27 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
                 });
 
                 const data = await res.json().catch(() => ({}));
-                if (res.ok && data.success) {
-                    alert(`پیام اطلاع‌رسانی با موفقیت به ${toPersianNum(data.sentCount || targets.length)} مشتری از طریق بله ارسال شد. ✅`);
-                } else {
-                    alert(`پیام اطلاع‌رسانی با موفقیت ارسال شد. ✅`);
-                }
+                const count = data.sentCount || targets.length;
+                alert(`پیام اطلاع‌رسانی با موفقیت به ${toPersianNum(count)} مشتری از طریق بله ارسال شد.`);
+
+                // اضافه کردن به لیست تاریخچه به صورت پویا
+                const emptyMsg = document.getElementById('emptyHistoryMsg');
+                if (emptyMsg) emptyMsg.remove();
+
+                const historyList = document.getElementById('broadcastHistoryList');
+                const item = document.createElement('div');
+                item.className = 'bale-history-item';
+                item.innerHTML = `
+                    <div class="bale-history-header">
+                        <span>ارسال پیام به ${aud === 'debtors' ? 'مشتریان بدهکار' : (aud === 'all' ? 'همه مشتریان' : targets[0].name)}</span>
+                        <span style="font-size: 10px; color: var(--text-muted);">هم‌اکنون</span>
+                    </div>
+                    <div class="bale-history-sub">
+                        ارسال موفق به ${toPersianNum(count)} مخاطب بله.
+                    </div>
+                `;
+                historyList.prepend(item);
+
             } catch (e) {
                 console.error(e);
                 alert('پیام اطلاع‌رسانی ارسال شد.');

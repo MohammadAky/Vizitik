@@ -137,8 +137,12 @@ $apiToken = getAccessToken();
                         </article>
                     <?php endforeach; ?>
                 <?php else: ?>
-                    <div style="text-align: center; padding: 30px 16px; color: var(--text-muted); font-size: 13px;">
-                        🎉 تمامی حساب‌های مشتریان تسویه است و مانده بدهی بازی وجود ندارد.
+                    <div class="empty-state-card">
+                        <div class="empty-icon success">
+                            <span class="material-symbols-outlined">task_alt</span>
+                        </div>
+                        <strong>تمامی حساب‌های مشتریان تسویه است</strong>
+                        <span>هیچ مانده بدهی بازی در سیستم وجود ندارد.</span>
                     </div>
                 <?php endif; ?>
             </section>
@@ -178,8 +182,12 @@ $apiToken = getAccessToken();
                         </article>
                     <?php endforeach; ?>
                 <?php else: ?>
-                    <div style="text-align: center; padding: 30px 16px; color: var(--text-muted); font-size: 13px;">
-                        📄 هیچ چک دریافتی در سیستم ثبت نشده است.
+                    <div class="empty-state-card">
+                        <div class="empty-icon">
+                            <span class="material-symbols-outlined">fact_check</span>
+                        </div>
+                        <strong>هیچ چک دریافتی ثبت نشده است</strong>
+                        <span>در حال حاضر چک بازی در سیستم وجود ندارد.</span>
                     </div>
                 <?php endif; ?>
             </section>
