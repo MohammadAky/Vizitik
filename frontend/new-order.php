@@ -115,7 +115,7 @@ $categories = array_values(array_unique(array_filter(array_column($loadedProduct
                     <h3>هیچ کالایی در خودرو بارگیری نشده است</h3>
                     <p>برای ثبت سفارش مشتری در پخش گرم، ابتدا اقلام موجود را در خودرو بارگیری نمایید.</p>
                     <a href="van-loading.php" class="goto-loading-btn">
-                        <span class="material-symbols-outlined">local_shipping</span>
+
                         <span>ورود به بخش بارگیری خودرو</span>
                     </a>
                 </div>
@@ -180,7 +180,7 @@ $categories = array_values(array_unique(array_filter(array_column($loadedProduct
                                         <span class="prod-brand-tag <?php echo ($brand === 'پاندا') ? 'panda' : ''; ?>"><?php echo htmlspecialchars($brand); ?></span>
                                     </div>
                                     <div class="prod-prices-line">
-                                        <span>کارتن (<?php echo toPersianNum($unitsPerCarton); ?> تایی): <strong><?php echo toPersianNum(number_format($cartonPrice)); ?></strong> ت</span> | 
+                                        <span>کارتن (<?php echo toPersianNum($unitsPerCarton); ?> تایی): <strong><?php echo toPersianNum(number_format($cartonPrice)); ?></strong> ت</span> |
                                         <span>فی دانه: <strong><?php echo toPersianNum(number_format($unitPrice)); ?></strong> ت</span>
                                     </div>
                                 </div>
@@ -232,22 +232,22 @@ $categories = array_values(array_unique(array_filter(array_column($loadedProduct
         </main>
 
         <?php if (!empty($loadedProducts)): ?>
-        <!-- نوار پایین صفحه -->
-        <footer class="order-bottom-bar">
-            <div class="order-calc-breakdown">
-                <div class="calc-row-left">
-                    <span class="calc-subtotal">جمع کل اقلام انتخابی:</span>
-                    <strong class="calc-final-amount" id="calcFinalVal">۰ تومان</strong>
+            <!-- نوار پایین صفحه -->
+            <footer class="order-bottom-bar">
+                <div class="order-calc-breakdown">
+                    <div class="calc-row-left">
+                        <span class="calc-subtotal">جمع کل اقلام انتخابی:</span>
+                        <strong class="calc-final-amount" id="calcFinalVal">۰ تومان</strong>
+                    </div>
+                    <div class="calc-row-right">
+                        <span class="calc-final-label">تخفیف در مرحله پرداخت اعمال می‌شود</span>
+                    </div>
                 </div>
-                <div class="calc-row-right">
-                    <span class="calc-final-label">تخفیف در مرحله پرداخت اعمال می‌شود</span>
-                </div>
-            </div>
 
-            <button type="button" class="checkout-cta-btn" id="checkoutCtaBtn" onclick="openOrderConfirmModal()" disabled>
-                <span>حداقل یک محصول را انتخاب نمایید</span>
-            </button>
-        </footer>
+                <button type="button" class="checkout-cta-btn" id="checkoutCtaBtn" onclick="openOrderConfirmModal()" disabled>
+                    <span>حداقل یک محصول را انتخاب نمایید</span>
+                </button>
+            </footer>
         <?php endif; ?>
 
         <!-- مدال تایید اقلام سفارش قبل از رفتن به پرداخت -->
@@ -355,7 +355,7 @@ $categories = array_values(array_unique(array_filter(array_column($loadedProduct
 
         function openOrderConfirmModal() {
             if (!orderState.customerId || Object.keys(orderState.items).length === 0) return;
-            
+
             document.getElementById('confirmCustTitle').textContent = `مشتری: ${orderState.customerName}`;
             const list = document.getElementById('confirmItemsList');
             list.innerHTML = '';
@@ -363,7 +363,7 @@ $categories = array_values(array_unique(array_filter(array_column($loadedProduct
             Object.values(orderState.items).forEach(item => {
                 const row = document.createElement('div');
                 row.className = 'confirm-item-row';
-                
+
                 let qtyStr = '';
                 if (item.cartonCount > 0 && item.unitCount > 0) {
                     qtyStr = `${toPersianNum(item.cartonCount)} کارتن + ${toPersianNum(item.unitCount)} دانه`;

@@ -12,6 +12,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 
 .orders-header .header-title-box h1 {
@@ -196,10 +197,22 @@
   border-radius: 6px;
 }
 
-.pay-tag.cash { background: #dcfce7; color: #15803d; }
-.pay-tag.pos { background: #dbeafe; color: #1d4ed8; }
-.pay-tag.check { background: #fef3c7; color: #b45309; }
-.pay-tag.credit { background: #fee2e2; color: #b91c1c; }
+.pay-tag.cash {
+  background: #dcfce7;
+  color: #15803d;
+}
+.pay-tag.pos {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.pay-tag.check {
+  background: #fef3c7;
+  color: #b45309;
+}
+.pay-tag.credit {
+  background: #fee2e2;
+  color: #b91c1c;
+}
 
 /* دکمه‌های عملیات کارت */
 .order-actions-row {
@@ -428,6 +441,10 @@
 }
 
 @keyframes slideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }

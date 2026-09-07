@@ -92,9 +92,9 @@ $totalDebtAmount = array_reduce($debtorCustomers, function ($sum, $c) {
                     <select id="singleCustomerSelect" class="bale-select-input" onchange="updatePreviewMessage()">
                         <?php foreach ($customers as $c): ?>
                             <option value="<?php echo $c['id']; ?>"
-                                    data-name="<?php echo htmlspecialchars($c['name']); ?>"
-                                    data-debt="<?php echo (float)($c['currentDebt'] ?? 0); ?>"
-                                    data-phone="<?php echo htmlspecialchars($c['phone'] ?? ''); ?>">
+                                data-name="<?php echo htmlspecialchars($c['name']); ?>"
+                                data-debt="<?php echo (float)($c['currentDebt'] ?? 0); ?>"
+                                data-phone="<?php echo htmlspecialchars($c['phone'] ?? ''); ?>">
                                 <?php echo htmlspecialchars($c['name']); ?>
                                 <?php if (((float)($c['currentDebt'] ?? 0)) > 0): ?>
                                     (بدهی: <?php echo toPersianNum(number_format((float)$c['currentDebt'])); ?> ت)

@@ -33,7 +33,7 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
     $recentItems = array_slice($apiOrders, 0, 5);
     foreach ($recentItems as $ord) {
         $storeName = $ord['customer']['name'] ?? 'مشتری ناشناس';
-        
+
         $orderDate = $ord['orderDate'] ?? '';
         $timeStr = !empty($orderDate) ? date('H:i', strtotime($orderDate)) : 'امروز';
         $timePersian = toPersianNum($timeStr);
@@ -173,7 +173,7 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
             <!-- دکمه‌های دسترسی سریع (بدون گزینه‌های تکراری و به همراه مدیریت ربات بله کنار کالا) -->
             <section class="quick-actions">
                 <a href="products.php" class="action-btn animate-item">
-                    <div class="action-icon">
+                    <div class="action-icon danger">
                         <span class="material-symbols-outlined icon-fill">inventory_2</span>
                     </div>
                     <span>لیست کالاها</span>
@@ -184,12 +184,7 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
                     </div>
                     <span>مدیریت ربات بله</span>
                 </a>
-                <a href="van-loading.php" class="action-btn animate-item">
-                    <div class="action-icon" style="background: #eff6ff; color: #2563eb;">
-                        <span class="material-symbols-outlined icon-fill">local_shipping</span>
-                    </div>
-                    <span>بارگیری خودرو</span>
-                </a>
+
             </section>
 
             <!-- لیست سفارشات اخیر -->
@@ -242,17 +237,17 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
                 <span class="material-symbols-outlined icon-fill">dashboard</span>
                 <span>داشبورد</span>
             </a>
-            <a href="orders.php" class="nav-item">
-                <span class="material-symbols-outlined">receipt_long</span>
-                <span>سفارشات</span>
+            <a href="van-loading.php" class="nav-item">
+                <span class="material-symbols-outlined">local_shipping</span>
+                <span>بارگیری خودرو</span>
             </a>
             <a href="customers.php" class="nav-item" title="پرونده مشتریان" aria-label="مشتریان">
                 <span class="material-symbols-outlined">group</span>
                 <span>مشتریان</span>
             </a>
-            <a href="van-loading.php" class="nav-item">
-                <span class="material-symbols-outlined">local_shipping</span>
-                <span>بارگیری خودرو</span>
+            <a href="orders.php" class="nav-item">
+                <span class="material-symbols-outlined">receipt_long</span>
+                <span>سفارشات</span>
             </a>
             <a href="collections.php" class="nav-item">
                 <span class="material-symbols-outlined">payments</span>

@@ -90,13 +90,13 @@ $productsCatalog = (!empty($apiProducts) && is_array($apiProducts)) ? $apiProduc
                         }
                     ?>
                         <article class="order-card"
-                                 id="orderCard_<?php echo $ordId; ?>"
-                                 data-id="<?php echo $ordId; ?>"
-                                 data-customer="<?php echo htmlspecialchars($custName); ?>"
-                                 data-inv="<?php echo htmlspecialchars($invNo); ?>"
-                                 data-final="<?php echo $finalAmount; ?>"
-                                 data-subtotal="<?php echo $subtotal; ?>"
-                                 data-discount="<?php echo $discount; ?>">
+                            id="orderCard_<?php echo $ordId; ?>"
+                            data-id="<?php echo $ordId; ?>"
+                            data-customer="<?php echo htmlspecialchars($custName); ?>"
+                            data-inv="<?php echo htmlspecialchars($invNo); ?>"
+                            data-final="<?php echo $finalAmount; ?>"
+                            data-subtotal="<?php echo $subtotal; ?>"
+                            data-discount="<?php echo $discount; ?>">
 
                             <div class="order-card-header">
                                 <div class="order-cust-info">
@@ -164,17 +164,18 @@ $productsCatalog = (!empty($apiProducts) && is_array($apiProducts)) ? $apiProduc
                 <span class="material-symbols-outlined">dashboard</span>
                 <span>داشبورد</span>
             </a>
-            <a href="orders.php" class="nav-item active">
-                <span class="material-symbols-outlined icon-fill">receipt_long</span>
-                <span>سفارشات</span>
+            <a href="van-loading.php" class="nav-item">
+                <span class="material-symbols-outlined">local_shipping</span>
+                <span>بارگیری خودرو</span>
             </a>
+
             <a href="customers.php" class="nav-item" title="پرونده مشتریان" aria-label="مشتریان">
                 <span class="material-symbols-outlined">group</span>
                 <span>مشتریان</span>
             </a>
-            <a href="van-loading.php" class="nav-item">
-                <span class="material-symbols-outlined">local_shipping</span>
-                <span>بارگیری خودرو</span>
+            <a href="orders.php" class="nav-item active">
+                <span class="material-symbols-outlined icon-fill">receipt_long</span>
+                <span>سفارشات</span>
             </a>
             <a href="collections.php" class="nav-item">
                 <span class="material-symbols-outlined">payments</span>
@@ -214,11 +215,11 @@ $productsCatalog = (!empty($apiProducts) && is_array($apiProducts)) ? $apiProduc
                                 <option value="">انتخاب محصول از کاتالوگ...</option>
                                 <?php foreach ($productsCatalog as $p): ?>
                                     <option value="<?php echo $p['id']; ?>"
-                                            data-name="<?php echo htmlspecialchars($p['name']); ?>"
-                                            data-brand="<?php echo htmlspecialchars($p['brand'] ?? 'میهن'); ?>"
-                                            data-units="<?php echo $p['unitsPerCartonDefault'] ?? 1; ?>"
-                                            data-unitprice="<?php echo $p['baseUnitPrice'] ?? 0; ?>"
-                                            data-cartonprice="<?php echo ($p['baseUnitPrice'] ?? 0) * ($p['unitsPerCartonDefault'] ?? 1); ?>">
+                                        data-name="<?php echo htmlspecialchars($p['name']); ?>"
+                                        data-brand="<?php echo htmlspecialchars($p['brand'] ?? 'میهن'); ?>"
+                                        data-units="<?php echo $p['unitsPerCartonDefault'] ?? 1; ?>"
+                                        data-unitprice="<?php echo $p['baseUnitPrice'] ?? 0; ?>"
+                                        data-cartonprice="<?php echo ($p['baseUnitPrice'] ?? 0) * ($p['unitsPerCartonDefault'] ?? 1); ?>">
                                         <?php echo htmlspecialchars($p['name']); ?> (<?php echo htmlspecialchars($p['brand'] ?? 'میهن'); ?>)
                                     </option>
                                 <?php endforeach; ?>

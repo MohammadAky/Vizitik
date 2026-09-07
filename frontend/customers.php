@@ -50,7 +50,7 @@ foreach ($customers as $c) {
                     <!-- نشانگر طلب کل بازار -->
                     <div class="header-stat-badge">
                         <span class="material-symbols-outlined">payments</span>
-                        <span id="totalDebtAmount"><?php echo toPersianNum(number_format($totalMarketDebt)); ?> تومان طلب</span>
+                        <span id="totalDebtAmount"><?php echo toPersianNum(number_format($totalMarketDebt)); ?> تومان مانده بازار</span>
                     </div>
 
                     <a href="dashboard.php" class="back-btn" aria-label="بازگشت به داشبورد">
@@ -99,24 +99,24 @@ foreach ($customers as $c) {
             <?php else: ?>
                 <?php foreach ($customers as $c): ?>
                     <?php
-                        $cId = $c['id'];
-                        $cName = $c['name'] ?? 'مشتری بدون نام';
-                        $cAddress = $c['address'] ?? 'آدرس ثبت نشده';
-                        $cPhone = $c['phone'] ?? '';
-                        $cNotes = $c['notes'] ?? '';
-                        $debt = (float)($c['currentDebt'] ?? 0);
-                        $hasDebt = $debt > 0;
-                        $isSettled = $debt == 0;
-                        $lastOrderDate = !empty($c['lastOrderDate']) ? date('Y/m/d', strtotime($c['lastOrderDate'])) : 'بدون سفارش';
+                    $cId = $c['id'];
+                    $cName = $c['name'] ?? 'مشتری بدون نام';
+                    $cAddress = $c['address'] ?? 'آدرس ثبت نشده';
+                    $cPhone = $c['phone'] ?? '';
+                    $cNotes = $c['notes'] ?? '';
+                    $debt = (float)($c['currentDebt'] ?? 0);
+                    $hasDebt = $debt > 0;
+                    $isSettled = $debt == 0;
+                    $lastOrderDate = !empty($c['lastOrderDate']) ? date('Y/m/d', strtotime($c['lastOrderDate'])) : 'بدون سفارش';
                     ?>
-                    <article class="customer-card" 
-                             data-id="<?php echo htmlspecialchars($cId); ?>"
-                             data-name="<?php echo htmlspecialchars($cName); ?>"
-                             data-address="<?php echo htmlspecialchars($cAddress); ?>"
-                             data-phone="<?php echo htmlspecialchars($cPhone); ?>"
-                             data-notes="<?php echo htmlspecialchars($cNotes); ?>"
-                             data-debt="<?php echo $debt; ?>"
-                             onclick="openCustomerSheet('<?php echo htmlspecialchars($cId); ?>')">
+                    <article class="customer-card"
+                        data-id="<?php echo htmlspecialchars($cId); ?>"
+                        data-name="<?php echo htmlspecialchars($cName); ?>"
+                        data-address="<?php echo htmlspecialchars($cAddress); ?>"
+                        data-phone="<?php echo htmlspecialchars($cPhone); ?>"
+                        data-notes="<?php echo htmlspecialchars($cNotes); ?>"
+                        data-debt="<?php echo $debt; ?>"
+                        onclick="openCustomerSheet('<?php echo htmlspecialchars($cId); ?>')">
 
                         <div class="customer-card-header">
                             <div class="customer-main-info">
@@ -286,7 +286,7 @@ foreach ($customers as $c) {
             </div>
         </div>
 
-        <!-- نوار ناوبری پایینی -->
+        <!-- نوار ناوبری پایینی
         <nav class="app-nav">
             <a href="dashboard.php" class="nav-item">
                 <span class="material-symbols-outlined">dashboard</span>
@@ -308,7 +308,7 @@ foreach ($customers as $c) {
                 <span class="material-symbols-outlined">payments</span>
                 <span>وصول مطالبات</span>
             </a>
-        </nav>
+        </nav> -->
 
     </div>
 
