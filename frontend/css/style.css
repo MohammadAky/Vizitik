@@ -852,18 +852,21 @@ body {
 }
 
 .badge.success {
-  background: rgba(16, 185, 129, 0.1) !important;
-  color: var(--status-success) !important;
+  background: #ecfdf5 !important;
+  color: #047857 !important;
+  border: 1px solid #a7f3d0;
 }
 
 .badge.danger {
-  background: rgba(239, 68, 68, 0.1) !important;
-  color: var(--status-error) !important;
+  background: #fef2f2 !important;
+  color: #b91c1c !important;
+  border: 1px solid #fecaca;
 }
 
 .badge.warning {
-  background: rgba(245, 158, 11, 0.1) !important;
-  color: var(--status-warning) !important;
+  background: #fffbeb !important;
+  color: #b45309 !important;
+  border: 1px solid #fde68a;
 }
 
 @keyframes orderFadeIn {

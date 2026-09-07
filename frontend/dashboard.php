@@ -38,22 +38,31 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
         $timeStr = !empty($orderDate) ? date('H:i', strtotime($orderDate)) : 'امروز';
         $timePersian = toPersianNum($timeStr);
 
-        $status = 'success';
-        $statusText = 'تسویه شد';
+        $finalAmount = (float)($ord['finalAmount'] ?? 0);
+        $paidSum = 0;
+        if (!empty($ord['payments']) && is_array($ord['payments'])) {
+            foreach ($ord['payments'] as $p) {
+                $paidSum += (float)($p['amount'] ?? 0);
+            }
+        }
+        $remainingCredit = max(0, $finalAmount - $paidSum);
 
-        if (($ord['status'] ?? '') === 'DRAFT') {
-            $status = 'danger';
-            $statusText = 'نسیه (اعتباری)';
-        } elseif (($ord['status'] ?? '') === 'PENDING') {
+        if ($remainingCredit <= 0) {
+            $status = 'success';
+            $statusText = 'تسویه شد';
+        } elseif ($paidSum > 0) {
             $status = 'warning';
-            $statusText = 'در جریان';
+            $statusText = 'مانده نسیه: ' . toPersianNum(number_format($remainingCredit)) . ' ت';
+        } else {
+            $status = 'danger';
+            $statusText = 'نسیه کامل';
         }
 
         $orders[] = [
             'id'         => $ord['id'] ?? '',
             'title'      => $storeName,
             'time'       => $timePersian,
-            'amount'     => toPersianNum(number_format((float)($ord['finalAmount'] ?? 0))),
+            'amount'     => toPersianNum(number_format($finalAmount)),
             'status'     => $status,
             'statusText' => $statusText,
         ];
