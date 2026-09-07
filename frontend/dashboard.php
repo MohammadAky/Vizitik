@@ -236,7 +236,7 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
             ثبت فاکتور جدید
         </a>
 
-        <!-- نوار ناوبری پایینی با دکمه وسط مشتریان به رنگ آبی -->
+        <!-- نوار ناوبری پایینی -->
         <nav class="app-nav animate-item">
             <a href="dashboard.php" class="nav-item active">
                 <span class="material-symbols-outlined icon-fill">dashboard</span>
@@ -246,8 +246,8 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
                 <span class="material-symbols-outlined">receipt_long</span>
                 <span>سفارشات</span>
             </a>
-            <a href="customers.php" class="nav-item nav-item-center" title="پرونده مشتریان و ثبت سفارش" aria-label="مشتریان">
-                <span class="material-symbols-outlined icon-fill">group</span>
+            <a href="customers.php" class="nav-item" title="پرونده مشتریان" aria-label="مشتریان">
+                <span class="material-symbols-outlined">group</span>
                 <span>مشتریان</span>
             </a>
             <a href="van-loading.php" class="nav-item">

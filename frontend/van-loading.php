@@ -285,7 +285,7 @@ if (empty($categories)) {
             </button>
         </footer>
 
-        <!-- نوار ناوبری پایینی با دکمه وسط مشتریان به رنگ آبی -->
+        <!-- نوار ناوبری پایینی -->
         <nav class="app-nav">
             <a href="dashboard.php" class="nav-item">
                 <span class="material-symbols-outlined">dashboard</span>
@@ -295,8 +295,8 @@ if (empty($categories)) {
                 <span class="material-symbols-outlined">receipt_long</span>
                 <span>سفارشات</span>
             </a>
-            <a href="customers.php" class="nav-item nav-item-center" title="پرونده مشتریان و ثبت سفارش" aria-label="مشتریان">
-                <span class="material-symbols-outlined icon-fill">group</span>
+            <a href="customers.php" class="nav-item" title="پرونده مشتریان" aria-label="مشتریان">
+                <span class="material-symbols-outlined">group</span>
                 <span>مشتریان</span>
             </a>
             <a href="van-loading.php" class="nav-item active">
