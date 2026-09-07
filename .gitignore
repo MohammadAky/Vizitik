@@ -47,5 +47,14 @@ Thumbs.db
 # TypeScript Cache
 *.tsbuildinfo
 
+# Uploads & Temporary Media
+uploads/
+*/uploads/
+tmp/
+temp/
+
 # Archives
 *.zip
+*.tar.gz
+*.rar
+*.7z
