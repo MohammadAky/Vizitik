@@ -266,6 +266,136 @@ export class AuthService {
     };
   }
 
+  /**
+   * پردازش وب‌هوک بله: دریافت استارت و اشتراک‌گذاری شماره موبایل مشتری یا ویزیتور
+   * و اتصال خودکار شماره به دیتابیس SQL بدون نیاز به وارد کردن دستی Chat ID
+   */
+  async handleBaleWebhook(body: any) {
+    const baleToken = process.env.BALE_BOT_TOKEN || '2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc';
+    const message = body?.message || body?.callback_query?.message;
+    if (!message) return { ok: true };
+
+    const chatId = message?.chat?.id || message?.from?.id;
+    if (!chatId) return { ok: true };
+
+    // ۱. اگر کاربر /start زد یا پیامی فرستاد
+    if (message.text && !message.contact) {
+      const welcomeText =
+        `🍦 *به سامانه اطلاع‌رسانی و پخش حساب‌چین خوش آمدید*\n\n` +
+        `برای اتصال خودکار شماره شما و دریافت لحظه‌ای فاکتورها، مانده حساب و جشنواره‌های تخفیف، لطفاً دکمه «📱 ارسال شماره موبایل» زیر را لمس نمایید:`;
+
+      await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: welcomeText,
+          parse_mode: 'Markdown',
+          reply_markup: {
+            keyboard: [
+              [
+                {
+                  text: '📱 ارسال و تایید شماره موبایل',
+                  request_contact: true,
+                },
+              ],
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true,
+          },
+        }),
+      }).catch(() => {});
+
+      return { ok: true };
+    }
+
+    // ۲. دریافت شماره موبایل اشتراک‌گذاری شده از طرف کاربر
+    if (message.contact) {
+      let phone = String(message.contact.phone_number || '').replace(/[^0-9]/g, '');
+      if (phone.startsWith('98') && phone.length === 12) {
+        phone = '0' + phone.substring(2);
+      } else if (phone.length === 10 && phone.startsWith('9')) {
+        phone = '0' + phone;
+      }
+
+      let matchedRole = '';
+      let matchedName = '';
+
+      // بررسی در جدول مشتریان (فروشگاه‌ها)
+      const customer = await this.prisma.customer.findFirst({
+        where: {
+          OR: [
+            { phone: phone },
+            { phone: phone.replace(/^0/, '') },
+            { phone: '+98' + phone.replace(/^0/, '') },
+          ],
+        },
+      });
+
+      if (customer) {
+        await this.prisma.customer.update({
+          where: { id: customer.id },
+          data: { baleChatId: String(chatId) },
+        });
+        matchedRole = 'مشتری';
+        matchedName = customer.name;
+      }
+
+      // بررسی در جدول ویزیتورها و کاربران
+      const user = await this.prisma.user.findFirst({
+        where: {
+          OR: [
+            { phone: phone },
+            { phone: phone.replace(/^0/, '') },
+          ],
+        },
+      });
+
+      if (user) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { baleChatId: String(chatId) },
+        });
+        if (!matchedRole) {
+          matchedRole = 'ویزیتور';
+          matchedName = `${user.firstName} ${user.lastName}`;
+        }
+      }
+
+      let replyMsg = '';
+      if (matchedRole === 'مشتری') {
+        replyMsg =
+          `✅ *فروشگاه محترم ${matchedName}؛*\n\n` +
+          `شماره شما (${phone}) با موفقیت تایید و به سیستم حساب‌چین متصل شد.\n` +
+          `از این پس صورت‌حساب‌ها، مانده حساب و جشنواره‌های تخفیف مستقیماً به این صفحه ارسال خواهند شد. 🍦`;
+      } else if (matchedRole === 'ویزیتور') {
+        replyMsg =
+          `✅ *ویزیتور گرامی (${matchedName})؛*\n\n` +
+          `اکانت بله شما با موفقیت به سیستم متصل شد.\n` +
+          `تمامی فاکتورها، گزارش‌های فروش و کدهای ورود به این چت ارسال خواهند شد. 🚀`;
+      } else {
+        replyMsg =
+          `✅ شماره موبایل شما (${phone}) در سامانه تایید شد.\n` +
+          `به محض صدور فاکتور یا ثبت فروشگاه توسط ویزیتور، اعلان‌ها برای شما فعال خواهند شد.`;
+      }
+
+      await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: replyMsg,
+          parse_mode: 'Markdown',
+          reply_markup: {
+            remove_keyboard: true,
+          },
+        }),
+      }).catch(() => {});
+    }
+
+    return { ok: true };
+  }
+
   // ============================================================
   // متدهای کمکی داخلی
   // ============================================================

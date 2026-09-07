@@ -79,4 +79,12 @@ export class AuthController {
   ) {
     return this.authService.updateProfile(userId, dto);
   }
+
+  /**
+   * وب‌هوک پیام‌رسان بله جهت دریافت استارت، اشتراک‌گذاری شماره تماس مشتریان و اتصال خودکار
+   */
+  @Post('bale-webhook')
+  handleBaleWebhook(@Body() body: any) {
+    return this.authService.handleBaleWebhook(body);
+  }
 }
