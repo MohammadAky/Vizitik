@@ -192,17 +192,18 @@ $apiToken = getAccessToken();
                 <span class="material-symbols-outlined">dashboard</span>
                 <span>داشبورد</span>
             </a>
-            <a href="orders.php" class="nav-item">
-                <span class="material-symbols-outlined">receipt_long</span>
-                <span>سفارشات</span>
+            <a href="van-loading.php" class="nav-item">
+                <span class="material-symbols-outlined">local_shipping</span>
+                <span>بارگیری خودرو</span>
             </a>
+
             <a href="customers.php" class="nav-item" title="پرونده مشتریان" aria-label="مشتریان">
                 <span class="material-symbols-outlined">group</span>
                 <span>مشتریان</span>
             </a>
-            <a href="van-loading.php" class="nav-item">
-                <span class="material-symbols-outlined">local_shipping</span>
-                <span>بارگیری خودرو</span>
+            <a href="orders.php" class="nav-item">
+                <span class="material-symbols-outlined">receipt_long</span>
+                <span>سفارشات</span>
             </a>
             <a href="collections.php" class="nav-item active">
                 <span class="material-symbols-outlined icon-fill">payments</span>

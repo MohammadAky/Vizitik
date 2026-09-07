@@ -49,6 +49,9 @@ if (empty($categories)) {
         <!-- هدر صفحه بارگیری خودرو -->
         <header class="van-header">
             <div class="header-top-row">
+                <button type="button" class="header-filter-btn" id="toggleLoadedOnlyBtn" onclick="toggleLoadedOnlyFilter()" title="نمایش فقط اقلام بارگیری‌شده">
+                    <span class="material-symbols-outlined">inventory_2</span>
+                </button>
                 <div class="header-title-box">
                     <h1>بارگیری و موجودی خودرو</h1>
                     <span class="header-sub" id="headerSubSummary">
@@ -56,16 +59,9 @@ if (empty($categories)) {
                     </span>
                 </div>
 
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <!-- دکمه فیلتر سریع: فقط اقلام دارای موجودی -->
-                    <button type="button" class="header-filter-btn" id="toggleLoadedOnlyBtn" onclick="toggleLoadedOnlyFilter()" title="نمایش فقط اقلام بارگیری‌شده">
-                        <span class="material-symbols-outlined">inventory</span>
-                    </button>
-
-                    <a href="dashboard.php" class="back-btn" aria-label="بازگشت به داشبورد">
-                        <span class="material-symbols-outlined">arrow_forward</span>
-                    </a>
-                </div>
+                <a href="dashboard.php" class="back-btn" aria-label="بازگشت به داشبورد">
+                    <span class="material-symbols-outlined">arrow_forward</span>
+                </a>
             </div>
 
             <!-- نوار جستجوی سریع -->
@@ -82,7 +78,7 @@ if (empty($categories)) {
                 <span class="chips-label">برند:</span>
                 <div class="chips-track" id="brandChipsTrack">
                     <button class="filter-chip active" data-brand="ALL" onclick="selectBrand(this, 'ALL')">همه کالاها</button>
-                    
+
                     <button class="filter-chip my-products-chip" data-brand="MY_PRODUCTS" onclick="selectBrand(this, 'MY_PRODUCTS')">
                         <span class="material-symbols-outlined chip-icon">stars</span>
                         <span>کالاهای من</span>
@@ -133,33 +129,33 @@ if (empty($categories)) {
             <?php else: ?>
                 <?php foreach ($inventory as $i => $item): ?>
                     <?php
-                        $prodId = $item['productId'] ?? ('p' . $i);
-                        $prodName = $item['productName'] ?? '';
-                        $brand = $item['brand'] ?? 'متفرقه';
-                        $category = $item['category'] ?? 'سایر';
-                        $packSize = (int)($item['unitsPerCarton'] ?? 24);
-                        $cartonPrice = (float)($item['cartonPrice'] ?? 0);
-                        $unitPrice = (float)($item['unitPrice'] ?? 0);
-                        $cartons = (int)($item['quantityCartons'] ?? 0);
-                        $units = (int)($item['quantityUnits'] ?? 0);
-                        $totalSingleUnits = (int)($item['totalSingleUnits'] ?? (($cartons * $packSize) + $units));
-                        $isCustom = !empty($item['isCustomUserProduct']);
-                        $isGlobal = !empty($item['isGlobal']);
-                        $isLoaded = ($cartons > 0 || $units > 0);
+                    $prodId = $item['productId'] ?? ('p' . $i);
+                    $prodName = $item['productName'] ?? '';
+                    $brand = $item['brand'] ?? 'متفرقه';
+                    $category = $item['category'] ?? 'سایر';
+                    $packSize = (int)($item['unitsPerCarton'] ?? 24);
+                    $cartonPrice = (float)($item['cartonPrice'] ?? 0);
+                    $unitPrice = (float)($item['unitPrice'] ?? 0);
+                    $cartons = (int)($item['quantityCartons'] ?? 0);
+                    $units = (int)($item['quantityUnits'] ?? 0);
+                    $totalSingleUnits = (int)($item['totalSingleUnits'] ?? (($cartons * $packSize) + $units));
+                    $isCustom = !empty($item['isCustomUserProduct']);
+                    $isGlobal = !empty($item['isGlobal']);
+                    $isLoaded = ($cartons > 0 || $units > 0);
                     ?>
                     <article class="van-card <?php echo $isLoaded ? 'is-loaded' : ''; ?>"
-                             data-id="<?php echo htmlspecialchars($prodId); ?>"
-                             data-name="<?php echo htmlspecialchars($prodName); ?>"
-                             data-brand="<?php echo htmlspecialchars($brand); ?>"
-                             data-category="<?php echo htmlspecialchars($category); ?>"
-                             data-pack="<?php echo $packSize; ?>"
-                             data-cartonprice="<?php echo $cartonPrice; ?>"
-                             data-unitprice="<?php echo $unitPrice; ?>"
-                             data-iscustom="<?php echo $isCustom ? 'true' : 'false'; ?>"
-                             data-isglobal="<?php echo $isGlobal ? 'true' : 'false'; ?>"
-                             data-cartons="<?php echo $cartons; ?>"
-                             data-units="<?php echo $units; ?>"
-                             style="animation-delay: <?php echo min($i * 0.02, 0.4); ?>s">
+                        data-id="<?php echo htmlspecialchars($prodId); ?>"
+                        data-name="<?php echo htmlspecialchars($prodName); ?>"
+                        data-brand="<?php echo htmlspecialchars($brand); ?>"
+                        data-category="<?php echo htmlspecialchars($category); ?>"
+                        data-pack="<?php echo $packSize; ?>"
+                        data-cartonprice="<?php echo $cartonPrice; ?>"
+                        data-unitprice="<?php echo $unitPrice; ?>"
+                        data-iscustom="<?php echo $isCustom ? 'true' : 'false'; ?>"
+                        data-isglobal="<?php echo $isGlobal ? 'true' : 'false'; ?>"
+                        data-cartons="<?php echo $cartons; ?>"
+                        data-units="<?php echo $units; ?>"
+                        style="animation-delay: <?php echo min($i * 0.02, 0.4); ?>s">
 
                         <!-- ردیف بالای کارت: مشخصات و قیمت -->
                         <div class="van-card-top">
@@ -200,12 +196,12 @@ if (empty($categories)) {
                                     <button type="button" class="step-btn step-down" onclick="changeQty('<?php echo $prodId; ?>', 'carton', -1)" aria-label="کاهش کارتن">
                                         <span class="material-symbols-outlined">remove</span>
                                     </button>
-                                    <input type="number" 
-                                           class="step-input carton-input" 
-                                           id="carton_<?php echo $prodId; ?>" 
-                                           value="<?php echo $cartons; ?>" 
-                                           min="0" 
-                                           oninput="handleQtyInput('<?php echo $prodId; ?>', 'carton', this.value)">
+                                    <input type="number"
+                                        class="step-input carton-input"
+                                        id="carton_<?php echo $prodId; ?>"
+                                        value="<?php echo $cartons; ?>"
+                                        min="0"
+                                        oninput="handleQtyInput('<?php echo $prodId; ?>', 'carton', this.value)">
                                     <button type="button" class="step-btn step-up" onclick="changeQty('<?php echo $prodId; ?>', 'carton', 1)" aria-label="افزایش کارتن">
                                         <span class="material-symbols-outlined">add</span>
                                     </button>
@@ -222,12 +218,12 @@ if (empty($categories)) {
                                     <button type="button" class="step-btn step-down" onclick="changeQty('<?php echo $prodId; ?>', 'unit', -1)" aria-label="کاهش دانه">
                                         <span class="material-symbols-outlined">remove</span>
                                     </button>
-                                    <input type="number" 
-                                           class="step-input unit-input" 
-                                           id="unit_<?php echo $prodId; ?>" 
-                                           value="<?php echo $units; ?>" 
-                                           min="0" 
-                                           oninput="handleQtyInput('<?php echo $prodId; ?>', 'unit', this.value)">
+                                    <input type="number"
+                                        class="step-input unit-input"
+                                        id="unit_<?php echo $prodId; ?>"
+                                        value="<?php echo $units; ?>"
+                                        min="0"
+                                        oninput="handleQtyInput('<?php echo $prodId; ?>', 'unit', this.value)">
                                     <button type="button" class="step-btn step-up" onclick="changeQty('<?php echo $prodId; ?>', 'unit', 1)" aria-label="افزایش دانه">
                                         <span class="material-symbols-outlined">add</span>
                                     </button>
@@ -286,28 +282,28 @@ if (empty($categories)) {
         </footer>
 
         <!-- نوار ناوبری پایینی -->
-        <nav class="app-nav">
+        <!-- <nav class="app-nav">
             <a href="dashboard.php" class="nav-item">
                 <span class="material-symbols-outlined">dashboard</span>
                 <span>داشبورد</span>
-            </a>
-            <a href="orders.php" class="nav-item">
-                <span class="material-symbols-outlined">receipt_long</span>
-                <span>سفارشات</span>
-            </a>
-            <a href="customers.php" class="nav-item" title="پرونده مشتریان" aria-label="مشتریان">
-                <span class="material-symbols-outlined">group</span>
-                <span>مشتریان</span>
             </a>
             <a href="van-loading.php" class="nav-item active">
                 <span class="material-symbols-outlined icon-fill">local_shipping</span>
                 <span>بارگیری خودرو</span>
             </a>
+            <a href="customers.php" class="nav-item" title="پرونده مشتریان" aria-label="مشتریان">
+                <span class="material-symbols-outlined">group</span>
+                <span>مشتریان</span>
+            </a>
+            <a href="orders.php" class="nav-item">
+                <span class="material-symbols-outlined">receipt_long</span>
+                <span>سفارشات</span>
+            </a>
             <a href="collections.php" class="nav-item">
                 <span class="material-symbols-outlined">payments</span>
                 <span>وصول مطالبات</span>
             </a>
-        </nav>
+        </nav> -->
 
     </div>
 
@@ -319,15 +315,23 @@ if (empty($categories)) {
 
 </html>
 <?php
-function getBrandClass($brand) {
+function getBrandClass($brand)
+{
     switch ($brand) {
-        case 'میهن': return 'brand-mihan';
-        case 'پاندا': return 'brand-panda';
-        case 'دومینو': return 'brand-domino';
-        case 'کاله': return 'brand-kalleh';
-        case 'حاج حسن': return 'brand-hajhasan';
-        case 'پاک': return 'brand-paak';
-        default: return 'brand-default';
+        case 'میهن':
+            return 'brand-mihan';
+        case 'پاندا':
+            return 'brand-panda';
+        case 'دومینو':
+            return 'brand-domino';
+        case 'کاله':
+            return 'brand-kalleh';
+        case 'حاج حسن':
+            return 'brand-hajhasan';
+        case 'پاک':
+            return 'brand-paak';
+        default:
+            return 'brand-default';
     }
 }
 ?>
