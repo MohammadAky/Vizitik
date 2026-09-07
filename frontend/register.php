@@ -32,7 +32,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             "lastName"   => $lastName,
             "phone"      => $phone,
             "password"   => $userPassword,
-            "baleChatId" => !empty($baleChatId) ? $baleChatId : "542633638"
+            "baleChatId" => !empty($baleChatId) ? $baleChatId : null
         ];
 
         $ch = curl_init("http://localhost:3000/api/auth/register");
