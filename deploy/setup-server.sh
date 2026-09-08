@@ -66,6 +66,12 @@ ok()   { echo -e "\033[1;32m  ✔ $*\033[0m"; }
 warn() { echo -e "\033[1;33m  ⚠ $*\033[0m"; }
 fail() { echo -e "\033[1;31m  ✖ $*\033[0m" >&2; exit 1; }
 
+# درصد-انکد یک رشته برای استفاده در URL (مثل رمزِ دارای @ در DATABASE_URL)
+urlencode() {
+  local s="$1"
+  jq -rn --arg v "$s" '$v|@uri'
+}
+
 require_root() {
   if [[ "$(id -u)" -ne 0 ]]; then
     fail "این اسکریپت باید با root اجرا شود. (sudo bash $0)"
@@ -177,8 +183,12 @@ build_backend() {
 
   npx prisma generate
 
+  # برای DATABASE_URL رمز باید درصد-انکد شود تا کاراکترهای خاص (مثل @) خطا ندهند
+  local DB_PASS_URL
+  DB_PASS_URL="$(urlencode "$DB_PASS")"
+
   cat > .env <<EOF
-DATABASE_URL="mysql://${DB_USER}:${DB_PASS}@${DB_HOST}:3306/${DB_NAME}"
+DATABASE_URL="mysql://${DB_USER}:${DB_PASS_URL}@${DB_HOST}:3306/${DB_NAME}"
 JWT_SECRET="${JWT_SECRET}"
 JWT_EXPIRES_IN="30d"
 PORT=${BACKEND_PORT}
