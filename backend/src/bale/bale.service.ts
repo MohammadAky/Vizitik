@@ -520,6 +520,15 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    // نام ویزیتور با قالب هشتگ (مثل #فاطمه_اکبری) — همراستا با قالب فاکتور بله
+    const visitor = await this.prisma.user.findUnique({
+      where: { id: visitorId },
+      select: { firstName: true, lastName: true },
+    });
+    const visitorTag = visitor && visitor.firstName
+      ? `#${`${visitor.firstName} ${visitor.lastName || ""}`.trim().replace(/\s+/g, "_")}`
+      : "";
+
     const fallbackChatId = process.env.BALE_ADMIN_CHAT_ID || "542633638";
     let sentCount = 0;
 
@@ -529,7 +538,10 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
       const personalizedText =
         `📢 *پیام اطلاع‌رسانی ویزیتیک*\n\n` +
-        templateText.replace(/{نام_فروشگاه}/g, cust.name).replace(/{مبلغ_بدهی}/g, debtStr);
+        templateText
+          .replace(/{نام_فروشگاه}/g, cust.name)
+          .replace(/{نام_ویزیتور}/g, visitorTag)
+          .replace(/{مبلغ_بدهی}/g, debtStr);
 
       const targetChatId = cust.baleChatId || fallbackChatId;
       if (targetChatId) {

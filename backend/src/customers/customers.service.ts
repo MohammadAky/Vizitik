@@ -33,6 +33,7 @@ export class CustomersService {
         address: c.address,
         phone: c.phone,
         notes: c.notes,
+        baleChatId: c.baleChatId,
         currentDebt,
         hasDebt: currentDebt > 0,
         lastOrderDate: lastOrder?.orderDate || null,
