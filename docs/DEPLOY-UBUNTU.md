@@ -236,7 +236,9 @@ ufw status verbose
 
 1. در مرورگر گوشی به `https://app.EXAMPLE.com` برو.
 2. در منوی مرورگر «افزودن به صفحهٔ اصلی / Install app» را بزن (برای کروم اندروید معمولاً از نوار آدرس).
-3. اپ تمام‌صفحه باز می‌شود. با دادهٔ واقعیِ همگام‌شده، در حالت هواپیما هم فاکتور آفلاین قابل ثبت است (در فاز ۲ که هستهٔ آفلاین می‌رسد).
+3. اپ تمام‌صفحه باز می‌شود. با دادهٔ واقعیِ همگام‌شده، در حالت هواپیما هم فاکتور آفلاین قابل ثبت است (هستهٔ آفلاین در فاز ۲ پیاده شده).
+
+> **نکتهٔ تست در مرورگر دسکتاپ:** در Chrome روی دسکتاپ هم می‌توانی نصب را شبیه‌سازی کنی — در DevTools تب *Application → Service Workers* چک کن که SW «activated» است و تب *Network* را روی «Offline» بگذار تا آفلاین را تست کنی.
 
 ---
 
@@ -267,12 +269,65 @@ EOF
 
 ---
 
-## ۱۱) اگر هنوز دامنه نداری (تست سریع)
+## ۱۱) اگر دامنه نداری — چطور HTTPS معتبر و نصب PWA بگیری
 
-بدون دامنهٔ واقعی، مرورگر اجازهٔ «نصب» نمی‌دهد، ولی برای **توسعه/تست** کافی است:
+> **خلاصه:** اپ روی `http://IP` برای توسعه کار می‌کند، ولی برای **نصب و آفلاینِ واقعی** به HTTPS معتبر نیاز است (سرویس‌ورکر بدون HTTPS — به‌جز localhost — رجیستر نمی‌شود). لازم نیست دامنه بخریم؛ دو راه رایگان داریم:
+
+| گزینه | مناسب برای | زحمت |
+| :-- | :-- | :-- |
+| **DuckDNS** | تست واقعی با HTTPS روی سروری که IP دارد | کم — یک زیردامنه + DNS + certbot |
+| **Cloudflare Tunnel** | بدون نیاز به IP ثابت/باز کردن پورت | متوسط |
+
+---
+
+### ۱۱-الف) راهِ پیشنهادی: DuckDNS + certbot (ساده و شفاف)
+
+۱. به `https://www.duckdns.org` برو (با حساب گوگل/گیتهاب وارد شو)، یک زیردامنه بساز مثل `vizitik` و IP عمومی سرورت را ثبت کن → `vizitik.duckdns.org`.
+
+۲. روی سرور، دامنه را بگذار و Nginx را با همان مقدار تنظیم کن:
+```bash
+DOMAIN=vizitik.duckdns.org
+sed -i "s/server_name _;/server_name ${DOMAIN};/" /etc/nginx/sites-available/vizitik
+nginx -t && systemctl reload nginx
+```
+
+۳. گواهی بگیر:
+```bash
+certbot --nginx -d "${DOMAIN}" --redirect --agree-tos -m you@example.com -n
+```
+
+۴. حالا `https://vizitik.duckdns.org` را در گوشی باز کن و «افزودن به صفحهٔ اصلی» را بزن. آفلاین و نصب کامل کار می‌کند.
+
+> **نکته:** DuckDNS با IP متغیر (Dynamic IP) هم کار می‌کند؛ اگر سرورت IP ثابت ندارد، `duckdns` را به‌عنوان cron نصب کن که IP را هر ۵ دقیقه به‌روز کند:
+> ```bash
+> echo "*/5 * * * * root curl -k https://www.duckdns.org/update?domains=vizitik&token=YOUR_TOKEN&ip=" > /etc/cron.d/duckdns
+> ```
+
+---
+
+### ۱۱-ب) راهِ جایگزین: Cloudflare Tunnel (حتی بدون باز کردن پورت)
+
+اگر IP ثابت نداری یا نمی‌خواهی پورتی باز کنی، Cloudflare Tunnel به تو یک URL معتبر HTTPS می‌دهد:
+
+```bash
+apt install -y cloudflared
+cloudflared tunnel login                 # یک‌بار با مرورگر تأیید کن
+cloudflared tunnel create vizitik
+# دامنهٔ رایگان (مثلاً با tld رایگان روی Cloudflare) را به tunnel متصل کن:
+cloudflared tunnel route dns vizitik app.yourdomain
+# اجرا:
+cloudflared tunnel run vizitik
+```
+
+> با Tunnel، دیگر نیازی به تنظیم رکورد A یا باز کردن پورت ۸۰/۴۴۳ نیست؛ خود Cloudflare ترافیک را به سرورت (حتی پشت NAT) می‌رساند. بعداً فقط یک `config.yml` به Nginx/مستقیم به backend اضافه می‌کنیم.
+
+---
+
+### ۱۱-ج) فقط برای تستِ سریعِ API (بدون HTTPS)
 
 - محلی: `npm run dev` در `frontend-app/` و `npm run start:dev` در `backend/`.
-- روی سرور با IP: فقط API را (بخش‌های ۱ تا ۵ بدون certbot) بالا بیاور و در توسعه از `VITE_API_URL` روی `http://IP:3000/api` استفاده کن. برای «نصب» واقعی بعداً یک دامنه بگیر و certbot بزن (یا از Cloudflare Tunnel استفاده کن که حتی بدون باز کردن پورت، HTTPS معتبر می‌دهد).
+- روی سرور با IP: فقط بخش‌های ۱ تا ۵ (بدون certbot) را بالا بیاور و در توسعه، `VITE_API_URL` را روی `http://IP:3000/api` بگذار. نصب/آفلاینِ کامل بعداً با یکی از دو راه بالا ممکن می‌شود.
+
 
 ---
 
