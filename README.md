@@ -224,5 +224,5 @@ vizitik/
 
 ## 📄 مجوز (License)
 
-توسعه‌داده شده توسط **[MohammadAky](https://github.com/MohammadAky)** برای سامانه توزیع مویرگی **ویزیتیک (حساب‌چین)**.
+توسعه‌داده شده توسط **[MohammadAky](https://github.com/MohammadAky)** برای سامانه توزیع مویرگی **ویزیتیک (ویزیتیک)**.
 تمامی حقوق محفوظ است © 2026.

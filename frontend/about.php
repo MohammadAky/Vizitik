@@ -8,7 +8,7 @@ requireLogin();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>حسابچین — درباره نرم‌افزار</title>
+    <title>ویزیتیک — درباره نرم‌افزار</title>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
@@ -69,7 +69,7 @@ requireLogin();
 
         <header class="header" style="background: #001d31; color: #ffffff; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding: 12px 16px; display:flex; justify-content:space-between; align-items:center;">
             <div>
-                <h1 style="font-size: 16px; font-weight:800; margin:0; color:#ffffff;">درباره حساب‌چین</h1>
+                <h1 style="font-size: 16px; font-weight:800; margin:0; color:#ffffff;">درباره ویزیتیک</h1>
                 <span style="font-size: 11px; color:rgba(255, 255, 255, 0.75);">سامانه جامع پخش گرم و ویزیتوری بستنی</span>
             </div>
             <a href="dashboard.php" class="back-btn" style="width:38px; height:38px; border-radius:12px; border:1px solid rgba(255, 255, 255, 0.2); background:rgba(255, 255, 255, 0.12); display:flex; align-items:center; justify-content:center; text-decoration:none; color:#ffffff;">
@@ -81,7 +81,7 @@ requireLogin();
             <div class="logo logo-lg" style="margin-top: 10px;">
                 <span class="material-symbols-outlined">icecream</span>
             </div>
-            <h2 style="font-size: 18px; font-weight: 900; margin: 0; color: var(--primary);">حساب‌چین (نسخه ۱.۲.۰)</h2>
+            <h2 style="font-size: 18px; font-weight: 900; margin: 0; color: var(--primary);">ویزیتیک (نسخه ۱.۲.۰)</h2>
             <p style="font-size: 12px; color: var(--text-secondary); line-height: 1.7; max-width: 320px;">
                 سامانه هوشمند و یکپارچه ویژه رانندگان، ویزیتورها و شرکت‌های توزیع و پخش مویرگی بستنی و مواد غذایی سردخانه‌ای.
             </p>

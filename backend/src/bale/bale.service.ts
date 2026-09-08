@@ -14,7 +14,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     this.logger.log(
-      `🤖 ماژول ربات بله حساب‌چین راه‌اندازی شد (Token: ${this.baleToken.substring(0, 15)}...)`,
+      `🤖 ماژول ربات بله ویزیتیک راه‌اندازی شد (Token: ${this.baleToken.substring(0, 15)}...)`,
     );
     this.startPollingLoop();
   }
@@ -150,14 +150,13 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       const latestBalance =
         customer.ledgerEntries.length > 0 ? Number(customer.ledgerEntries[0].balanceAfter) : 0;
       const latestBalanceStr = latestBalance.toLocaleString("fa-IR");
-      const debtSection = `\n📊 *وضعیت حساب شما:*\n▫️ مانده کل بدهی نزد حساب‌چین: *${latestBalanceStr} تومان*\n`;
+      const debtSection = `\n📊 *وضعیت حساب شما:*\n▫️ مانده کل بدهی نزد ویزیتیک: *${latestBalanceStr} تومان*\n`;
 
       const updatePrefix = options.isUpdate ? "✏️ *[اصلاحیه فاکتور]*\n" : "";
 
       // ۱. پیام اختصاصی برای مشتری / فروشگاه
       const customerMessage =
-        `${updatePrefix}🧾 *فاکتور رسمی حساب‌چین*\n` +
-        `🍦 *پخش گرم و توزیع بستنی*\n\n` +
+        `${updatePrefix}🧾 *فاکتور رسمی ویزیتیک*\n\n` +
         `🏪 *فروشگاه:* ${customer.name}\n` +
         `🔢 *شماره فاکتور:* #${invNo}\n` +
         `📅 *زمان ثبت:* ${orderDateStr}\n` +
@@ -168,7 +167,10 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
         `💰 *مبلغ نهایی قابل پرداخت:* *${finalStr} تومان*\n\n` +
         `💳 *روش تسویه و پرداخت:*\n${paymentMethodsList}\n` +
         debtSection +
-        `\nبا تشکر از حسن انتخاب و همکاری شما 🍦`;
+        `\n— — —\n` +
+        `🤝 *هم‌توزیع‌کننده‌ها را هم به ویزیتیک دعوت کنید*\n` +
+        `اگر ویزیتور یا پخش‌کننده‌ی دیگری را می‌شناسید که به این فروشگاه یا محله‌های دیگر سر می‌زند، این ربات را به او معرفی کنید تا سفارش، فاکتور و حسابِ او هم دقیق و منظم در *ویزیتیک* ثبت و همین‌جا در بله ارسال شود.\n` +
+        `ربات: ble.ir/HesabchinBot`;
 
       // ۲. پیام اختصاصی برای ویزیتور
       const visitorMessage =
@@ -351,7 +353,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
     if (text && !message.contact) {
       const welcomeText =
         `سلام *${fromName}* عزیز؛ 🍦\n` +
-        `به ربات رسمی *حساب‌چین* (سامانه توزیع مویرگی و پخش گرم) خوش آمدید.\n\n` +
+        `به ربات رسمی *ویزیتیک* (سامانه توزیع مویرگی و پخش گرم) خوش آمدید.\n\n` +
         `برای اتصال خودکار شماره تلفن شما و دریافت لحظه‌ای فاکتورها، صورت‌حساب و تخفیف‌ها، لطفاً دکمه زیر را لمس نمایید:`;
 
       const contactKeyboard = {
@@ -437,7 +439,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       if (matchedRole === "مشتری") {
         confirmationText =
           `✅ *فروشگاه محترم ${matchedName}؛*\n\n` +
-          `شماره موبایل شما (*${normalizedPhone}*) با موفقیت تایید و به سیستم حساب‌چین متصل شد.\n` +
+          `شماره موبایل شما (*${normalizedPhone}*) با موفقیت تایید و به سیستم ویزیتیک متصل شد.\n` +
           `از این پس فاکتورهای رسمی، ریز اقلام، مانده حساب و جشنواره‌های تخفیف مستقیماً به این صفحه ارسال خواهند شد. 🍦`;
       } else if (matchedRole === "ویزیتور") {
         confirmationText =
@@ -526,7 +528,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       const debtStr = debt > 0 ? `${debt.toLocaleString("fa-IR")} تومان` : "۰ تومان (تسویه)";
 
       const personalizedText =
-        `📢 *پیام اطلاع‌رسانی حساب‌چین*\n\n` +
+        `📢 *پیام اطلاع‌رسانی ویزیتیک*\n\n` +
         templateText.replace(/{نام_فروشگاه}/g, cust.name).replace(/{مبلغ_بدهی}/g, debtStr);
 
       const targetChatId = cust.baleChatId || fallbackChatId;
