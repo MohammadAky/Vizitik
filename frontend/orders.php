@@ -139,11 +139,15 @@ $productsCatalog = (!empty($apiProducts) && is_array($apiProducts)) ? $apiProduc
                             <div class="order-actions-row">
                                 <button type="button" class="order-action-btn edit-full" onclick="openFullEditOrderModal('<?php echo $ordId; ?>')">
                                     <span class="material-symbols-outlined" style="font-size: 16px;">edit_note</span>
-                                    <span>ویرایش کامل فاکتور</span>
+                                    <span>ویرایش</span>
                                 </button>
                                 <button type="button" class="order-action-btn reprint" onclick="fetchAndPrintInvoice('<?php echo $ordId; ?>')">
                                     <span class="material-symbols-outlined" style="font-size: 16px;">print</span>
-                                    <span>چاپ فاکتور</span>
+                                    <span>چاپ</span>
+                                </button>
+                                <button type="button" class="order-action-btn send-bale" onclick="sendOrderToBale('<?php echo $ordId; ?>')">
+                                    <span class="material-symbols-outlined" style="font-size: 16px;">smart_toy</span>
+                                    <span>بله</span>
                                 </button>
                             </div>
                         </article>

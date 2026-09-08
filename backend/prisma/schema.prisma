@@ -237,6 +237,10 @@ model InvoiceSettings {
   user                  User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   showDiscountBreakdown Boolean  @default(true)
   showVanInventoryRef   Boolean  @default(false)
+  baleNotifyCustomer    Boolean  @default(true)
+  baleNotifyVisitor     Boolean  @default(true)
+  baleIncludeItems      Boolean  @default(true)
+  baleIncludeDebt       Boolean  @default(true)
   isDefault             Boolean  @default(false)
 
   @@map("invoice_settings")

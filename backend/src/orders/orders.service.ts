@@ -6,11 +6,15 @@ import {
   Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { BaleService } from '../bale/bale.service';
 import { CreateOrderDto, UpdateOrderDto } from './orders.dto';
 
 @Injectable()
 export class OrdersService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(BaleService) private readonly baleService: BaleService,
+  ) {}
 
   async createOrder(visitorId: string, dto: CreateOrderDto) {
     const existingOrder = await this.prisma.order.findUnique({
@@ -251,60 +255,13 @@ export class OrdersService {
 
     const invoice = await this.getOrderInvoice(visitorId, result.id);
 
-    // ارسال اعلان فوری فاکتور به ربات بله
-    this.sendOrderNotificationToBale(visitorId, invoice).catch(() => {});
+    // ارسال خودکار و اصولی فاکتور صادر شده به بله ویزیتور و مشتری
+    this.baleService.sendInvoiceNotification(result.id).catch(() => {});
 
     return invoice;
   }
 
-  private async sendOrderNotificationToBale(visitorId: string, orderDetails: any) {
-    const baleToken = process.env.BALE_BOT_TOKEN || '2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc';
-    const fallbackChatId = process.env.BALE_ADMIN_CHAT_ID || '542633638';
 
-    try {
-      const visitor = await this.prisma.user.findUnique({
-        where: { id: visitorId },
-      });
-
-      const chatId = visitor?.baleChatId || fallbackChatId;
-      if (!chatId) return;
-
-      const customerName = orderDetails.customer?.name || 'مشتری';
-      const finalAmountStr = Number(orderDetails.finalAmount).toLocaleString('fa-IR');
-      const subtotalStr = Number(orderDetails.subtotalAmount).toLocaleString('fa-IR');
-      const discountStr = Number(orderDetails.totalDiscountAmount).toLocaleString('fa-IR');
-
-      let paymentsText = '';
-      if (orderDetails.payments && orderDetails.payments.length > 0) {
-        paymentsText = orderDetails.payments.map((p: any) => {
-          const methodTitle = p.method === 'CASH' ? 'نقدی' : p.method === 'CARD' ? 'کارتخوان' : p.method === 'CHECK' ? 'چک صیادی' : 'نسیه';
-          return `${methodTitle}: ${Number(p.amount).toLocaleString('fa-IR')} ت`;
-        }).join(' | ');
-      } else {
-        paymentsText = 'نسیه (مانده در دفتر حساب)';
-      }
-
-      const message = `🍦 *فاکتور در حساب‌چین به‌روزرسانی / صادر شد*\n\n` +
-                      `👤 *فروشگاه:* ${customerName}\n` +
-                      `💵 *جمع ناخالص:* ${subtotalStr} تومان\n` +
-                      `🎁 *مجموع تخفیفات:* ${discountStr} تومان\n` +
-                      `🧾 *مبلغ نهایی فاکتور:* *${finalAmountStr} تومان*\n` +
-                      `💳 *روش تسویه:* ${paymentsText}\n\n` +
-                      `✅ اطلاعات در سیستم ثبت گردید.`;
-
-      await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: message,
-          parse_mode: 'Markdown',
-        }),
-      });
-    } catch (err) {
-      console.error('خطا در ارسال پیام فاکتور به بله:', err);
-    }
-  }
 
   async getOrderInvoice(visitorId: string, orderId: string) {
     const order = await this.prisma.order.findUnique({
@@ -740,7 +697,7 @@ export class OrdersService {
     });
 
     const updatedInvoice = await this.getOrderInvoice(visitorId, order.id);
-    this.sendOrderNotificationToBale(visitorId, updatedInvoice).catch(() => {});
+    this.baleService.sendInvoiceNotification(order.id, { isUpdate: true }).catch(() => {});
     return updatedInvoice;
   }
 
@@ -835,6 +792,8 @@ export class OrdersService {
       }
     });
 
-    return this.getOrderInvoice(visitorId, orderId);
+    const updatedInvoice = await this.getOrderInvoice(visitorId, orderId);
+    this.baleService.sendInvoiceNotification(orderId, { isUpdate: true }).catch(() => {});
+    return updatedInvoice;
   }
 }
