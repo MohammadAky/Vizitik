@@ -24,15 +24,6 @@ $unlinkedCustomers = array_values(array_filter($customers, function ($c) {
 $debtorCustomers = array_values(array_filter($customers, function ($c) {
     return ((float)($c['currentDebt'] ?? 0)) > 0;
 }));
-
-// دریافت آمار و تنظیمات از بک‌اند
-$apiBaleStats = apiCall('bale/stats');
-$baleSettings = $apiBaleStats['settings'] ?? [
-    'baleNotifyCustomer' => true,
-    'baleNotifyVisitor' => true,
-    'baleIncludeItems' => true,
-    'baleIncludeDebt' => true,
-];
 ?>
 <!DOCTYPE html>
 <html dir="rtl" lang="fa">
@@ -40,7 +31,7 @@ $baleSettings = $apiBaleStats['settings'] ?? [
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>حسابچین — مدیریت ربات بله و ارسال فاکتور</title>
+    <title>حسابچین — مدیریت ربات بله و اطلاع‌رسانی</title>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
@@ -55,8 +46,8 @@ $baleSettings = $apiBaleStats['settings'] ?? [
         <!-- هدر صفحه مدیریت ربات بله -->
         <header class="bale-header">
             <div class="header-title-box">
-                <h1>مدیریت ربات و اعلان‌های بله</h1>
-                <span class="header-sub">ارسال خودکار فاکتور به مشتری، ویزیتور و پیام‌های همگانی</span>
+                <h1>سامانه پیام‌رسان و ربات بله</h1>
+                <span class="header-sub">ارسال خودکار فاکتور به مشتری و ویزیتور و اطلاع‌رسانی</span>
             </div>
 
             <a href="dashboard.php" class="back-btn" aria-label="بازگشت به داشبورد">
@@ -75,7 +66,7 @@ $baleSettings = $apiBaleStats['settings'] ?? [
                             <span class="material-symbols-outlined icon-fill" style="font-size: 26px;">smart_toy</span>
                         </div>
                         <div class="bale-status-text">
-                            <strong>ربات رسمی حساب‌چین فعال است</strong>
+                            <strong>ارسال خودکار فاکتور در بله فعال است</strong>
                             <div class="bale-status-sub">
                                 شناسه ربات: HesabchinBot@
                             </div>
@@ -112,7 +103,7 @@ $baleSettings = $apiBaleStats['settings'] ?? [
                         <span>لینک اتصال خودکار مشتریان به ربات</span>
                     </div>
                     <p class="bale-onboarding-text">
-                        فروشگاه‌ها با باز کردن ربات و لمس دکمه <strong>«ارسال شماره موبایل»</strong> بدون نیاز به وارد کردن چت‌آیدی متصل می‌شوند و فاکتورها را دریافت می‌کنند.
+                        هنگام ثبت هر فاکتور، نسخه کامل و رسمی فاکتور به صورت خودکار به بله فروشگاه و ویزیتور ارسال می‌شود. مشتریان با باز کردن ربات و لمس دکمه <strong>«ارسال شماره موبایل»</strong> متصل می‌شوند.
                     </p>
                     <div class="bale-bot-link-row">
                         <span class="bale-bot-link-text">https://ble.ir/HesabchinBot</span>
@@ -122,71 +113,6 @@ $baleSettings = $apiBaleStats['settings'] ?? [
                         </button>
                     </div>
                 </div>
-            </section>
-
-            <!-- کارت تنظیمات ارسال خودکار فاکتور -->
-            <section class="settings-card">
-                <h3 style="font-size: 13.5px; font-weight: 800; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
-                    <span class="material-symbols-outlined" style="color: var(--primary);">receipt_long</span>
-                    <span>تنظیمات ارسال خودکار فاکتور</span>
-                </h3>
-                <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">
-                    تنظیم کنید هنگام صدور یا ویرایش فاکتور، چه پیام‌هایی به بله ارسال شوند:
-                </p>
-
-                <!-- سوییچ ۱: ارسال به مشتری -->
-                <div class="setting-toggle-row">
-                    <div class="toggle-info">
-                        <strong>ارسال خودکار فاکتور به مشتری / فروشگاه</strong>
-                        <span>ارسال فاکتور رسمی به چت بله فروشگاه بلافاصله پس از ثبت سفارش</span>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggleCustomer" <?php echo !empty($baleSettings['baleNotifyCustomer']) ? 'checked' : ''; ?>>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <!-- سوییچ ۲: ارسال به ویزیتور -->
-                <div class="setting-toggle-row">
-                    <div class="toggle-info">
-                        <strong>ارسال گزارش فاکتور به ویزیتور</strong>
-                        <span>دریافت نسخه تایید فاکتور و وضعیت تسویه در چت بله ویزیتور</span>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggleVisitor" <?php echo !empty($baleSettings['baleNotifyVisitor']) ? 'checked' : ''; ?>>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <!-- سوییچ ۳: درج ریز اقلام -->
-                <div class="setting-toggle-row">
-                    <div class="toggle-info">
-                        <strong>درج ریز اقلام و تعداد در پیام فاکتور</strong>
-                        <span>نمایش نام بستنی، کارتن، دانه و قیمت ردیف‌ها در پیام بله</span>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggleItems" <?php echo !empty($baleSettings['baleIncludeItems']) ? 'checked' : ''; ?>>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <!-- سوییچ ۴: درج وضعیت مانده حساب -->
-                <div class="setting-toggle-row">
-                    <div class="toggle-info">
-                        <strong>درج مانده بدهی و صورت‌حساب مشتری</strong>
-                        <span>نمایش مانده کل حساب فروشگاه در انتهای پیام فاکتور</span>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggleDebt" <?php echo !empty($baleSettings['baleIncludeDebt']) ? 'checked' : ''; ?>>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <!-- دکمه ذخیره تنظیمات -->
-                <button type="button" class="save-settings-btn" id="saveBaleSettingsBtn" onclick="saveBaleSettings()">
-                    <span class="material-symbols-outlined">save</span>
-                    <span>ذخیره تنظیمات ربات بله</span>
-                </button>
             </section>
 
             <!-- فرم ارسال پیام همگانی / یادآوری به مشتریان -->
@@ -311,41 +237,6 @@ $baleSettings = $apiBaleStats['settings'] ?? [
                 });
             } else {
                 prompt('لینک ربات بله را کپی کنید:', link);
-            }
-        }
-
-        async function saveBaleSettings() {
-            const btn = document.getElementById('saveBaleSettingsBtn');
-            btn.disabled = true;
-            btn.innerHTML = 'در حال ذخیره...';
-
-            const payload = {
-                baleNotifyCustomer: document.getElementById('toggleCustomer').checked,
-                baleNotifyVisitor: document.getElementById('toggleVisitor').checked,
-                baleIncludeItems: document.getElementById('toggleItems').checked,
-                baleIncludeDebt: document.getElementById('toggleDebt').checked
-            };
-
-            try {
-                const res = await fetch('http://localhost:3000/api/bale/settings', {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${API_TOKEN}`
-                    },
-                    body: JSON.stringify(payload)
-                });
-
-                if (res.ok) {
-                    alert('تنظیمات ارسال خودکار فاکتور به بله با موفقیت ذخیره شد.');
-                } else {
-                    alert('خطا در ذخیره تنظیمات.');
-                }
-            } catch (err) {
-                alert('خطا در ارتباط با سرور.');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<span class="material-symbols-outlined">save</span><span>ذخیره تنظیمات ربات بله</span>';
             }
         }
 
