@@ -234,14 +234,14 @@ header("Pragma: no-cache");
                 </form>
 
                 <!-- ۲.۱. فرم ثبت‌نام کاربر جدید (مرحله ۲: تایید کد ۵ رقمی) -->
-                <form class="auth-view" id="viewRegisterOtp" onsubmit="handleCompleteRegistration(event)">
+                <form class="auth-view" id="viewRegisterOtp" autocomplete="off" onsubmit="handleCompleteRegistration(event)">
                     <label style="font-size: 11.5px; font-weight: 700;">کد ۵ رقمی ارسال شده به پیام‌رسان بله:</label>
                     <div class="otp-inputs">
-                        <input type="text" class="otp-box reg-otp" maxlength="1" inputmode="numeric" required>
-                        <input type="text" class="otp-box reg-otp" maxlength="1" inputmode="numeric" required>
-                        <input type="text" class="otp-box reg-otp" maxlength="1" inputmode="numeric" required>
-                        <input type="text" class="otp-box reg-otp" maxlength="1" inputmode="numeric" required>
-                        <input type="text" class="otp-box reg-otp" maxlength="1" inputmode="numeric" required>
+                        <input type="text" class="otp-box reg-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
+                        <input type="text" class="otp-box reg-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
+                        <input type="text" class="otp-box reg-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
+                        <input type="text" class="otp-box reg-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
+                        <input type="text" class="otp-box reg-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
                     </div>
 
                     <button type="submit" class="login-btn" id="verifyRegBtn">
@@ -254,10 +254,10 @@ header("Pragma: no-cache");
                 </form>
 
                 <!-- ۳. فراموشی رمز عبور (مرحله ۱: دریافت شماره) -->
-                <form class="auth-view" id="viewForgotPhone" onsubmit="handleSendForgotOtp(event)">
+                <form class="auth-view" id="viewForgotPhone" autocomplete="off" onsubmit="handleSendForgotOtp(event)">
                     <div class="input-group">
                         <label for="forgotPhone">شماره موبایل ثبت‌شده در سیستم</label>
-                        <input type="tel" id="forgotPhone" placeholder="09xxxxxxxxx" maxlength="11" required>
+                        <input type="tel" id="forgotPhone" placeholder="09xxxxxxxxx" maxlength="11" autocomplete="tel" required>
                     </div>
 
                     <button type="submit" class="login-btn" id="sendForgotOtpBtn">
@@ -271,20 +271,20 @@ header("Pragma: no-cache");
                 </form>
 
                 <!-- ۳.۱. فراموشی رمز عبور (مرحله ۲: تایید کد و تعیین رمز جدید) -->
-                <form class="auth-view" id="viewForgotOtp" onsubmit="handleResetPassword(event)">
+                <form class="auth-view" id="viewForgotOtp" autocomplete="off" onsubmit="handleResetPassword(event)">
                     <label style="font-size: 11.5px; font-weight: 700;">کد ۵ رقمی ارسال شده به بله:</label>
                     <div class="otp-inputs">
-                        <input type="text" class="otp-box reset-otp" maxlength="1" inputmode="numeric" required>
-                        <input type="text" class="otp-box reset-otp" maxlength="1" inputmode="numeric" required>
-                        <input type="text" class="otp-box reset-otp" maxlength="1" inputmode="numeric" required>
-                        <input type="text" class="otp-box reset-otp" maxlength="1" inputmode="numeric" required>
-                        <input type="text" class="otp-box reset-otp" maxlength="1" inputmode="numeric" required>
+                        <input type="text" class="otp-box reset-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
+                        <input type="text" class="otp-box reset-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
+                        <input type="text" class="otp-box reset-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
+                        <input type="text" class="otp-box reset-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
+                        <input type="text" class="otp-box reset-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
                     </div>
 
                     <div class="input-group">
                         <label for="newResetPassword">رمز عبور جدید</label>
                         <div class="password-wrap">
-                            <input type="password" id="newResetPassword" placeholder="حداقل ۶ کاراکتر" minlength="6" required>
+                            <input type="password" id="newResetPassword" placeholder="حداقل ۶ کاراکتر" minlength="6" autocomplete="new-password" required>
                             <button type="button" class="eye-toggle-btn" onclick="togglePassword('newResetPassword', this)">
                                 <span class="material-symbols-outlined">visibility</span>
                             </button>
@@ -343,6 +343,7 @@ header("Pragma: no-cache");
                 sub.textContent = 'مشخصات خود را جهت ایجاد حساب کاربری وارد نمایید';
             } else if (viewName === 'registerOtp') {
                 document.getElementById('viewRegisterOtp').classList.add('active');
+                document.querySelectorAll('.reg-otp').forEach(i => i.value = '');
                 title.textContent = 'تایید شماره در بله';
                 sub.textContent = 'کد تایید ۵ رقمی ارسال شده به پیام‌رسان بله را وارد کنید';
             } else if (viewName === 'forgotPhone') {
@@ -351,6 +352,9 @@ header("Pragma: no-cache");
                 sub.textContent = 'شماره موبایل ثبت‌شده را وارد کنید تا کد بازیابی ارسال شود';
             } else if (viewName === 'forgotOtp') {
                 document.getElementById('viewForgotOtp').classList.add('active');
+                document.querySelectorAll('.reset-otp').forEach(i => i.value = '');
+                const newPassInput = document.getElementById('newResetPassword');
+                if (newPassInput) newPassInput.value = '';
                 title.textContent = 'تنظیم رمز عبور جدید';
                 sub.textContent = 'کد ارسال شده به بله و رمز عبور جدید خود را وارد کنید';
             }
@@ -369,7 +373,7 @@ header("Pragma: no-cache");
             }
         }
 
-        // مدیریت اینپوت‌های ۵ رقمی
+        // مدیریت اینپوت‌های ۵ رقمی و پشتیبانی از Paste
         function setupOtpAutoAdvance(selector) {
             const inputs = document.querySelectorAll(selector);
             inputs.forEach((input, index) => {
@@ -381,6 +385,20 @@ header("Pragma: no-cache");
                 input.addEventListener('keydown', (e) => {
                     if (e.key === 'Backspace' && !e.target.value && index > 0) {
                         inputs[index - 1].focus();
+                    }
+                });
+                input.addEventListener('focus', () => {
+                    input.select();
+                });
+                input.addEventListener('paste', (e) => {
+                    e.preventDefault();
+                    const pasteData = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '');
+                    if (pasteData) {
+                        inputs.forEach((inp, i) => {
+                            inp.value = pasteData[i] || '';
+                        });
+                        const nextIndex = Math.min(pasteData.length, inputs.length - 1);
+                        inputs[nextIndex].focus();
                     }
                 });
             });
