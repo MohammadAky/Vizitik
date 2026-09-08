@@ -376,6 +376,7 @@ header("Pragma: no-cache");
         // مدیریت اینپوت‌های ۵ رقمی و پشتیبانی از Paste
         function setupOtpAutoAdvance(selector) {
             const inputs = document.querySelectorAll(selector);
+
             inputs.forEach((input, index) => {
                 input.addEventListener('input', (e) => {
                     if (e.target.value.length === 1 && index < inputs.length - 1) {
@@ -390,16 +391,26 @@ header("Pragma: no-cache");
                 input.addEventListener('focus', () => {
                     input.select();
                 });
+                // پشتیبانی از Paste کد کامل ۵ رقمی
                 input.addEventListener('paste', (e) => {
                     e.preventDefault();
-                    const pasteData = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '');
-                    if (pasteData) {
-                        inputs.forEach((inp, i) => {
-                            inp.value = pasteData[i] || '';
-                        });
-                        const nextIndex = Math.min(pasteData.length, inputs.length - 1);
-                        inputs[nextIndex].focus();
-                    }
+                    e.stopPropagation();
+                    const pasteData = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '').slice(0, inputs.length);
+                    if (!pasteData) return;
+
+                    // اگر کاربر روی کادر نخست paste می‌کند از ابتدا پر شود؛ در غیر این صورت از همان کادر شروع می‌شود
+                    const startIndex = Math.min(index, inputs.length - 1);
+                    inputs.forEach((inp, i) => { inp.value = ''; });
+                    pasteData.split('').forEach((ch, i) => {
+                        if (startIndex + i < inputs.length) {
+                            inputs[startIndex + i].value = ch;
+                        }
+                    });
+
+                    const filledCount = Math.min(pasteData.length, inputs.length - startIndex);
+                    const focusIdx = Math.min(startIndex + filledCount, inputs.length - 1);
+                    inputs[focusIdx].focus();
+                    inputs[focusIdx].select();
                 });
             });
         }

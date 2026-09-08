@@ -64,7 +64,8 @@ $productsCatalog = (!empty($apiProducts) && is_array($apiProducts)) ? $apiProduc
                 <?php if (!empty($orders)): ?>
                     <?php foreach ($orders as $ord):
                         $ordId = $ord['id'];
-                        $invNo = substr($ordId, 0, 8);
+                        $invNo = $ord['invoiceNumber'] ?? substr($ordId, 0, 8);
+                        $invDigits = preg_replace('/\D/', '', (string)$invNo);
                         $custName = $ord['customer']['name'] ?? 'مشتری';
                         $subtotal = (float)($ord['subtotalAmount'] ?? 0);
                         $discount = (float)($ord['totalDiscountAmount'] ?? 0);
@@ -94,6 +95,7 @@ $productsCatalog = (!empty($apiProducts) && is_array($apiProducts)) ? $apiProduc
                             data-id="<?php echo $ordId; ?>"
                             data-customer="<?php echo htmlspecialchars($custName); ?>"
                             data-inv="<?php echo htmlspecialchars($invNo); ?>"
+                            data-inv-digits="<?php echo htmlspecialchars($invDigits); ?>"
                             data-final="<?php echo $finalAmount; ?>"
                             data-subtotal="<?php echo $subtotal; ?>"
                             data-discount="<?php echo $discount; ?>">
@@ -110,7 +112,7 @@ $productsCatalog = (!empty($apiProducts) && is_array($apiProducts)) ? $apiProduc
                                         </div>
                                     </div>
                                 </div>
-                                <span class="order-invoice-num">#<?php echo toPersianNum($invNo); ?></span>
+                                <span class="order-invoice-num">#<span class="invoice-num"><?php echo toPersianNum($invNo); ?></span></span>
                             </div>
 
                             <div class="order-meta-grid">

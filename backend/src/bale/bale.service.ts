@@ -81,7 +81,9 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
       const customer = order.customer;
       const visitor = order.visitor;
-      const invNo = order.localUuid.length > 8 ? order.localUuid.substring(0, 8).toUpperCase() : order.localUuid;
+      // شمارهٔ فاکتورِ رسمیِ ذخیره‌شده (مثل 1405-000012) — یکسان با رسید چاپی و لیست فاکتورها
+      const invNo = order.invoiceNumber ||
+        (order.localUuid.length > 8 ? order.localUuid.substring(0, 8).toUpperCase() : order.localUuid);
       const orderDateStr = new Date(order.orderDate).toLocaleDateString('fa-IR', {
         year: 'numeric',
         month: 'long',

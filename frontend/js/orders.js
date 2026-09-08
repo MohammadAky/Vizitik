@@ -25,19 +25,38 @@ function formatPrice(amount) {
     return toPersianNum(formatted) + ' تومان';
 }
 
+// تبدیل ارقام فارسی/انگلیسی به رقمِ خالص انگلیسی (برای جستجوی بی‌دردسر شماره فاکتور)
+function digitsToLatin(str) {
+    const fa = ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'];
+    return String(str || '').split('').map(ch => {
+        const i = fa.indexOf(ch);
+        return i !== -1 ? String(i) : ch;
+    }).join('');
+}
+
 function filterOrdersList() {
-    const query = (document.getElementById('orderSearchInput').value || '').trim().toLowerCase();
+    const raw = (document.getElementById('orderSearchInput').value || '').trim();
+    const query = raw.toLowerCase();
     const cards = document.querySelectorAll('.order-card');
+
+    // ارقامِ خواسته‌شده را نرمال می‌کنیم تا «۱۴۰۵»، «1405»، «000012» یا «1405-000012» همگی کار کنند
+    const queryDigits = digitsToLatin(raw).replace(/[^0-9]/g, '');
 
     cards.forEach(card => {
         const cust = (card.dataset.customer || '').toLowerCase();
         const inv = (card.dataset.inv || '').toLowerCase();
+        const invDigits = card.dataset.invDigits || digitsToLatin(inv).replace(/[^0-9]/g, '');
 
-        if (!query || cust.includes(query) || inv.includes(query)) {
+        if (!query) {
             card.style.display = 'flex';
-        } else {
-            card.style.display = 'none';
+            return;
         }
+
+        const nameHit = cust.includes(query);
+        const invRawHit = inv.includes(query);
+        const digitsHit = queryDigits.length > 0 && invDigits.includes(queryDigits);
+
+        card.style.display = (nameHit || invRawHit || digitsHit) ? 'flex' : 'none';
     });
 }
 
@@ -75,7 +94,7 @@ async function openFullEditOrderModal(orderId) {
         editOrderState.discountPercentages = (invoice.pricing?.discountSteps || []).map(s => Number(s.percent)).filter(p => p > 0);
         editOrderState.fixedDiscountAmount = 0;
 
-        document.getElementById('editFullOrderSubtitle').textContent = `فروشگاه ${editOrderState.customerName} (فاکتور #${toPersianNum(invoice.invoiceNumber)})`;
+        document.getElementById('editFullOrderSubtitle').innerHTML = `فروشگاه ${editOrderState.customerName} (فاکتور #<span class="invoice-num">${toPersianNum(invoice.invoiceNumber)}</span>)`;
 
         // پر کردن فیلدهای پرداخت قبلی
         let prevCash = 0, prevPos = 0, prevCheck = 0;
@@ -338,7 +357,16 @@ function onFullEditCalculations() {
 
     // به‌روزرسانی نمایشگرها
     document.getElementById('editGrossSubtotalDisplay').textContent = formatPrice(gross);
-    document.getElementById('editTotalDiscountDisplay').textContent = totalDiscount > 0 ? `-${formatPrice(totalDiscount)}` : '۰ تومان';
+
+    // نمایش مبلغ تخفیف با منفی سمت چپِ عدد (مقاوم نسبت به بازترتیب RTL)
+    const discountEl = document.getElementById('editTotalDiscountDisplay');
+    if (totalDiscount > 0) {
+        const digits = toPersianNum(Math.round(totalDiscount).toLocaleString('en-US'));
+        discountEl.innerHTML = `<span class="neg-amount">\u2212${digits}</span> تومان`;
+    } else {
+        discountEl.textContent = '۰ تومان';
+    }
+
     document.getElementById('editNetFinalDisplay').textContent = formatPrice(finalAmount);
 
     // ۳. خواندن ورودی‌های پرداخت
@@ -533,7 +561,7 @@ function renderThermalPaper(inv) {
         <div class="receipt-divider"></div>
         <div class="receipt-row">
             <span>شماره فاکتور:</span>
-            <strong>${toPersianNum(inv.invoiceNumber)}</strong>
+            <strong><span class="invoice-num">${toPersianNum(inv.invoiceNumber)}</span></strong>
         </div>
         <div class="receipt-row">
             <span>مشتری:</span>
