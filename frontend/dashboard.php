@@ -75,7 +75,7 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>حسابچین — داشبورد ویزیتور</title>
+    <title>ویزیتیک — داشبورد ویزیتور</title>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
@@ -121,7 +121,7 @@ if (is_array($apiOrders) && !empty($apiOrders)) {
                 </a>
                 <a href="about.php" class="side-menu-item">
                     <span class="material-symbols-outlined">info</span>
-                    درباره حساب‌چین
+                    درباره ویزیتیک
                 </a>
             </nav>
 

@@ -31,7 +31,7 @@ $debtorCustomers = array_values(array_filter($customers, function ($c) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>حسابچین — مدیریت ربات بله و اطلاع‌رسانی</title>
+    <title>ویزیتیک — مدیریت ربات بله و اطلاع‌رسانی</title>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
@@ -243,7 +243,7 @@ $debtorCustomers = array_values(array_filter($customers, function ($c) {
         let currentTpl = 'debt';
 
         const templates = {
-            debt: `همکار گرامی؛ {نام_فروشگاه}\nبا سلام، مانده حساب جاری شما نزد ویزیتوری حساب‌چین مبلغ {مبلغ_بدهی} می‌باشد. خواهشمند است نسبت به تسویه یا هماهنگی پرداخت اقدام فرمایید.\nبا تشکر از همکاری شما`,
+            debt: `همکار گرامی؛ {نام_فروشگاه}\nبا سلام، مانده حساب جاری شما نزد ویزیتوری ویزیتیک مبلغ {مبلغ_بدهی} می‌باشد. خواهشمند است نسبت به تسویه یا هماهنگی پرداخت اقدام فرمایید.\nبا تشکر از همکاری شما`,
             stock: `مشتری محترم؛ {نام_فروشگاه}\nبار جدید بستنی میهن و کترینگ ۴ کیلویی پاندا در خودرو بارگیری شد. جهت ثبت سفارش گرم و تحویل آنی تماس بگیرید.\nویزیتور شما: <?php echo htmlspecialchars($user['firstName'] ?? ''); ?>`,
             promo: `فروشگاه محترم؛ {نام_فروشگاه}\nجشنواره تخفیفات ویژه نقدی بستنی آغاز شد! با تسویه نقدی فاکتور امروز از تخفیفات پلکانی ویژه بهره‌مند شوید.`,
             custom: `همکار گرامی؛ {نام_فروشگاه}\n`

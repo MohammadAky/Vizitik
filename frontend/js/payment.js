@@ -1,5 +1,5 @@
 // ============================================================
-// حساب‌چین — لاجیک صفحه پرداخت، تسویه، تخفیفات پلکانی و تایید نهایی (payment.js)
+// ویزیتیک — لاجیک صفحه پرداخت، تسویه، تخفیفات پلکانی و تایید نهایی (payment.js)
 // ============================================================
 
 let currentOrder = null;
@@ -513,20 +513,17 @@ async function executeOrderSubmission() {
         });
     }
 
-    const discountPercentages = paymentState.discounts
-        .filter(d => d.type === 'percent')
-        .map(d => d.value);
-
-    const fixedDiscountAmount = paymentState.discounts
-        .filter(d => d.type === 'fixed')
-        .reduce((sum, d) => sum + d.value, 0);
+    // پله‌های تخفیف به‌صورت مرتب (دقیقاً مطابق ترتیبِ اعمال در صفحهٔ تسویه) ارسال می‌شود
+    const discountSteps = paymentState.discounts.map(d => ({
+        type: d.type === 'fixed' ? 'fixed' : 'percent',
+        value: Number(d.value) || 0
+    }));
 
     const payload = {
         localUuid,
         customerId: currentOrder.customerId || 'sample-id',
         items: itemsPayload,
-        discountPercentages,
-        fixedDiscountAmount,
+        discountSteps,
         payments: paymentsPayload
     };
 
@@ -629,7 +626,7 @@ function renderThermalReceipt(orderData, invoiceNum, persianDueDateStr) {
 
     paper.innerHTML = `
         <div class="receipt-center">
-            <div class="receipt-title">🍦 فاکتور رسمی فروش — حساب‌چین</div>
+            <div class="receipt-title">🍦 فاکتور رسمی فروش — ویزیتیک</div>
             <div class="receipt-sub">سامانه توزیع گرم بستنی میهن و پاندا</div>
         </div>
         <div class="receipt-divider"></div>
@@ -664,7 +661,7 @@ function renderThermalReceipt(orderData, invoiceNum, persianDueDateStr) {
         <div class="receipt-divider"></div>
         <div class="receipt-center" style="font-size: 10px; margin-top: 6px; line-height: 1.5;">
             با سپاس از خرید و همکاری شما<br>
-            نرم‌افزار توزیع و حسابداری حساب‌چین
+            نرم‌افزار توزیع و حسابداری ویزیتیک
         </div>
     `;
 }

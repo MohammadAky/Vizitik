@@ -13,7 +13,7 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port, '0.0.0.0');
-  console.log(`🚀 سرور حساب‌چین با موفقیت روی پورت ${port} اجرا شد: http://0.0.0.0:${port}`);
+  console.log(`🚀 سرور ویزیتیک با موفقیت روی پورت ${port} اجرا شد: http://0.0.0.0:${port}`);
 
   // ارسال خودکار پیام آنلاین شدن به ربات پیام‌رسان بله
   try {

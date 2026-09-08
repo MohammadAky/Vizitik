@@ -1,7 +1,7 @@
 <?php
 /**
  * ============================================================
- * حساب‌چین — تمپلیت پایه و استاندارد برای صفحات جدید (template.php)
+ * ویزیتیک — تمپلیت پایه و استاندارد برای صفحات جدید (template.php)
  * ============================================================
  * این فایل به عنوان قالب مرجع برای توسعه صفحات جدید (مشتریان، فاکتور، چک‌ها و...) استفاده می‌شود.
  */
@@ -21,7 +21,7 @@ $subtitle = "توضیح کوتاه صفحه";
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>حسابچین — <?php echo htmlspecialchars($pageTitle); ?></title>
+    <title>ویزیتیک — <?php echo htmlspecialchars($pageTitle); ?></title>
 
     <!-- فونت وزیرمتن و آیکون‌های گوگل -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">

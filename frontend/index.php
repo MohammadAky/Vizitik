@@ -16,7 +16,7 @@ header("Pragma: no-cache");
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>حسابچین — ورود به حساب کاربری</title>
+    <title>ویزیتیک — ورود به حساب کاربری</title>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
@@ -140,7 +140,7 @@ header("Pragma: no-cache");
             <div class="logo logo-lg">
                 <span class="material-symbols-outlined">icecream</span>
             </div>
-            <h1>حسابچین</h1>
+            <h1>ویزیتیک</h1>
             <p>سامانه جامع ویزیتوری و پخش گرم</p>
         </section>
 
@@ -309,7 +309,7 @@ header("Pragma: no-cache");
                 <div class="logo logo-lg">
                     <span class="material-symbols-outlined">icecream</span>
                 </div>
-                <h1>حسابچین</h1>
+                <h1>ویزیتیک</h1>
                 <p>در حال ورود به داشبورد ویزیتور...</p>
             </div>
         </div>

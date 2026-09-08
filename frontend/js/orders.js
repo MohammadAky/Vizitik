@@ -1,5 +1,5 @@
 // ============================================================
-// حساب‌چین — اسکریپت مدیریت و ویرایش جامع فاکتورها (orders.js)
+// ویزیتیک — اسکریپت مدیریت و ویرایش جامع فاکتورها (orders.js)
 // ============================================================
 
 let currentEditOrderId = null;
@@ -339,20 +339,20 @@ function onFullEditCalculations() {
     });
     editOrderState.grossSubtotal = gross;
 
-    // ۲. محاسبه تخفیفات پلکانی
+    // ۲. محاسبه تخفیفات پلکانی (گردِ هر پله به تومان صحیح — هماهنگ با موتور بک‌اند)
     let currentAmount = gross;
     let totalDiscount = 0;
 
     (editOrderState.discountPercentages || []).forEach(pct => {
         if (pct > 0) {
-            const stepDiscount = (currentAmount * pct) / 100;
+            const stepDiscount = Math.round((currentAmount * pct) / 100);
             totalDiscount += stepDiscount;
             currentAmount -= stepDiscount;
         }
     });
 
-    editOrderState.totalDiscount = totalDiscount;
-    const finalAmount = Math.round(currentAmount);
+    editOrderState.totalDiscount = Math.round(totalDiscount);
+    const finalAmount = Math.max(0, Math.round(currentAmount));
     editOrderState.finalAmount = finalAmount;
 
     // به‌روزرسانی نمایشگرها
@@ -424,8 +424,10 @@ async function saveFullEditedOrder() {
             cartonCount: i.cartonCount,
             unitCount: i.unitCount
         })),
-        discountPercentages: editOrderState.discountPercentages,
-        fixedDiscountAmount: 0,
+        discountSteps: (editOrderState.discountPercentages || []).map(pct => ({
+            type: 'percent',
+            value: Number(pct)
+        })),
         payments: paymentsPayload
     };
 
@@ -555,7 +557,7 @@ function renderThermalPaper(inv) {
 
     paper.innerHTML = `
         <div class="receipt-center">
-            <div class="receipt-title">🍦 فاکتور فروش حساب‌چین</div>
+            <div class="receipt-title">🍦 فاکتور فروش ویزیتیک</div>
             <div class="receipt-sub">سامانه پخش مویرگی و ویزیتوری</div>
         </div>
         <div class="receipt-divider"></div>
@@ -594,7 +596,7 @@ function renderThermalPaper(inv) {
         <div class="receipt-divider"></div>
         <div class="receipt-center" style="font-size: 10px; margin-top: 6px;">
             از خرید شما سپاسگزاریم<br>
-            نرم‌افزار توزیع و حسابداری حساب‌چین
+            نرم‌افزار توزیع و حسابداری ویزیتیک
         </div>
     `;
 }

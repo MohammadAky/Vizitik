@@ -8,7 +8,7 @@ requireLogin();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>حسابچین — راهنما و پشتیبانی</title>
+    <title>ویزیتیک — راهنما و پشتیبانی</title>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
@@ -106,7 +106,7 @@ requireLogin();
 
             <div class="support-cta-box">
                 <strong style="font-size: 13px; color: #166534;">نیاز به پشتیبانی تلفنی دارید؟</strong>
-                <span style="font-size: 11.5px; color: #15803d;">تیم پشتیبانی فنی حساب‌چین پاسخگوی سوالات شماست.</span>
+                <span style="font-size: 11.5px; color: #15803d;">تیم پشتیبانی فنی ویزیتیک پاسخگوی سوالات شماست.</span>
                 <a href="tel:09120000000" style="background:#16a34a; color:#fff; text-decoration:none; padding:8px 18px; border-radius:10px; font-size:12px; font-weight:800;">
                     تماس با پشتیبانی فنی
                 </a>

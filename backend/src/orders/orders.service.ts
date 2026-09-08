@@ -23,6 +23,65 @@ export class OrdersService {
     return Number(year || 0);
   }
 
+  /**
+   * یکسان‌سازی پله‌های تخفیف به یک ترتیب مشخص:
+   * اگر کلاینت پله‌ها را به‌صورت مرتب (percent/fixed) بفرستد همان را نگه می‌دارد؛
+   * در غیر این صورت (سازگاری با نسخهٔ قبل) اول همهٔ درصدها و بعد مبلغ ثابت اعمال می‌شود.
+   */
+  private normalizeDiscountSteps(dto: any): { type: string; value: number }[] {
+    if (dto.discountSteps && Array.isArray(dto.discountSteps) && dto.discountSteps.length > 0) {
+      return dto.discountSteps
+        .map((s: any) => ({ type: s.type === "fixed" ? "fixed" : "percent", value: Math.round(Number(s.value) || 0) }))
+        .filter((s: any) => s.value > 0);
+    }
+    const steps: { type: string; value: number }[] = [];
+    if (dto.discountPercentages) {
+      (dto.discountPercentages as number[]).forEach((p) => {
+        if (Number(p) > 0) steps.push({ type: "percent", value: Number(p) });
+      });
+    }
+    if (dto.fixedDiscountAmount && Number(dto.fixedDiscountAmount) > 0) {
+      steps.push({ type: "fixed", value: Math.round(Number(dto.fixedDiscountAmount)) });
+    }
+    return steps;
+  }
+
+  /**
+   * موتور تخفیف یکپارچه (همان الگوریتمی که در فرانت‌اند صفحهٔ تسویه نیز اجرا می‌شود):
+   * هر پله به تومانِ صحیح گرد می‌شود تا عددِ میانی هرگز اعشاری نماند و نتیجه همیشه
+   * عددِ صحیحِ تومان باشد → هیچ باقیماندهٔ کسریِ «نسیهٔ ناخواسته» تولید نمی‌شود.
+   */
+  private computeDiscounts(subtotal: number, steps: { type: string; value: number }[]) {
+    const discountStepsData: any[] = [];
+    let current = subtotal;
+    let totalDiscountAmount = 0;
+    let order = 1;
+
+    for (const s of steps) {
+      let stepDiscount = 0;
+      if (s.type === "percent" && s.value > 0) {
+        stepDiscount = Math.round((current * s.value) / 100);
+      } else if (s.type === "fixed" && s.value > 0) {
+        stepDiscount = Math.min(current, s.value);
+      }
+      if (stepDiscount > 0) {
+        const afterStep = current - stepDiscount;
+        discountStepsData.push({
+          stepOrder: order,
+          percent: s.type === "percent" ? s.value : 0,
+          amountBeforeStep: current,
+          amountAfterStep: afterStep,
+        });
+        totalDiscountAmount += stepDiscount;
+        current = afterStep;
+        order += 1;
+      }
+    }
+
+    const finalAmount = Math.max(0, Math.round(current));
+    return { discountStepsData, totalDiscountAmount, finalAmount };
+  }
+
   /** برای فاکتورهای قدیمی‌ای که شمارهٔ ترتیبی ندارند، همان رفتار قبلی (برگرفته از localUuid) */
   private legacyInvoiceNumber(order: { id: string; localUuid: string }): string {
     const src = order.localUuid || order.id;
@@ -33,10 +92,13 @@ export class OrdersService {
   private async reserveInvoiceNumber(tx: any, date: Date): Promise<string> {
     const year = this.solarYearOf(date);
 
+    // شماره فاکتور از ۰۰۱۰۰۰ شروع می‌شود (lastSeq با مقدار ۹۹۹ مقداردهی می‌شود تا اولین شماره ۱۰۰۰ شود)
+    const START_SEQ = 999;
+
     // اگر شمارنده برای این سال نبود، مقداردهی اولیه (بدون ریسکِ رقابت، چون فقط ردیف اولیه را می‌سازد)
     await tx.$executeRaw`
       INSERT INTO invoice_counters (\`solarYear\`, \`lastSeq\`)
-      VALUES (${year}, 0)
+      VALUES (${year}, ${START_SEQ})
       ON DUPLICATE KEY UPDATE \`solarYear\` = \`solarYear\`
     `;
     // افزایش اتمیک (قفلِ ردیف) — امن در برابر درخواست‌های هم‌زمان
@@ -44,7 +106,7 @@ export class OrdersService {
       UPDATE invoice_counters SET \`lastSeq\` = \`lastSeq\` + 1 WHERE \`solarYear\` = ${year}
     `;
     const counter = await tx.invoiceCounter.findUnique({ where: { solarYear: year } });
-    const seq = counter ? counter.lastSeq : 1;
+    const seq = counter ? counter.lastSeq : START_SEQ + 1;
 
     return `${year}-${String(seq).padStart(6, '0')}`;
   }
@@ -128,45 +190,9 @@ export class OrdersService {
       });
     }
 
-    const discountStepsData: any[] = [];
-    let currentAmount = subtotalAmount;
-    let totalDiscountAmount = 0;
-
-    if (dto.discountPercentages && dto.discountPercentages.length > 0) {
-      dto.discountPercentages.forEach((percent, idx) => {
-        if (percent > 0) {
-          const stepDiscount = (currentAmount * percent) / 100;
-          const afterStep = currentAmount - stepDiscount;
-
-          discountStepsData.push({
-            stepOrder: idx + 1,
-            percent,
-            amountBeforeStep: currentAmount,
-            amountAfterStep: afterStep,
-          });
-
-          totalDiscountAmount += stepDiscount;
-          currentAmount = afterStep;
-        }
-      });
-    }
-
-    if (dto.fixedDiscountAmount && dto.fixedDiscountAmount > 0) {
-      const fixedDiscount = Math.min(dto.fixedDiscountAmount, currentAmount);
-      const afterStep = currentAmount - fixedDiscount;
-
-      discountStepsData.push({
-        stepOrder: discountStepsData.length + 1,
-        percent: 0,
-        amountBeforeStep: currentAmount,
-        amountAfterStep: afterStep,
-      });
-
-      totalDiscountAmount += fixedDiscount;
-      currentAmount = afterStep;
-    }
-
-    const finalAmount = Math.round(currentAmount);
+    // محاسبه تخفیف‌ها با موتور یکپارچه (پله‌ها به‌ترتیب ورود و با گردِ هر پله به تومان صحیح)
+    const steps = this.normalizeDiscountSteps(dto);
+    const { discountStepsData, totalDiscountAmount, finalAmount } = this.computeDiscounts(subtotalAmount, steps);
 
     const result = await this.prisma.$transaction(async (tx) => {
       // تخصیص شمارهٔ فاکتور ترتیبی (یکسان در سراسر سیستم) قبل از درج سفارش
@@ -554,48 +580,13 @@ export class OrdersService {
       });
     }
 
-    // ۳. محاسبه تخفیفات جدید
-    const newDiscountStepsData: any[] = [];
-    let currentAmount = newSubtotalAmount;
-    let newTotalDiscountAmount = 0;
+    // ۳. محاسبه تخفیفات جدید با موتور یکپارچه (گردِ هر پله به تومان صحیح + ترتیب ورود)
+    const steps = this.normalizeDiscountSteps(dto);
+    const { discountStepsData, totalDiscountAmount: newTotalDiscountAmount, finalAmount: newFinalRaw } =
+      this.computeDiscounts(newSubtotalAmount, steps);
+    const newDiscountStepsData = discountStepsData.map((s: any) => ({ orderId: order.id, ...s }));
 
-    if (dto.discountPercentages && dto.discountPercentages.length > 0) {
-      dto.discountPercentages.forEach((percent, idx) => {
-        if (percent > 0) {
-          const stepDiscount = (currentAmount * percent) / 100;
-          const afterStep = currentAmount - stepDiscount;
-
-          newDiscountStepsData.push({
-            orderId: order.id,
-            stepOrder: idx + 1,
-            percent,
-            amountBeforeStep: currentAmount,
-            amountAfterStep: afterStep,
-          });
-
-          newTotalDiscountAmount += stepDiscount;
-          currentAmount = afterStep;
-        }
-      });
-    }
-
-    if (dto.fixedDiscountAmount && dto.fixedDiscountAmount > 0) {
-      const fixedDiscount = Math.min(dto.fixedDiscountAmount, currentAmount);
-      const afterStep = currentAmount - fixedDiscount;
-
-      newDiscountStepsData.push({
-        orderId: order.id,
-        stepOrder: newDiscountStepsData.length + 1,
-        percent: 0,
-        amountBeforeStep: currentAmount,
-        amountAfterStep: afterStep,
-      });
-
-      newTotalDiscountAmount += fixedDiscount;
-      currentAmount = afterStep;
-    }
-
-    const newFinalAmount = Math.round(currentAmount);
+    const newFinalAmount = newFinalRaw;
     const newPaidAmount = (dto.payments || []).reduce((sum, p) => sum + Number(p.amount), 0);
     const newCreditAmount = Math.max(0, newFinalAmount - newPaidAmount);
 

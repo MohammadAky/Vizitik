@@ -47,6 +47,23 @@ export class CheckInputDto {
   dueDate: string; // ISO date string
 }
 
+export enum DiscountKind {
+  PERCENT = 'percent',
+  FIXED = 'fixed',
+}
+
+/** یک پلهٔ تخفیف مرتب (درصدی یا مبلغی) — ترتیبِ اعمال دقیقاً مطابق ترتیبِ این آرایه است */
+export class DiscountStepInputDto {
+  @IsNotEmpty({ message: 'نوع پلهٔ تخفیف الزامی است' })
+  @IsEnum(DiscountKind, { message: 'نوع پلهٔ تخفیف معتبر نیست' })
+  type: DiscountKind;
+
+  @IsNotEmpty({ message: 'مقدار پلهٔ تخفیف الزامی است' })
+  @IsNumber()
+  @Min(0)
+  value: number;
+}
+
 export class PaymentInputDto {
   @IsNotEmpty({ message: 'نوع پرداخت الزامی است' })
   @IsEnum(PaymentMethodEnum, { message: 'نوع پرداخت معتبر نیست' })
@@ -87,6 +104,13 @@ export class CreateOrderDto {
   @Min(0)
   fixedDiscountAmount?: number; // تخفیف مبلغی مستقیم
 
+  // پله‌های مرتب تخفیف (percent/fixed) — اگر ارسال شود ملاکِ اعمال، این ترتیب است
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DiscountStepInputDto)
+  discountSteps?: DiscountStepInputDto[];
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -109,6 +133,13 @@ export class UpdateOrderDto {
   @IsNumber()
   @Min(0)
   fixedDiscountAmount?: number;
+
+  // پله‌های مرتب تخفیف (percent/fixed) — اگر ارسال شود ملاکِ اعمال، این ترتیب است
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DiscountStepInputDto)
+  discountSteps?: DiscountStepInputDto[];
 
   @IsOptional()
   @IsArray()
