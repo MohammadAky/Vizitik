@@ -574,3 +574,30 @@ function renderThermalPaper(inv) {
 function closeThermalReceiptModal() {
     document.getElementById('invoiceModal').style.display = 'none';
 }
+
+async function sendOrderToBale(orderId) {
+    if (!confirm('آیا مایلید این فاکتور به پیام‌رسان بله فروشگاه و ویزیتور ارسال شود؟')) return;
+    try {
+        const res = await fetch(`http://localhost:3000/api/bale/send-invoice/${orderId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${API_TOKEN}`
+            }
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+            let msg = 'فاکتور با موفقیت به بله ارسال شد.';
+            if (data.customerSent && data.visitorSent) {
+                msg = 'فاکتور با موفقیت برای فروشگاه و ویزیتور در بله ارسال شد.';
+            } else if (data.visitorSent && !data.customerLinked) {
+                msg = 'فاکتور برای ویزیتور ارسال شد. (فروشگاه هنوز در ربات بله عضو نشده است)';
+            }
+            alert(msg);
+        } else {
+            alert(data.message || 'فاکتور به بله ارسال شد.');
+        }
+    } catch (err) {
+        alert('خطا در ارسال فاکتور به بله.');
+    }
+}

@@ -13,7 +13,6 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     this.logger.log(`🤖 ماژول ربات بله حساب‌چین راه‌اندازی شد (Token: ${this.baleToken.substring(0, 15)}...)`);
-    // اجرای شنونده Polling در پس‌زمینه بدون بلاک کردن استارت‌آپ سرور
     this.startPollingLoop();
   }
 
@@ -50,7 +49,268 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * پردازش آپدیت‌های ورودی از بله (چه از طریق Polling و چه از طریق Webhook)
+   * ارسال خودکار و اصولی فاکتور صادر شده به ویزیتور و فروشگاه (مشتری)
+   */
+  async sendInvoiceNotification(orderId: string, options: { isUpdate?: boolean } = {}) {
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+          customer: {
+            include: {
+              ledgerEntries: { orderBy: { createdAt: 'desc' }, take: 1 },
+            },
+          },
+          visitor: true,
+          items: {
+            include: { product: true },
+          },
+          discountSteps: {
+            orderBy: { stepOrder: 'asc' },
+          },
+          payments: {
+            include: { check: true },
+          },
+        },
+      });
+
+      if (!order) {
+        this.logger.warn(`فاکتور ${orderId} برای ارسال به بله یافت نشد.`);
+        return { success: false, reason: 'order_not_found' };
+      }
+
+      // تنظیمات کاربری ویزیتور برای ارسال به بله
+      const settings = await this.prisma.invoiceSettings.findFirst({
+        where: { userId: order.visitorId },
+      });
+
+      const notifyCustomer = settings?.baleNotifyCustomer ?? true;
+      const notifyVisitor = settings?.baleNotifyVisitor ?? true;
+      const includeItems = settings?.baleIncludeItems ?? true;
+      const includeDebt = settings?.baleIncludeDebt ?? true;
+
+      const customer = order.customer;
+      const visitor = order.visitor;
+      const invNo = order.localUuid.length > 8 ? order.localUuid.substring(0, 8).toUpperCase() : order.localUuid;
+      const orderDateStr = new Date(order.orderDate).toLocaleDateString('fa-IR', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      const subtotalStr = Number(order.subtotalAmount).toLocaleString('fa-IR');
+      const discountStr = Number(order.totalDiscountAmount).toLocaleString('fa-IR');
+      const finalStr = Number(order.finalAmount).toLocaleString('fa-IR');
+
+      const paidSum = order.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+      const paidStr = paidSum.toLocaleString('fa-IR');
+      const remainingCredit = Math.max(0, Number(order.finalAmount) - paidSum);
+      const remainingCreditStr = remainingCredit.toLocaleString('fa-IR');
+
+      // لیست پرداخت‌ها
+      let paymentMethodsList = '';
+      if (order.payments.length > 0) {
+        paymentMethodsList = order.payments.map((p) => {
+          if (p.method === 'CASH') return `▫️ نقدی: ${Number(p.amount).toLocaleString('fa-IR')} تومان`;
+          if (p.method === 'CARD') return `▫️ کارتخوان / پوز: ${Number(p.amount).toLocaleString('fa-IR')} تومان`;
+          if (p.method === 'CHECK' && p.check) {
+            const checkDue = new Date(p.check.dueDate).toLocaleDateString('fa-IR');
+            return `▫️ چک صیادی (${p.check.bankName || 'بانک'} - سررسید ${checkDue}): ${Number(p.amount).toLocaleString('fa-IR')} تومان`;
+          }
+          return `▫️ ${p.method}: ${Number(p.amount).toLocaleString('fa-IR')} تومان`;
+        }).join('\n');
+      }
+
+      if (remainingCredit > 0) {
+        paymentMethodsList += `\n▫️ مانده نسیه فاکتور: *${remainingCreditStr} تومان*`;
+      }
+
+      // لیست اقلام سفارش
+      let itemsListText = '';
+      if (includeItems && order.items.length > 0) {
+        itemsListText = order.items.map((i) => {
+          const pName = i.product.name;
+          const brand = i.product.brand ? ` (${i.product.brand})` : '';
+          const parts: string[] = [];
+          if (i.cartonCount > 0) parts.push(`${i.cartonCount} کارتن`);
+          if (i.unitCount > 0) parts.push(`${i.unitCount} دانه`);
+          const qtyDesc = parts.join(' و ') || '۰';
+          const rowPrice = Number(i.lineTotal).toLocaleString('fa-IR');
+          return `▫️ ${pName}${brand}: ${qtyDesc} | ${rowPrice} ت`;
+        }).join('\n');
+      }
+
+      // وضعیت بدهی دفتر حساب مشتری
+      const latestBalance = customer.ledgerEntries.length > 0 ? Number(customer.ledgerEntries[0].balanceAfter) : 0;
+      const latestBalanceStr = latestBalance.toLocaleString('fa-IR');
+
+      let debtSection = '';
+      if (includeDebt) {
+        debtSection = `\n📊 *وضعیت حساب شما:*\n▫️ مانده کل بدهی نزد حساب‌چین: *${latestBalanceStr} تومان*\n`;
+      }
+
+      const updatePrefix = options.isUpdate ? '✏️ *[اصلاحیه فاکتور]*\n' : '';
+
+      // ۱. پیام اختصاصی برای مشتری / فروشگاه
+      const customerMessage =
+        `${updatePrefix}🧾 *فاکتور رسمی حساب‌چین*\n` +
+        `🍦 *پخش گرم و توزیع بستنی*\n\n` +
+        `🏪 *فروشگاه:* ${customer.name}\n` +
+        `🔢 *شماره فاکتور:* \`${invNo}\`\n` +
+        `📅 *زمان ثبت:* ${orderDateStr}\n` +
+        `👤 *مسئول توزیع:* ${visitor.firstName} ${visitor.lastName} (${visitor.phone})\n\n` +
+        (itemsListText ? `📋 *اقلام فاکتور:*\n${itemsListText}\n\n` : '') +
+        `💵 *جمع ناخالص:* ${subtotalStr} تومان\n` +
+        (Number(order.totalDiscountAmount) > 0 ? `🎁 *مجموع تخفیف:* ${discountStr} تومان\n` : '') +
+        `💰 *مبلغ نهایی قابل پرداخت:* *${finalStr} تومان*\n\n` +
+        `💳 *روش تسویه و پرداخت:*\n${paymentMethodsList}\n` +
+        debtSection +
+        `\nبا تشکر از حسن انتخاب و همکاری شما 🍦`;
+
+      // ۲. پیام اختصاصی برای ویزیتور
+      const visitorMessage =
+        `${updatePrefix}📋 *گزارش فاکتور فروش*\n\n` +
+        `🏪 *فروشگاه:* ${customer.name}\n` +
+        `🔢 *شماره فاکتور:* \`${invNo}\`\n` +
+        `💰 *مبلغ فاکتور:* *${finalStr} تومان*\n` +
+        `💳 *مبلغ دریافتی:* ${paidStr} تومان\n` +
+        (remainingCredit > 0 ? `⚠️ *مانده نسیه:* ${remainingCreditStr} تومان\n` : `✅ *تسویه کامل*\n`) +
+        `📊 *مانده کل حساب فروشگاه:* ${latestBalanceStr} تومان\n` +
+        (customer.baleChatId ? `📲 *اعلان برای فروشگاه در بله ارسال شد.*` : `⚠️ *فروشگاه هنوز در ربات بله متصل نشده است.*`);
+
+      let customerSent = false;
+      let visitorSent = false;
+
+      // ارسال به مشتری در بله در صورت فعال بودن و وجود شناسه چت
+      if (notifyCustomer && customer.baleChatId) {
+        const res = await this.sendMessage(customer.baleChatId, customerMessage);
+        customerSent = !!(res && res.ok);
+        if (customerSent) {
+          this.logger.log(`✅ فاکتور ${invNo} با موفقیت به بله مشتری [${customer.name}] (${customer.baleChatId}) ارسال شد.`);
+        }
+      }
+
+      // ارسال به ویزیتور در بله
+      const fallbackChatId = process.env.BALE_ADMIN_CHAT_ID || '542633638';
+      const visitorTargetChat = visitor.baleChatId || fallbackChatId;
+
+      if (notifyVisitor && visitorTargetChat) {
+        const res = await this.sendMessage(visitorTargetChat, visitorMessage);
+        visitorSent = !!(res && res.ok);
+        if (visitorSent) {
+          this.logger.log(`✅ فاکتور ${invNo} به بله ویزیتور [${visitor.firstName} ${visitor.lastName}] (${visitorTargetChat}) ارسال شد.`);
+        }
+      }
+
+      return {
+        success: true,
+        customerSent,
+        visitorSent,
+        customerLinked: !!customer.baleChatId,
+      };
+    } catch (err: any) {
+      this.logger.error(`خطا در ارسال اعلان فاکتور به بله: ${err.message}`);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * دریافت تنظیمات و آمار تفکیکی اتصال مشتریان به ربات بله
+   */
+  async getBaleStatsAndSettings(visitorId: string) {
+    const visitor = await this.prisma.user.findUnique({
+      where: { id: visitorId },
+      include: {
+        invoiceSettings: true,
+      },
+    });
+
+    const customers = await this.prisma.customer.findMany({
+      where: { assignedVisitorId: visitorId },
+      include: {
+        ledgerEntries: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    });
+
+    const linkedCustomers = customers.filter((c) => !!c.baleChatId);
+    const unlinkedCustomers = customers.filter((c) => !c.baleChatId);
+
+    const userSettings = visitor?.invoiceSettings[0];
+
+    return {
+      botInfo: {
+        username: 'HesabchinBot',
+        link: 'https://ble.ir/HesabchinBot',
+        status: 'ONLINE',
+      },
+      visitorStatus: {
+        isLinked: !!visitor?.baleChatId,
+        baleChatId: visitor?.baleChatId || null,
+        phone: visitor?.phone || '',
+      },
+      customersStats: {
+        total: customers.length,
+        linkedCount: linkedCustomers.length,
+        unlinkedCount: unlinkedCustomers.length,
+        linkedList: linkedCustomers.map((c) => ({ id: c.id, name: c.name, phone: c.phone, baleChatId: c.baleChatId })),
+        unlinkedList: unlinkedCustomers.map((c) => ({ id: c.id, name: c.name, phone: c.phone })),
+      },
+      settings: {
+        baleNotifyCustomer: userSettings?.baleNotifyCustomer ?? true,
+        baleNotifyVisitor: userSettings?.baleNotifyVisitor ?? true,
+        baleIncludeItems: userSettings?.baleIncludeItems ?? true,
+        baleIncludeDebt: userSettings?.baleIncludeDebt ?? true,
+      },
+    };
+  }
+
+  /**
+   * ذخیره تنظیمات ارسال اعلان‌های فاکتور به بله
+   */
+  async updateBaleSettings(
+    visitorId: string,
+    dto: {
+      baleNotifyCustomer?: boolean;
+      baleNotifyVisitor?: boolean;
+      baleIncludeItems?: boolean;
+      baleIncludeDebt?: boolean;
+    },
+  ) {
+    const existing = await this.prisma.invoiceSettings.findFirst({
+      where: { userId: visitorId },
+    });
+
+    if (existing) {
+      const updated = await this.prisma.invoiceSettings.update({
+        where: { id: existing.id },
+        data: {
+          baleNotifyCustomer: dto.baleNotifyCustomer !== undefined ? dto.baleNotifyCustomer : existing.baleNotifyCustomer,
+          baleNotifyVisitor: dto.baleNotifyVisitor !== undefined ? dto.baleNotifyVisitor : existing.baleNotifyVisitor,
+          baleIncludeItems: dto.baleIncludeItems !== undefined ? dto.baleIncludeItems : existing.baleIncludeItems,
+          baleIncludeDebt: dto.baleIncludeDebt !== undefined ? dto.baleIncludeDebt : existing.baleIncludeDebt,
+        },
+      });
+      return { success: true, settings: updated };
+    } else {
+      const created = await this.prisma.invoiceSettings.create({
+        data: {
+          userId: visitorId,
+          showDiscountBreakdown: true,
+          showVanInventoryRef: false,
+          baleNotifyCustomer: dto.baleNotifyCustomer ?? true,
+          baleNotifyVisitor: dto.baleNotifyVisitor ?? true,
+          baleIncludeItems: dto.baleIncludeItems ?? true,
+          baleIncludeDebt: dto.baleIncludeDebt ?? true,
+        },
+      });
+      return { success: true, settings: created };
+    }
+  }
+
+  /**
+   * پردازش آپدیت‌های ورودی از بله (Polling و Webhook)
    */
   async processUpdate(update: any) {
     const message = update?.message || update?.callback_query?.message;
@@ -156,7 +416,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
         confirmationText =
           `✅ *فروشگاه محترم ${matchedName}؛*\n\n` +
           `شماره موبایل شما (*${normalizedPhone}*) با موفقیت تایید و به سیستم حساب‌چین متصل شد.\n` +
-          `از این پس فاکتورهای پخش گرم، مانده حساب و جشنواره‌های تخفیف مستقیماً به این صفحه ارسال خواهند شد. 🍦`;
+          `از این پس فاکتورهای رسمی، ریز اقلام، مانده حساب و جشنواره‌های تخفیف مستقیماً به این صفحه ارسال خواهند شد. 🍦`;
       } else if (matchedRole === 'ویزیتور') {
         confirmationText =
           `✅ *ویزیتور گرامی (${matchedName})؛*\n\n` +
@@ -179,7 +439,6 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
   private async startPollingLoop() {
     this.isPolling = true;
 
-    // اجرای پروسه پس‌زمینه به صورت غیرهمگام
     setTimeout(async () => {
       while (this.isPolling) {
         try {
@@ -194,7 +453,6 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
             }
           }
         } catch (err) {
-          // در صورت قطعی شبکه چند ثانیه صبر و تلاش مجدد
           await new Promise((r) => setTimeout(r, 4000));
         }
       }

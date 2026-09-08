@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Inject } from '@nestjs/common';
+import { Controller, Post, Get, Put, Body, Param, UseGuards, Inject } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { BaleService } from './bale.service';
 import { GetUser } from '../auth/get-user.decorator';
@@ -16,6 +16,41 @@ export class BaleController {
   }
 
   /**
+   * دریافت آمار اتصال مشتریان و تنظیمات ارسال پیام بله
+   */
+  @Get('stats')
+  @UseGuards(AuthGuard('jwt'))
+  getStats(@GetUser('id') visitorId: string) {
+    return this.baleService.getBaleStatsAndSettings(visitorId);
+  }
+
+  /**
+   * ذخیره تنظیمات ارسال خودکار فاکتور به بله
+   */
+  @Put('settings')
+  @UseGuards(AuthGuard('jwt'))
+  updateSettings(
+    @GetUser('id') visitorId: string,
+    @Body() dto: {
+      baleNotifyCustomer?: boolean;
+      baleNotifyVisitor?: boolean;
+      baleIncludeItems?: boolean;
+      baleIncludeDebt?: boolean;
+    },
+  ) {
+    return this.baleService.updateBaleSettings(visitorId, dto);
+  }
+
+  /**
+   * ارسال مجدد / دستی فاکتور به بله مشتری و ویزیتور
+   */
+  @Post('send-invoice/:orderId')
+  @UseGuards(AuthGuard('jwt'))
+  sendInvoice(@Param('orderId') orderId: string) {
+    return this.baleService.sendInvoiceNotification(orderId);
+  }
+
+  /**
    * ارسال پیام اطلاع‌رسانی گروهی یا فردی به مشتریان
    */
   @Post('broadcast')
@@ -28,7 +63,7 @@ export class BaleController {
   }
 
   /**
-   * وضعیت اتصال ربات بله
+   * وضعیت اتصال عمومی ربات بله
    */
   @Get('status')
   getStatus() {

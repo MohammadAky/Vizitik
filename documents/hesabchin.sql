@@ -249,6 +249,10 @@ CREATE TABLE `invoice_settings` (
   `userId` VARCHAR(36) NULL,
   `showDiscountBreakdown` BOOLEAN NOT NULL DEFAULT TRUE,
   `showVanInventoryRef` BOOLEAN NOT NULL DEFAULT FALSE,
+  `baleNotifyCustomer` BOOLEAN NOT NULL DEFAULT TRUE,
+  `baleNotifyVisitor` BOOLEAN NOT NULL DEFAULT TRUE,
+  `baleIncludeItems` BOOLEAN NOT NULL DEFAULT TRUE,
+  `baleIncludeDebt` BOOLEAN NOT NULL DEFAULT TRUE,
   `isDefault` BOOLEAN NOT NULL DEFAULT FALSE,
 
   PRIMARY KEY (`id`),
