@@ -5,7 +5,8 @@ import Register from './screens/Register.jsx';
 import Dashboard from './screens/Dashboard.jsx';
 import NewOrder from './screens/NewOrder.jsx';
 import VanLoading from './screens/VanLoading.jsx';
-import ComingSoon from './screens/ComingSoon.jsx';
+import Orders from './screens/Orders.jsx';
+import Collections from './screens/Collections.jsx';
 
 function Settings({ onLogout }) {
   const user = authStorage.user || {};
@@ -67,7 +68,10 @@ export default function App() {
       screen = <VanLoading reloadHome={reloadHome} />;
       break;
     case 'collect':
-      screen = <ComingSoon title="وصول و چک‌ها" />;
+      screen = <Collections reloadHome={reloadHome} />;
+      break;
+    case 'orders':
+      screen = <Orders goBack={() => setView('dash')} />;
       break;
     default:
       screen = (
