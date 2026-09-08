@@ -79,16 +79,6 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
         return { success: false, reason: 'order_not_found' };
       }
 
-      // تنظیمات کاربری ویزیتور برای ارسال به بله
-      const settings = await this.prisma.invoiceSettings.findFirst({
-        where: { userId: order.visitorId },
-      });
-
-      const notifyCustomer = settings?.baleNotifyCustomer ?? true;
-      const notifyVisitor = settings?.baleNotifyVisitor ?? true;
-      const includeItems = settings?.baleIncludeItems ?? true;
-      const includeDebt = settings?.baleIncludeDebt ?? true;
-
       const customer = order.customer;
       const visitor = order.visitor;
       const invNo = order.localUuid.length > 8 ? order.localUuid.substring(0, 8).toUpperCase() : order.localUuid;
@@ -129,7 +119,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
       // لیست اقلام سفارش
       let itemsListText = '';
-      if (includeItems && order.items.length > 0) {
+      if (order.items.length > 0) {
         itemsListText = order.items.map((i) => {
           const pName = i.product.name;
           const brand = i.product.brand ? ` (${i.product.brand})` : '';
@@ -145,11 +135,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       // وضعیت بدهی دفتر حساب مشتری
       const latestBalance = customer.ledgerEntries.length > 0 ? Number(customer.ledgerEntries[0].balanceAfter) : 0;
       const latestBalanceStr = latestBalance.toLocaleString('fa-IR');
-
-      let debtSection = '';
-      if (includeDebt) {
-        debtSection = `\n📊 *وضعیت حساب شما:*\n▫️ مانده کل بدهی نزد حساب‌چین: *${latestBalanceStr} تومان*\n`;
-      }
+      const debtSection = `\n📊 *وضعیت حساب شما:*\n▫️ مانده کل بدهی نزد حساب‌چین: *${latestBalanceStr} تومان*\n`;
 
       const updatePrefix = options.isUpdate ? '✏️ *[اصلاحیه فاکتور]*\n' : '';
 
@@ -171,32 +157,32 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
       // ۲. پیام اختصاصی برای ویزیتور
       const visitorMessage =
-        `${updatePrefix}📋 *گزارش فاکتور فروش*\n\n` +
+        `${updatePrefix}📋 *گزارش خودکار فاکتور فروش*\n\n` +
         `🏪 *فروشگاه:* ${customer.name}\n` +
         `🔢 *شماره فاکتور:* \`${invNo}\`\n` +
         `💰 *مبلغ فاکتور:* *${finalStr} تومان*\n` +
         `💳 *مبلغ دریافتی:* ${paidStr} تومان\n` +
         (remainingCredit > 0 ? `⚠️ *مانده نسیه:* ${remainingCreditStr} تومان\n` : `✅ *تسویه کامل*\n`) +
         `📊 *مانده کل حساب فروشگاه:* ${latestBalanceStr} تومان\n` +
-        (customer.baleChatId ? `📲 *اعلان برای فروشگاه در بله ارسال شد.*` : `⚠️ *فروشگاه هنوز در ربات بله متصل نشده است.*`);
+        (customer.baleChatId ? `📲 *فاکتور به صورت خودکار برای فروشگاه در بله ارسال شد.*` : `⚠️ *فروشگاه هنوز در ربات بله متصل نشده است.*`);
 
       let customerSent = false;
       let visitorSent = false;
 
-      // ارسال به مشتری در بله در صورت فعال بودن و وجود شناسه چت
-      if (notifyCustomer && customer.baleChatId) {
+      // ارسال خودکار به مشتری در بله
+      if (customer.baleChatId) {
         const res = await this.sendMessage(customer.baleChatId, customerMessage);
         customerSent = !!(res && res.ok);
         if (customerSent) {
-          this.logger.log(`✅ فاکتور ${invNo} با موفقیت به بله مشتری [${customer.name}] (${customer.baleChatId}) ارسال شد.`);
+          this.logger.log(`✅ فاکتور ${invNo} با موفقیت و به صورت خودکار به بله مشتری [${customer.name}] (${customer.baleChatId}) ارسال شد.`);
         }
       }
 
-      // ارسال به ویزیتور در بله
+      // ارسال خودکار به ویزیتور در بله
       const fallbackChatId = process.env.BALE_ADMIN_CHAT_ID || '542633638';
       const visitorTargetChat = visitor.baleChatId || fallbackChatId;
 
-      if (notifyVisitor && visitorTargetChat) {
+      if (visitorTargetChat) {
         const res = await this.sendMessage(visitorTargetChat, visitorMessage);
         visitorSent = !!(res && res.ok);
         if (visitorSent) {
