@@ -158,7 +158,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       const customerMessage =
         `${updatePrefix}🧾 *فاکتور رسمی ویزیتیک*\n\n` +
         `🏪 *فروشگاه:* ${customer.name}\n` +
-        `🔢 *شماره فاکتور:* #${invNo}\n` +
+        `🔢 *شماره فاکتور:* #${invNo.replace(/-/g, "_")}\n` +
         `📅 *زمان ثبت:* ${orderDateStr}\n` +
         `👤 *ویزیتور:* #${visitor.firstName}_${visitor.lastName} (${visitor.phone})\n\n` +
         (itemsListText ? `📋 *اقلام فاکتور:*\n${itemsListText}\n\n` : "") +
@@ -176,7 +176,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       const visitorMessage =
         `${updatePrefix}📋 *گزارش خودکار فاکتور فروش*\n\n` +
         `🏪 *فروشگاه:* #${customer.name.replace(/\s+/g, "_")}\n` +
-        `🔢 *شماره فاکتور:* #${invNo}\n` +
+        `🔢 *شماره فاکتور:* #${invNo.replace(/-/g, "_")}\n` +
         `💰 *مبلغ فاکتور:* *${finalStr} تومان*\n` +
         `💳 *مبلغ دریافتی:* ${paidStr} تومان\n` +
         (remainingCredit > 0 ?
@@ -525,8 +525,9 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       where: { id: visitorId },
       select: { firstName: true, lastName: true },
     });
-    const visitorTag = visitor && visitor.firstName
-      ? `#${`${visitor.firstName} ${visitor.lastName || ""}`.trim().replace(/\s+/g, "_")}`
+    const visitorTag =
+      visitor && visitor.firstName ?
+        `#${`${visitor.firstName} ${visitor.lastName || ""}`.trim().replace(/\s+/g, "_")}`
       : "";
 
     const fallbackChatId = process.env.BALE_ADMIN_CHAT_ID || "542633638";

@@ -162,7 +162,7 @@ $debtorCustomers = array_values(array_filter($customers, function ($c) {
                         </button>
                         <button type="button" class="bale-tpl-btn" id="tplStock" onclick="selectTemplate('stock')">
                             <span class="material-symbols-outlined">inventory_2</span>
-                            <span>بار جدید بستنی میهن/پاندا</span>
+                            <span>بار جدید</span>
                         </button>
                         <button type="button" class="bale-tpl-btn" id="tplPromo" onclick="selectTemplate('promo')">
                             <span class="material-symbols-outlined">local_offer</span>
@@ -247,7 +247,7 @@ $debtorCustomers = array_values(array_filter($customers, function ($c) {
 
         const templates = {
             debt: `همکار گرامی؛ {نام_فروشگاه}\nبا سلام، مانده حساب جاری شما نزد {نام_ویزیتور} مبلغ {مبلغ_بدهی} می‌باشد. خواهشمند است نسبت به تسویه یا هماهنگی پرداخت اقدام فرمایید.\nبا تشکر از همکاری شما`,
-            stock: `مشتری محترم؛ {نام_فروشگاه}\nبار جدید بستنی میهن و کترینگ ۴ کیلویی پاندا در خودرو بارگیری شد. جهت ثبت سفارش گرم و تحویل آنی تماس بگیرید.\nویزیتور شما: {نام_ویزیتور}`,
+            stock: `مشتری محترم؛ {نام_فروشگاه}\nبار جدید بستنی در خودرو بارگیری شد. جهت ثبت سفارش گرم و تحویل آنی تماس بگیرید.\nویزیتور شما: {نام_ویزیتور}`,
             promo: `فروشگاه محترم؛ {نام_فروشگاه}\nجشنواره تخفیفات ویژه نقدی بستنی آغاز شد! با تسویه نقدی فاکتور امروز از تخفیفات پلکانی ویژه بهره‌مند شوید.\n{نام_ویزیتور}`,
             custom: `همکار گرامی؛ {نام_فروشگاه}\n`
         };
