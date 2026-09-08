@@ -81,15 +81,15 @@ export default function Dashboard({ goView }) {
         </div>
 
         <div className="grid2" style={{ marginTop: 12 }}>
-          <div className="card" onClick={() => goView('customers')} style={{ cursor: 'pointer' }}>
-            <div className="label">کل مشتریان</div>
-            <div className="num">{toPersianNum((customers || []).length)} <small>مغازه</small></div>
-          </div>
-          <div className="card" onClick={() => goView('customers')} style={{ cursor: 'pointer' }}>
+          <div className="card" onClick={() => goView('collect')} style={{ cursor: 'pointer' }}>
             <div className="label">بدهکاران</div>
             <div className="num" style={{ color: debtors.length ? 'var(--bad)' : 'var(--ok)' }}>
               {toPersianNum(debtors.length)} <small>مغازه</small>
             </div>
+          </div>
+          <div className="card" onClick={() => goView('orders')} style={{ cursor: 'pointer' }}>
+            <div className="label">فاکتورها</div>
+            <div className="num">— <small>تاریخچه</small></div>
           </div>
         </div>
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, authStorage } from '../lib/api.js';
-import { store } from '../lib/db.js';
+import { store, kv } from '../lib/db.js';
 import { APP_NAME_FA } from '../lib/brand.js';
 
 const DEMO_PHONE = '09121234567';
@@ -19,8 +19,27 @@ async function demoOfflineLogin(onAuthed) {
     { productId: 'p2', productName: 'کورنِتو', brand: 'میهن', cartonPrice: 240000, unitPrice: 10000, unitsPerCarton: 24, quantityCartons: 3, quantityUnits: 0 },
     { productId: 'p3', productName: 'کترینگ ۴ کیلویی', brand: 'پاندا', cartonPrice: 1200000, unitPrice: 300000, unitsPerCarton: 4, quantityCartons: 0, quantityUnits: 4 }
   ];
+  const sampleOrders = [
+    {
+      id: 'o1', invoiceNumber: '۱۴۰۵-۰۰۱', orderDate: new Date().toISOString(),
+      customer: { id: 'c1', name: 'سوپرمارکت نیلوفر' },
+      summary: { totalCartons: 2, totalIndividualUnits: 12, totalItemsCount: 2 },
+      items: [
+        { productName: 'مگنوم کلاسیک', cartonCount: 2, unitCount: 0, cartonPrice: 480000, unitPrice: 22000, lineTotal: 960000 },
+        { productName: 'کورنِتو', cartonCount: 0, unitCount: 12, cartonPrice: 240000, unitPrice: 10000, lineTotal: 120000 }
+      ],
+      subtotalAmount: 1080000, totalDiscountAmount: 54000, finalAmount: 1026000,
+      status: 'DELIVERED',
+      payments: [{ method: 'CASH', amount: 600000 }, { method: 'CREDIT', amount: 426000 }]
+    }
+  ];
+  const sampleChecks = [
+    { id: 'ch1', checkNumber: '۱۲۳۴۵۶۷۸۹۰۱۲۳۴۵۶', bankName: 'بانک ملی', dueDate: new Date(Date.now() + 86400000 * 20).toISOString(), status: 'PENDING', amount: 1000000, customerName: 'سوپرمارکت نیلوفر' }
+  ];
   await store.save('customers', sampleCustomers);
   await store.save('vanInventory', sampleInventory);
+  await kv.set('orders_cache', sampleOrders).catch(() => {});
+  await kv.set('checks_cache', sampleChecks).catch(() => {});
   authStorage.setToken('demo-offline-token');
   authStorage.setUser({ firstName: 'علی', lastName: 'حسینی', phone: DEMO_PHONE, role: 'VISITOR' });
   onAuthed();
