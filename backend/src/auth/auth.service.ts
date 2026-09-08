@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, BadRequestException, NotFoundExcepti
 import { PrismaService } from '../prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { APP } from '../app.config';
 import {
   LoginDto,
   SendRegisterOtpDto,
@@ -281,7 +282,7 @@ export class AuthService {
     // ۱. اگر کاربر /start زد یا پیامی فرستاد
     if (message.text && !message.contact) {
       const welcomeText =
-        `🍦 *به سامانه اطلاع‌رسانی و پخش ویزیتیک خوش آمدید*\n\n` +
+        `🍦 *به سامانه اطلاع‌رسانی و پخش ${APP.nameFa} خوش آمدید*\n\n` +
         `برای اتصال خودکار شماره شما و دریافت لحظه‌ای فاکتورها، مانده حساب و جشنواره‌های تخفیف، لطفاً دکمه «📱 ارسال شماره موبایل» زیر را لمس نمایید:`;
 
       await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
@@ -366,7 +367,7 @@ export class AuthService {
       if (matchedRole === 'مشتری') {
         replyMsg =
           `✅ *فروشگاه محترم ${matchedName}؛*\n\n` +
-          `شماره شما (${phone}) با موفقیت تایید و به سیستم ویزیتیک متصل شد.\n` +
+          `شماره شما (${phone}) با موفقیت تایید و به سیستم ${APP.nameFa} متصل شد.\n` +
           `از این پس صورت‌حساب‌ها، مانده حساب و جشنواره‌های تخفیف مستقیماً به این صفحه ارسال خواهند شد. 🍦`;
       } else if (matchedRole === 'ویزیتور') {
         replyMsg =
@@ -438,7 +439,7 @@ export class AuthService {
         timeZone: 'Asia/Tehran',
       }).format(new Date());
 
-      const text = `🍦 *سامانه جامع پخش گرم ویزیتیک*\n\n` +
+      const text = `🍦 *سامانه جامع پخش گرم ${APP.nameFa}*\n\n` +
                    `🚀 *سرور بک‌اند آنلاین شد!*\n` +
                    `⏱ *زمان:* ${nowStr}\n` +
                    `✅ *وضعیت:* آماده صدور فاکتور و ثبت وصولی`;
@@ -480,7 +481,7 @@ export class AuthService {
 
     if (targetChat) {
       try {
-        const text = `🍦 *ویزیتیک — ${actionTitle}*\n\n` +
+        const text = `🍦 *${APP.nameFa} — ${actionTitle}*\n\n` +
                      `کد تایید شما:\n` +
                      `👉 \`${code}\` 👈\n\n` +
                      `⏱ این کد به مدت ۲ دقیقه معتبر است.\n` +

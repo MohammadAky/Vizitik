@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, authStorage } from '../lib/api.js';
 import { store } from '../lib/db.js';
+import { APP_NAME_FA } from '../lib/brand.js';
 
 const DEMO_PHONE = '09121234567';
 const DEMO_PASS = '123456';
@@ -53,9 +54,9 @@ export default function Login({ onAuthed, goRegister }) {
   return (
     <form className="auth" onSubmit={submit}>
       <div className="logo">
-        <img src="/icons/icon-192.png" alt="ویزیتیک" />
+        <img src="/icons/icon-192.png" alt={APP_NAME_FA} />
       </div>
-      <h1>ویزیتیک</h1>
+      <h1>{APP_NAME_FA}</h1>
       <p className="sub">سامانهٔ مدیریت ویزیتور پخش — ثبت سفارش، فاکتور و بار</p>
 
       {error && <div className="err">{error}</div>}

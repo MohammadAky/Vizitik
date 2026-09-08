@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Inject, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
+import { APP, BOT } from "../app.config";
 
 @Injectable()
 export class BaleService implements OnModuleInit, OnModuleDestroy {
@@ -14,7 +15,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     this.logger.log(
-      `🤖 ماژول ربات بله ویزیتیک راه‌اندازی شد (Token: ${this.baleToken.substring(0, 15)}...)`,
+      `🤖 ماژول ربات بله ${APP.nameFa} راه‌اندازی شد (Token: ${this.baleToken.substring(0, 15)}...)`,
     );
     this.startPollingLoop();
   }
@@ -150,13 +151,13 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       const latestBalance =
         customer.ledgerEntries.length > 0 ? Number(customer.ledgerEntries[0].balanceAfter) : 0;
       const latestBalanceStr = latestBalance.toLocaleString("fa-IR");
-      const debtSection = `\n📊 *وضعیت حساب شما:*\n▫️ مانده کل بدهی نزد ویزیتیک: *${latestBalanceStr} تومان*\n`;
+      const debtSection = `\n📊 *وضعیت حساب شما:*\n▫️ مانده کل بدهی نزد ${APP.nameFa}: *${latestBalanceStr} تومان*\n`;
 
       const updatePrefix = options.isUpdate ? "✏️ *[اصلاحیه فاکتور]*\n" : "";
 
       // ۱. پیام اختصاصی برای مشتری / فروشگاه
       const customerMessage =
-        `${updatePrefix}🧾 *فاکتور رسمی ویزیتیک*\n\n` +
+        `${updatePrefix}🧾 *فاکتور رسمی ${APP.nameFa}*\n\n` +
         `🏪 *فروشگاه:* ${customer.name}\n` +
         `🔢 *شماره فاکتور:* #${invNo.replace(/-/g, "_")}\n` +
         `📅 *زمان ثبت:* ${orderDateStr}\n` +
@@ -168,9 +169,9 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
         `💳 *روش تسویه و پرداخت:*\n${paymentMethodsList}\n` +
         debtSection +
         `\n— — —\n` +
-        `🤝 *هم‌توزیع‌کننده‌ها را هم به ویزیتیک دعوت کنید*\n` +
-        `اگر ویزیتور یا پخش‌کننده‌ی دیگری را می‌شناسید که به این فروشگاه یا محله‌های دیگر سر می‌زند، این ربات را به او معرفی کنید تا سفارش، فاکتور و حسابِ او هم دقیق و منظم در *ویزیتیک* ثبت و همین‌جا در بله ارسال شود.\n` +
-        `ربات: ble.ir/HesabchinBot`;
+        `🤝 *هم‌توزیع‌کننده‌ها را هم به ${APP.nameFa} دعوت کنید*\n` +
+        `اگر ویزیتور یا پخش‌کننده‌ی دیگری را می‌شناسید که به این فروشگاه یا محله‌های دیگر سر می‌زند، این ربات را به او معرفی کنید تا سفارش، فاکتور و حسابِ او هم دقیق و منظم در *${APP.nameFa}* ثبت و همین‌جا در بله ارسال شود.\n` +
+        `ربات: ${BOT.link}`;
 
       // ۲. پیام اختصاصی برای ویزیتور
       const visitorMessage =
@@ -252,8 +253,8 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
     return {
       botInfo: {
-        username: "HesabchinBot",
-        link: "https://ble.ir/HesabchinBot",
+        username: BOT.username,
+        link: BOT.link,
         status: "ONLINE",
       },
       visitorStatus: {
@@ -353,7 +354,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
     if (text && !message.contact) {
       const welcomeText =
         `سلام *${fromName}* عزیز؛ 🍦\n` +
-        `به ربات رسمی *ویزیتیک* (سامانه توزیع مویرگی و پخش گرم) خوش آمدید.\n\n` +
+        `به ربات رسمی *${APP.nameFa}* (سامانه توزیع مویرگی و پخش گرم) خوش آمدید.\n\n` +
         `برای اتصال خودکار شماره تلفن شما و دریافت لحظه‌ای فاکتورها، صورت‌حساب و تخفیف‌ها، لطفاً دکمه زیر را لمس نمایید:`;
 
       const contactKeyboard = {
@@ -439,7 +440,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       if (matchedRole === "مشتری") {
         confirmationText =
           `✅ *فروشگاه محترم ${matchedName}؛*\n\n` +
-          `شماره موبایل شما (*${normalizedPhone}*) با موفقیت تایید و به سیستم ویزیتیک متصل شد.\n` +
+          `شماره موبایل شما (*${normalizedPhone}*) با موفقیت تایید و به سیستم ${APP.nameFa} متصل شد.\n` +
           `از این پس فاکتورهای رسمی، ریز اقلام، مانده حساب و جشنواره‌های تخفیف مستقیماً به این صفحه ارسال خواهند شد. 🍦`;
       } else if (matchedRole === "ویزیتور") {
         confirmationText =
@@ -538,7 +539,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       const debtStr = debt > 0 ? `${debt.toLocaleString("fa-IR")} تومان` : "۰ تومان (تسویه)";
 
       const personalizedText =
-        `📢 *پیام اطلاع‌رسانی ویزیتیک*\n\n` +
+        `📢 *پیام اطلاع‌رسانی ${APP.nameFa}*\n\n` +
         templateText
           .replace(/{نام_فروشگاه}/g, cust.name)
           .replace(/{نام_ویزیتور}/g, visitorTag)
