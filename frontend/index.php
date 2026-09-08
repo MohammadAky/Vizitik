@@ -218,6 +218,17 @@ header("Pragma: no-cache");
                         </div>
                     </div>
 
+                    <!-- موافقت با قوانین و مقررات -->
+                    <div class="terms-consent">
+                        <input type="checkbox" id="regTermsCheck" required>
+                        <label class="terms-consent-text" for="regTermsCheck">
+                            <span>قوانین و مقررات و شرایط استفاده از سامانه <strong>ویزیتیک</strong> را می‌پذیرم و موافقم.</span>
+                            <small>
+                                <button type="button" class="terms-link-btn" onclick="openTermsModal()">مشاهده قوانین و مقررات</button>
+                            </small>
+                        </label>
+                    </div>
+
                     <button type="submit" class="login-btn" id="sendRegOtpBtn">
                         <span class="material-symbols-outlined" style="font-size: 18px; vertical-align: middle;">send</span>
                         <span>ارسال کد تایید به بله</span>
@@ -315,7 +326,45 @@ header("Pragma: no-cache");
         </div>
     </div>
 
+    <!-- مودال قوانین و مقررات -->
+    <div class="terms-modal-overlay" id="termsModal" onclick="if(event.target === this) closeTermsModal()">
+        <div class="terms-sheet">
+            <div class="terms-head">
+                <div class="terms-head-title">
+                    <span class="material-symbols-outlined">description</span>
+                    <span>قوانین و مقررات ویزیتیک</span>
+                </div>
+                <button type="button" class="terms-close" onclick="closeTermsModal()" aria-label="بستن">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="terms-scroll">
+                <?php include 'terms-content.php'; ?>
+            </div>
+            <div class="terms-actions">
+                <button type="button" class="terms-accept-btn" onclick="acceptAndCloseTerms()">
+                    <span class="material-symbols-outlined" style="font-size: 18px;">check_circle</span>
+                    <span>مطالعه کردم و موافقم</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // مودال قوانین و مقررات
+        function openTermsModal() {
+            document.getElementById('termsModal').classList.add('show');
+        }
+        function closeTermsModal() {
+            document.getElementById('termsModal').classList.remove('show');
+        }
+        // دکمه «موافقم» هم مودال را می‌بندد و هم چک‌باکس را فعال می‌کند
+        function acceptAndCloseTerms() {
+            const chk = document.getElementById('regTermsCheck');
+            if (chk) chk.checked = true;
+            closeTermsModal();
+        }
+
         // ترنزیشن اسپلش
         setTimeout(() => {
             const intro = document.getElementById("intro");
