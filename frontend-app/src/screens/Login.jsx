@@ -1,8 +1,29 @@
 import { useState } from 'react';
 import { api, authStorage } from '../lib/api.js';
+import { store } from '../lib/db.js';
 
 const DEMO_PHONE = '09121234567';
 const DEMO_PASS = '123456';
+
+// دادهٔ نمونه برای دیدن داشبوردِ آفلاین بدون نیاز به سرور (فقط برای پیش‌نمایش)
+async function demoOfflineLogin(onAuthed) {
+  const sampleCustomers = [
+    { id: 'c1', name: 'سوپرمارکت نیلوفر', address: 'خیابان آزادی', phoneNumber: '02155667788', currentDebt: 2450000 },
+    { id: 'c2', name: 'هایپرمارکت بهار', address: 'میدان ولیعصر', phoneNumber: '02188445566', currentDebt: 0 },
+    { id: 'c3', name: 'سوپرمارکت ایران', address: 'خیابان شریعتی', phoneNumber: '02122334455', currentDebt: 830000 },
+    { id: 'c4', name: 'بقالی امید', address: 'خیابان انقلاب', phoneNumber: '02166990011', currentDebt: 120000 }
+  ];
+  const sampleInventory = [
+    { id: 'p1', name: 'مگنوم کلاسیک', cartonQty: 5, unitQty: 12 },
+    { id: 'p2', name: 'کورنِتو', cartonQty: 3, unitQty: 0 },
+    { id: 'p3', name: 'کترینگ ۴ کیلویی', cartonQty: 0, unitQty: 4 }
+  ];
+  await store.save('customers', sampleCustomers);
+  await store.save('vanInventory', sampleInventory);
+  authStorage.setToken('demo-offline-token');
+  authStorage.setUser({ firstName: 'علی', lastName: 'حسینی', phone: DEMO_PHONE, role: 'VISITOR' });
+  onAuthed();
+}
 
 export default function Login({ onAuthed, goRegister }) {
   const [phone, setPhone] = useState('');
@@ -62,6 +83,13 @@ export default function Login({ onAuthed, goRegister }) {
 
       <button className="btn primary" type="submit" disabled={busy}>
         {busy ? 'در حال ورود…' : 'ورود'}
+      </button>
+      <button
+        className="btn ghost"
+        type="button"
+        onClick={() => demoOfflineLogin(onAuthed)}
+      >
+        مشاهدهٔ دموی آفلاین (بدون سرور)
       </button>
 
       <div className="auth-foot">
