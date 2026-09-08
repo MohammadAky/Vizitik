@@ -14,9 +14,9 @@ async function demoOfflineLogin(onAuthed) {
     { id: 'c4', name: 'بقالی امید', address: 'خیابان انقلاب', phoneNumber: '02166990011', currentDebt: 120000 }
   ];
   const sampleInventory = [
-    { id: 'p1', name: 'مگنوم کلاسیک', cartonQty: 5, unitQty: 12 },
-    { id: 'p2', name: 'کورنِتو', cartonQty: 3, unitQty: 0 },
-    { id: 'p3', name: 'کترینگ ۴ کیلویی', cartonQty: 0, unitQty: 4 }
+    { productId: 'p1', productName: 'مگنوم کلاسیک', brand: 'میهن', cartonPrice: 480000, unitPrice: 22000, unitsPerCarton: 24, quantityCartons: 5, quantityUnits: 12 },
+    { productId: 'p2', productName: 'کورنِتو', brand: 'میهن', cartonPrice: 240000, unitPrice: 10000, unitsPerCarton: 24, quantityCartons: 3, quantityUnits: 0 },
+    { productId: 'p3', productName: 'کترینگ ۴ کیلویی', brand: 'پاندا', cartonPrice: 1200000, unitPrice: 300000, unitsPerCarton: 4, quantityCartons: 0, quantityUnits: 4 }
   ];
   await store.save('customers', sampleCustomers);
   await store.save('vanInventory', sampleInventory);

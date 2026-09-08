@@ -3,30 +3,15 @@ import { authStorage } from './lib/api.js';
 import Login from './screens/Login.jsx';
 import Register from './screens/Register.jsx';
 import Dashboard from './screens/Dashboard.jsx';
-
-// آیکون‌های سادهٔ متنی (در فازهای بعد با Material Symbols جایگزین می‌شوند)
-function ComingSoon({ title }) {
-  return (
-    <>
-      <header className="topbar">
-        <h1>{title}</h1>
-      </header>
-      <div className="content">
-        <div className="placeholder">
-          این بخش ({title}) در فازهای بعدیِ پورت به همین معماری آفلاین پیاده می‌شود.
-        </div>
-      </div>
-    </>
-  );
-}
+import NewOrder from './screens/NewOrder.jsx';
+import VanLoading from './screens/VanLoading.jsx';
+import ComingSoon from './screens/ComingSoon.jsx';
 
 function Settings({ onLogout }) {
   const user = authStorage.user || {};
   return (
     <>
-      <header className="topbar">
-        <h1>تنظیمات</h1>
-      </header>
+      <header className="topbar"><h1>تنظیمات</h1></header>
       <div className="content">
         <div className="card">
           <div className="t">{user.firstName} {user.lastName}</div>
@@ -36,9 +21,7 @@ function Settings({ onLogout }) {
           <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
             خروج از حساب و پاک کردن دادهٔ محلی گوشی
           </div>
-          <button className="btn primary" onClick={onLogout} style={{ background: 'var(--bad)' }}>
-            خروج از حساب
-          </button>
+          <button className="btn primary" onClick={onLogout} style={{ background: 'var(--bad)' }}>خروج از حساب</button>
         </div>
       </div>
     </>
@@ -47,15 +30,15 @@ function Settings({ onLogout }) {
 
 const NAV = [
   { id: 'dash', label: 'داشبورد', ic: '🏠' },
-  { id: 'order', label: 'ثبت سفارش', ic: '🧾' },
+  { id: 'order', label: 'سفارش', ic: '🧾' },
+  { id: 'van', label: 'بار/کالا', ic: '📦' },
   { id: 'collect', label: 'وصول', ic: '💰' },
-  { id: 'goods', label: 'کالا', ic: '📦' },
   { id: 'settings', label: 'منو', ic: '⚙️' }
 ];
 
 export default function App() {
   const [authed, setAuthed] = useState(false);
-  const [authScreen, setAuthScreen] = useState('login'); // login | register
+  const [authScreen, setAuthScreen] = useState('login');
   const [view, setView] = useState('dash');
 
   useEffect(() => {
@@ -70,19 +53,21 @@ export default function App() {
     );
   }
 
+  const reloadHome = () => setView((v) => v);
+
   let screen;
   switch (view) {
     case 'dash':
       screen = <Dashboard goView={setView} />;
       break;
     case 'order':
-      screen = <ComingSoon title="ثبت سفارش و فاکتور" />;
+      screen = <NewOrder reloadHome={reloadHome} />;
+      break;
+    case 'van':
+      screen = <VanLoading reloadHome={reloadHome} />;
       break;
     case 'collect':
       screen = <ComingSoon title="وصول و چک‌ها" />;
-      break;
-    case 'goods':
-      screen = <ComingSoon title="کالاها و بار خودرو" />;
       break;
     default:
       screen = (
