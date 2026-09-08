@@ -68,6 +68,17 @@ if (empty($categories)) {
 
             <p class="preset-drawer-desc">برای اضافه شدن کالاهای هر شرکت به لیست فروش خود، دکمه دریافت را بزنید:</p>
 
+            <!-- یادآوری نقش و مسئولیت سامانه در بخش کاتالوگ -->
+            <div class="catalog-role-notice">
+                <div class="catalog-role-title">
+                    <span class="material-symbols-outlined">info</span>
+                    <strong>نقش این بخش چیست؟</strong>
+                </div>
+                <p>کاتالوگ‌های دریافت‌شده در اینجا فقط یک <strong>فهرست مرجع از کالاها و قیمت‌ها</strong> برای سرعت کار شما هستند و جایگزین سامانهٔ رسمی ثبت سفارشِ شرکت نمی‌شوند.</p>
+                <p>ویزیتیک یک <strong>دستیار اطلاع‌رسانی به فروشگاه‌ها</strong> است: فاکتورِ صادرهٔ خودتان را از طریق ربات بله برای مشتری ارسال می‌کنید و مبلغ، نحوهٔ تسویه و ماندهٔ حساب را اعلام می‌کنید.</p>
+                <p class="catalog-role-foot">ثبت فاکتور رسمی و <strong>عواقب قانونی و مالی آن بر عهدهٔ خودِ ویزیتور</strong> است؛ برای اسناد رسمی و مراجع قانونی، فاکتور باید همچنان در سامانهٔ مورد استفادهٔ شرکت شما ثبت شود.</p>
+            </div>
+
             <div class="preset-list" id="presetCatalogList">
                 <!-- ۱. برند میهن -->
                 <div class="preset-card" id="presetCardMihan">
