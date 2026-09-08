@@ -1048,3 +1048,40 @@
   cursor: pointer;
   margin-top: 6px;
 }
+
+/* =========================
+   یادآوری نقش و مسئولیت (بخش کاتالوگ)
+========================= */
+.catalog-role-notice {
+  margin: 10px 0 6px 0;
+  padding: 10px 12px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  font-size: 11px;
+  line-height: 1.8;
+  color: #7c2d12;
+}
+.catalog-role-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: #9a3412;
+  margin-bottom: 4px;
+}
+.catalog-role-title .material-symbols-outlined {
+  font-size: 16px;
+}
+.catalog-role-notice p {
+  margin: 4px 0;
+}
+.catalog-role-notice strong {
+  font-weight: 800;
+}
+.catalog-role-notice .catalog-role-foot {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed #fed7aa;
+  color: #9a3412;
+}
