@@ -49,6 +49,12 @@ DOMAIN=app.EXAMPLE.com     # ← فقط این را با دامنهٔ خودت �
 
 **DNS:** مطمئن شو یک رکورد `A` برای `app.EXAMPLE.com` به IP سرور اشاره می‌کند.
 
+> **نام دیتابیس و نام نرم‌افزار دلخواه است** — از `.env` خوانده می‌شود. هرجا خواستی، فقط متغیرها را عوض کن و بقیهٔ دستورها همراستا اجرا می‌شوند:
+> - `DB_NAME` : نام دیتابیس (در این مثال `vizitik_db`)
+> - `APP_NAME_FA` / `APP_NAME_EN` : نام نمایشی نرم‌افزار (در پیام‌های بله و رابط)
+>
+> برای تغییر نام، نیازی به دست‌کاری کد نیست.
+
 ---
 
 ## ۲) دیتابیس MySQL/MariaDB
@@ -58,25 +64,30 @@ systemctl enable --now mariadb
 mysql_secure_installation     # رمز root دیتابیس بگذار؛ بقیه را بله/پیش‌فرض
 ```
 
-رمز اپ را انتخاب و ذخیره کن (یک رمز قوی، بدون کاراکترهای خطرناک در رشتهٔ اتصال):
+رمز اپ و نام دیتابیس را انتخاب کن:
 ```bash
+DB_NAME='vizitik_db'          # ← هر نامی می‌خواهی بگذار
+DB_USER='vizitik'
 DBPASS='CHANGE_ME_STRONG_PASSWORD'
+
 mysql -u root -p <<SQL
-CREATE DATABASE IF NOT EXISTS hesabchin CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'vizitik'@'localhost' IDENTIFIED BY '${DBPASS}';
-GRANT ALL PRIVILEGES ON hesabchin.* TO 'vizitik'@'localhost';
+CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DBPASS}';
+GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
 FLUSH PRIVILEGES;
 SQL
 ```
 
 **ایمپورت دامپ موجود** (ساختار + دادهٔ اولیه از ریپو):
+> `documents/hesabchin.sql` دو خطِ ابتدایی `CREATE DATABASE ... hesabchin` و `USE hesabchin` دارد — چون دیتابیس را خودت با `DB_NAME` می‌سازی، این دو خط را حذف کن تا در دیتابیسِ انتخابی‌ات ایمپورت شود:
 ```bash
-mysql -u vizitik -p"${DBPASS}" hesabchin < documents/hesabchin.sql
+sed '/CREATE DATABASE/,/^USE `hesabchin`;/d' documents/hesabchin.sql > /tmp/hesabchin_schema.sql
+mysql -u "${DB_USER}" -p"${DBPASS}" "${DB_NAME}" < /tmp/hesabchin_schema.sql
 ```
 
 تأیید:
 ```bash
-mysql -u vizitik -p"${DBPASS}" hesabchin -e "SHOW TABLES;"
+mysql -u "${DB_USER}" -p"${DBPASS}" "${DB_NAME}" -e "SHOW TABLES;"
 ```
 
 ---
@@ -94,10 +105,14 @@ cd /opt/vizitik/backend
 npm install --omit=dev
 npx prisma generate
 cat > .env <<EOF
-DATABASE_URL="mysql://vizitik:${DBPASS}@localhost:3306/hesabchin"
+DATABASE_URL="mysql://${DB_USER}:${DBPASS}@localhost:3306/${DB_NAME}"
 JWT_SECRET="$(openssl rand -hex 32)"
 JWT_EXPIRES_IN="30d"
 PORT=3000
+# نام نرم‌افزار — دلخواه؛ هر وقت خواستی عوض کن (در پیام‌های بله و خوش‌آمد اعمال می‌شود)
+APP_NAME_FA="ویزیتیک"
+APP_NAME_EN="Vizitik"
+BALE_BOT_USERNAME="HesabchinBot"
 BALE_BOT_TOKEN="2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc"
 BALE_ADMIN_CHAT_ID="542633638"
 EOF
