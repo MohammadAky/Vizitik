@@ -171,10 +171,10 @@ copy_source() {
 build_backend() {
   log "نصب وابستگی‌ها و بیلد بک‌اند"
   cd "$INSTALL_DIR/backend"
-  npm install --no-audit --no-fund --omit=dev || {
-    warn "نصب با --omit=dev شکست؛ تلاش با نصب کامل (برای Prisma generate)..."
-    npm install --no-audit --no-fund
-  }
+  # ⚠️ باید devDependencies هم نصب شوند چون build از طریق @nestjs/cli (nest build)
+  #    و prisma انجام می‌شود که هر دو devDependency هستند.
+  npm install --no-audit --no-fund
+
   npx prisma generate
 
   cat > .env <<EOF
