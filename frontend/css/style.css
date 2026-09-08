@@ -445,6 +445,65 @@ body {
   background: var(--primary-dark);
 }
 
+/* دکمه انصراف در مدال‌ها — استایل سراسری (پس‌از این‌که فقط در new-order.css بود و در
+   orders.php / payment.php که آن فایل را لود نمی‌کنند بدون استایل می‌ماند) */
+.confirm-cancel-btn {
+  height: 40px;
+  border-radius: 12px;
+  background: var(--app-background);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.confirm-cancel-btn:active {
+  background: var(--border);
+  transform: scale(0.99);
+}
+
+/* نگه‌داشتن علامت منفی در سمت چپِ رشته‌ی اعداد در حالت RTL (جهت‌دهی عدد جدا از متن فارسی) */
+.neg-amount {
+  direction: ltr;
+  unicode-bidi: isolate;
+  white-space: nowrap;
+}
+
+/* شماره‌های فاکتور (فرمت سال-ترتیب مثل ۱۴۰۵-۰۰۰۰۱۲) همیشه چپ‌به‌راست چیده شوند تا خط تیره
+   در جای درست بماند و در متن فارسی به هم نریزد */
+.invoice-num {
+  direction: ltr;
+  unicode-bidi: isolate;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+/* پنهان‌کردن اسکرول‌بارِ داخلیِ پنل‌های بازشو از پایین: در صفحات RTL اسکرول‌بار عمودی در
+   سمت چپ ظاهر شده و گوشه‌ی گردِ بالا-چپ پنل را به‌صورت مربع/نخود نشان می‌داد.
+   حذف اسکرول‌بار (بدون ازبین‌بردن امکان اسکرول لمسی/چرخ) باعث می‌شود هر دو گوشه‌ی بالا گرد دیده شوند. */
+.edit-order-sheet,
+.confirm-pay-sheet,
+.confirm-order-sheet,
+.customer-picker-sheet {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.edit-order-sheet::-webkit-scrollbar,
+.confirm-pay-sheet::-webkit-scrollbar,
+.confirm-order-sheet::-webkit-scrollbar,
+.customer-picker-sheet::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 .login-btn.login-success {
   background: #10b981;
   color: #ffffff;

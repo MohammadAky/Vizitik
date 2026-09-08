@@ -16,6 +16,39 @@ export class OrdersService {
     @Inject(BaleService) private readonly baleService: BaleService,
   ) {}
 
+  /** محاسبهٔ سال شمسی یک تاریخ (برای پیشوند شماره فاکتور) */
+  private solarYearOf(date: Date): number {
+    const parts = new Intl.DateTimeFormat('en-US-u-ca-persian', { year: 'numeric' }).formatToParts(date);
+    const year = parts.find((p) => p.type === 'year')?.value;
+    return Number(year || 0);
+  }
+
+  /** برای فاکتورهای قدیمی‌ای که شمارهٔ ترتیبی ندارند، همان رفتار قبلی (برگرفته از localUuid) */
+  private legacyInvoiceNumber(order: { id: string; localUuid: string }): string {
+    const src = order.localUuid || order.id;
+    return src.length > 8 ? src.substring(0, 8).toUpperCase() : src;
+  }
+
+  /** تخصیص اتمیکِ شمارهٔ بعدی برای سالِ داده‌شده داخل تراکنش */
+  private async reserveInvoiceNumber(tx: any, date: Date): Promise<string> {
+    const year = this.solarYearOf(date);
+
+    // اگر شمارنده برای این سال نبود، مقداردهی اولیه (بدون ریسکِ رقابت، چون فقط ردیف اولیه را می‌سازد)
+    await tx.$executeRaw`
+      INSERT INTO invoice_counters (\`solarYear\`, \`lastSeq\`)
+      VALUES (${year}, 0)
+      ON DUPLICATE KEY UPDATE \`solarYear\` = \`solarYear\`
+    `;
+    // افزایش اتمیک (قفلِ ردیف) — امن در برابر درخواست‌های هم‌زمان
+    await tx.$executeRaw`
+      UPDATE invoice_counters SET \`lastSeq\` = \`lastSeq\` + 1 WHERE \`solarYear\` = ${year}
+    `;
+    const counter = await tx.invoiceCounter.findUnique({ where: { solarYear: year } });
+    const seq = counter ? counter.lastSeq : 1;
+
+    return `${year}-${String(seq).padStart(6, '0')}`;
+  }
+
   async createOrder(visitorId: string, dto: CreateOrderDto) {
     const existingOrder = await this.prisma.order.findUnique({
       where: { localUuid: dto.localUuid },
@@ -136,9 +169,13 @@ export class OrdersService {
     const finalAmount = Math.round(currentAmount);
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // تخصیص شمارهٔ فاکتور ترتیبی (یکسان در سراسر سیستم) قبل از درج سفارش
+      const invoiceNumber = await this.reserveInvoiceNumber(tx, new Date());
+
       const order = await tx.order.create({
         data: {
           localUuid: dto.localUuid,
+          invoiceNumber,
           customerId: customer.id,
           visitorId,
           status: 'CONFIRMED',
@@ -302,7 +339,7 @@ export class OrdersService {
 
     return {
       orderId: order.id,
-      invoiceNumber: order.id.slice(0, 8).toUpperCase(),
+      invoiceNumber: order.invoiceNumber || this.legacyInvoiceNumber(order),
       orderDate: order.orderDate,
       status: order.status,
       customer: {
@@ -389,6 +426,7 @@ export class OrdersService {
 
       return {
         id: o.id,
+        invoiceNumber: o.invoiceNumber || this.legacyInvoiceNumber(o),
         orderDate: o.orderDate,
         customer: {
           id: o.customer.id,

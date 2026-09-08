@@ -156,6 +156,9 @@ model VanInventory {
 model Order {
   id                  String      @id @default(uuid())
   localUuid           String      @unique
+  /// شماره فاکتور ترتیبی یکتای سراسری (فرمت: سالشمسی-ترتیب، مثل 1405-000012)
+  /// این شماره در کل سیستم (رسید چاپی، لیست سفارش‌ها، ربات بله) یکسان استفاده می‌شود.
+  invoiceNumber       String?     @unique
   customerId          String
   customer            Customer    @relation(fields: [customerId], references: [id])
   visitorId           String
@@ -244,4 +247,13 @@ model InvoiceSettings {
   isDefault             Boolean  @default(false)
 
   @@map("invoice_settings")
+}
+
+/// شمارنده ترتیبی فاکتورها برای هر سال شمسی (برای تخصیص اتمیک شمارهٔ فاکتور)
+model InvoiceCounter {
+  id        Int  @id @default(autoincrement())
+  solarYear Int  @unique
+  lastSeq   Int  @default(0)
+
+  @@map("invoice_counters")
 }

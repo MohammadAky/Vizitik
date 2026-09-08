@@ -530,8 +530,9 @@ async function executeOrderSubmission() {
         payments: paymentsPayload
     };
 
+    let realInvoiceNumber = null;
     try {
-        await fetch('http://localhost:3000/api/orders', {
+        const res = await fetch('http://localhost:3000/api/orders', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -539,11 +540,19 @@ async function executeOrderSubmission() {
                 'Authorization': `Bearer ${API_TOKEN}`
             },
             body: JSON.stringify(payload)
-        }).catch(() => {});
+        });
+        if (res && res.ok) {
+            const data = await res.json().catch(() => null);
+            // شمارهٔ رسمیِ فاکتور که سرور اختصاص داده (مثل 1405-000012)
+            if (data && data.invoiceNumber) realInvoiceNumber = data.invoiceNumber;
+        }
     } catch (e) {}
 
+    // در صورت عدم دریافت پاسخ سرور، یک عدد موقت برای نمایش روی رسید
+    const fallbackNumber = localUuid.length > 8 ? localUuid.substring(0, 8).toUpperCase() : localUuid;
+
     sessionStorage.removeItem('hesabchin_current_order');
-    renderThermalReceipt(payload, localUuid, persianDueDateStr);
+    renderThermalReceipt(payload, realInvoiceNumber || fallbackNumber, persianDueDateStr);
     document.getElementById('invoiceModal').style.display = 'flex';
 }
 
@@ -626,7 +635,7 @@ function renderThermalReceipt(orderData, invoiceNum, persianDueDateStr) {
         <div class="receipt-divider"></div>
         <div class="receipt-row">
             <span>شماره فاکتور:</span>
-            <strong>#${toPersianNum(invoiceNum.substring(0, 10).toUpperCase())}</strong>
+            <strong>#<span class="invoice-num">${toPersianNum(invoiceNum)}</span></strong>
         </div>
         <div class="receipt-row">
             <span>مشتری / فروشگاه:</span>

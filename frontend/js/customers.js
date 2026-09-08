@@ -183,9 +183,15 @@ function renderRecentOrders(orders) {
 
     const row = document.createElement("div");
     row.className = "recent-order-item";
+
+    // شمارهٔ رسمی فاکتور (مثل ۱۴۰۵-۰۰۰۰۱۲)؛ در غیر این صورت به‌عنوان جایگزین، شمارهٔ ردیف نمایش داده می‌شود
+    const invLabel = ord.invoiceNumber
+        ? `فاکتور شماره <span class="invoice-num">${toPersianNum(ord.invoiceNumber)}</span>`
+        : `فاکتور شماره ${toPersianNum(index + 1)}`;
+
     row.innerHTML = `
             <div class="recent-order-right">
-                <span class="recent-order-no">فاکتور شماره ${toPersianNum(index + 1)} <small style="color:var(--text-muted);">(${toPersianNum(dateStr)})</small></span>
+                <span class="recent-order-no">${invLabel} <small style="color:var(--text-muted);">(${toPersianNum(dateStr)})</small></span>
                 <span class="recent-order-summary">${summary}</span>
             </div>
             <div class="recent-order-left">

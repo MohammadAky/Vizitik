@@ -112,6 +112,7 @@ export class CustomersService {
 
         return {
           id: o.id,
+          invoiceNumber: o.invoiceNumber || null,
           orderDate: o.orderDate,
           finalAmount: Number(o.finalAmount),
           status: o.status,

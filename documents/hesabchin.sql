@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS `payments`;
 DROP TABLE IF EXISTS `order_discount_steps`;
 DROP TABLE IF EXISTS `order_items`;
 DROP TABLE IF EXISTS `orders`;
+DROP TABLE IF EXISTS `invoice_counters`;
 DROP TABLE IF EXISTS `van_inventory`;
 DROP TABLE IF EXISTS `user_products`;
 DROP TABLE IF EXISTS `products`;
@@ -120,6 +121,7 @@ CREATE TABLE `van_inventory` (
 CREATE TABLE `orders` (
   `id` VARCHAR(36) NOT NULL,
   `localUuid` VARCHAR(191) NOT NULL,
+  `invoiceNumber` VARCHAR(191) NULL,
   `customerId` VARCHAR(36) NOT NULL,
   `visitorId` VARCHAR(36) NOT NULL,
   `orderDate` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -133,6 +135,7 @@ CREATE TABLE `orders` (
 
   PRIMARY KEY (`id`),
   UNIQUE KEY `orders_localUuid_key` (`localUuid`),
+  UNIQUE KEY `orders_invoiceNumber_key` (`invoiceNumber`),
   KEY `orders_customerId_idx` (`customerId`),
   KEY `orders_visitorId_idx` (`visitorId`),
 
@@ -261,6 +264,15 @@ CREATE TABLE `invoice_settings` (
   CONSTRAINT `invoice_settings_userId_fkey`
     FOREIGN KEY (`userId`) REFERENCES `users` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- شمارندهٔ ترتیبی فاکتورها (یک ردیف برای هر سال شمسی)
+CREATE TABLE `invoice_counters` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `solarYear` INT NOT NULL,
+  `lastSeq` INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `invoice_counters_solarYear_key` (`solarYear`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
