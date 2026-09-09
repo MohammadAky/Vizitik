@@ -276,7 +276,7 @@ export class AuthService {
     const message = body?.message || body?.callback_query?.message;
     if (!message) return { ok: true };
     if (!baleToken) {
-      this.logger.warn('BALE_BOT_TOKEN is not set - webhook handling skipped');
+      console.warn('BALE_BOT_TOKEN is not set - webhook handling skipped');
       return { ok: true, skipped: 'BALE_BOT_TOKEN is not set' };
     }
 
