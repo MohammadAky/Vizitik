@@ -44,6 +44,11 @@ CERT_EMAIL="${CERT_EMAIL:-}"
 
 BACKEND_PORT="${BACKEND_PORT:-3000}"
 WITH_WWW="${WITH_WWW:-0}"
+# HTTPS_MODE=http      classic HTTP-01 challenge (needs port 80 reachable from anywhere)
+# HTTPS_MODE=dns       DNS-01 challenge through a Cloudflare API token (works when the
+#                      hoster only serves traffic from Iran and blocks foreign probes)
+HTTPS_MODE="${HTTPS_MODE:-}"
+CF_API_TOKEN="${CF_API_TOKEN:-}"
 NODEJS_MAJOR=20
 
 # ------------------------------------------------------------------
@@ -162,7 +167,7 @@ print_config_summary() {
   local shown="$DOMAIN"
   if [[ -n "$DOMAIN" && "${WITH_WWW:-0}" == "1" ]]; then shown="$DOMAIN www.$DOMAIN"; fi
   echo "  domain      : ${shown:-<none - plain http on the server ip>}"
-  echo "  https       : $ENABLE_HTTPS (email: ${CERT_EMAIL:-<none>})"
+  echo "  https       : $ENABLE_HTTPS mode=${HTTPS_MODE:-http} (email: ${CERT_EMAIL:-<none>})"
   echo "  api         : 127.0.0.1:${BACKEND_PORT}, proxied at /api"
   echo "  database    : ${DB_USER}@${DB_HOST}/${DB_NAME} (password: $dbpass_state)"
   echo "  jwt secret  : ${#JWT_SECRET} characters"
@@ -193,6 +198,27 @@ collect_inputs() {
 
   if [[ -n "$DOMAIN" ]]; then
     ask_yes WITH_WWW "also serve www.$DOMAIN" 1
+  fi
+
+  if [[ "$ENABLE_HTTPS" == "1" ]]; then
+    if [[ -z "$HTTPS_MODE" ]]; then
+      echo
+      echo "  how should Let's Encrypt prove that $DOMAIN belongs to you?"
+      echo "    1) http - needs port 80 reachable from outside (default)"
+      echo "    2) dns  - uses a Cloudflare API token, works even if the hoster blocks"
+      echo "              foreign traffic (common on Iranian hosting)"
+      read -r -p "  choose 1 or 2 [1]: " hm || hm=""
+      case "$hm" in
+        2|dns) HTTPS_MODE="dns" ;;
+        *)     HTTPS_MODE="http" ;;
+      esac
+    fi
+    if [[ "$HTTPS_MODE" == "dns" ]]; then
+      ask_secret CF_API_TOKEN "Cloudflare API token with Zone.DNS edit permission" || true
+      if [[ -z "$CF_API_TOKEN" ]]; then
+        fail "HTTPS_MODE=dns needs CF_API_TOKEN (create it at my.cloudflare.com/api-tokens: Edit zone DNS, zone vizitik.ir)"
+      fi
+    fi
   fi
 
   ask BACKEND_PORT "backend port (listens on localhost only)" "3000"
@@ -524,8 +550,32 @@ setup_https() {
   log "requesting SSL certificate for $DOMAIN"
   local -a cnames=( -d "$DOMAIN" )
   if [[ "$WITH_WWW" == "1" ]]; then cnames+=( -d "www.$DOMAIN" ); fi
+
+  if [[ "$HTTPS_MODE" == "dns" ]]; then
+    if ! certbot plugins 2>/dev/null | grep -qi cloudflare; then
+      log "installing the certbot Cloudflare DNS plugin"
+      apt-get install -y python3-certbot-dns-cloudflare >/dev/null 2>&1 \
+        || pip3 install -q certbot-dns-cloudflare \
+        || fail "could not install certbot-dns-cloudflare; run: pip3 install certbot-dns-cloudflare"
+    fi
+    local creds="/etc/letsencrypt/cloudflare.credentials"
+    mkdir -p "$(dirname "$creds")"
+    printf "dns_cloudflare_api_token = %s\n" "$CF_API_TOKEN" > "$creds"
+    chmod 600 "$creds"
+    ok "Cloudflare API token written to $creds (mode 600)"
+    if ! certbot certonly --nginx -a dns-cloudflare --dns-cloudflare-credentials "$creds" \
+        --dns-cloudflare-propagation-seconds 30 "${cnames[@]}" --agree-tos -m "$CERT_EMAIL" -n; then
+      fail "the DNS challenge failed - the token must have Edit zone DNS on $DOMAIN"
+    fi
+    certbot --nginx --redirect -n "${cnames[@]}" >/dev/null 2>&1 || true
+    ok "HTTPS enabled with a managed certificate (renews without opening port 80)"
+    return
+  fi
+
   if ! certbot --nginx "${cnames[@]}" --redirect --agree-tos -m "$CERT_EMAIL" --non-interactive; then
-    fail "certbot failed - check that ${DOMAIN} really resolves to this server: dig +short ${DOMAIN}"
+    echo "  if the domain resolves fine but this failed, your hoster probably blocks foreign"
+    echo "  traffic: rerun with HTTPS_MODE=dns (it uses the Cloudflare API instead of port 80)"
+    fail "certbot failed - check the resolution first: dig +short ${DOMAIN}"
   fi
   ok "HTTPS enabled"
 }
