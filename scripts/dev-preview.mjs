@@ -1,13 +1,8 @@
-/**
- * سرور پیش‌نمایش محلی (dev-only) — بدون وابستگی
- *
- *  ۱) فایل‌های build‌شدهٔ frontend-app/dist را سرو می‌کند (SPA fallback)
- *  ۲) مسیرهای /api/* را با یک API در حافظه پاسخ می‌دهد تا ظاهر برنامه
- *     دقیقاً مثل اتصال به بک‌اند واقعی (NestJS + MySQL) دیده شود.
- *
- * اجرا:  node scripts/dev-preview.mjs [پورت]      (پیش‌فرض 8090)
- * داده‌ها در حافظه است و با ری‌استارت سرور به حالت اول برمی‌گردد.
- */
+// Vizitik dev preview server (no dependencies).
+//   1) serves the built PWA from frontend-app/dist with an SPA fallback
+//   2) answers /api/* from an in-memory mock so the UI renders with data
+// Run:  node scripts/dev-preview.mjs [port]     (default 8090)
+// Restarting the process resets all data back to the seed values below.
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
@@ -17,7 +12,6 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(ROOT, 'frontend-app', 'dist');
 const PORT = Number(process.argv[2] || 8090);
 
-/* ───────────────────────── دانه‌های آزمایشی ───────────────────────── */
 const PRODUCTS = [
   ['مگنوم مینت', 'mihan', 'بستنی خانگی', 24, 380000, 2],
   ['بستنی قیفی میهن', 'mihan', 'بستنی سنتی', 40, 95000, 0],
@@ -87,7 +81,6 @@ let ORDERS = [
 let nextOrderId = 105;
 const BALE = { connectedCustomers: 2, invoicesSent: 17 };
 
-/* ───────────────────────── کمکى‌ها ───────────────────────── */
 const json = (res, code, obj) => {
   const body = JSON.stringify(obj);
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -114,7 +107,7 @@ function recalcDebt() {
   }
 }
 
-/* ───────────────────────── API ───────────────────────── */
+/* API */
 async function handleApi(req, res, url) {
   const p = url.pathname.replace(/^\/api/, '') || '/';
   const m = req.method;
@@ -122,7 +115,6 @@ async function handleApi(req, res, url) {
 
   if (p === '/health') return json(res, 200, { ok: true, mode: 'dev-preview' });
 
-  /* احراز هویت */
   if (p === '/auth/login') {
     if (!body.phone || !body.password) return json(res, 401, { message: 'شماره تلفن یا رمز عبور اشتباه است.' });
     return json(res, 200, {
@@ -136,7 +128,6 @@ async function handleApi(req, res, url) {
   }
   if (p === '/auth/change-password') return json(res, 200, { ok: true });
 
-  /* مشتریان */
   if (p === '/customers') {
     if (m === 'POST') {
       const c = { id: Date.now() % 100000, currentDebt: 0, creditLimit: 0, totalPurchases: 0, invoiceCount: 0, ...body };
@@ -162,7 +153,6 @@ async function handleApi(req, res, url) {
     return json(res, 200, c);
   }
 
-  /* کالاها */
   if (p === '/products') {
     if (m === 'POST') {
       const pr = { id: PRODUCTS.length + 1, productId: PRODUCTS.length + 1, ...body };
@@ -183,7 +173,6 @@ async function handleApi(req, res, url) {
     return json(res, 200, PRODUCTS[i]);
   }
 
-  /* بار خودرو */
   if (p === '/van-inventory') return json(res, 200, { items: VAN });
   if (p === '/van-inventory/bulk') {
     for (const it of body.items || []) {
@@ -196,7 +185,6 @@ async function handleApi(req, res, url) {
     return json(res, 200, { ok: true, items: VAN });
   }
 
-  /* سفارش‌ها */
   if (p === '/orders') {
     if (m === 'POST') {
       const id = nextOrderId++;
@@ -263,7 +251,6 @@ async function handleApi(req, res, url) {
     return json(res, 200, o);
   }
 
-  /* ربات بله */
   if (p === '/bale/stats') return json(res, 200, BALE);
   if (p === '/bale/status') return json(res, 200, { online: true, webhookConfigured: true });
   if (p === '/bale/broadcast') {
@@ -275,13 +262,11 @@ async function handleApi(req, res, url) {
     return json(res, 200, { ok: true, message: 'فاکتور از طریق ربات بله ارسال شد.' });
   }
 
-  /* همگام‌سازی صف آفلاین */
   if (p.startsWith('/sync') || p.startsWith('/orders/bulk') || p.startsWith('/reports')) return json(res, 200, { ok: true, processed: 0 });
 
   return json(res, 200, { ok: true });
 }
 
-/* ───────────────────────── فایل استاتیک ───────────────────────── */
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
@@ -310,9 +295,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 if (!fs.existsSync(path.join(DIST, 'index.html'))) {
-  console.error('✖ فایل build پیدا نشد. اول این را اجرا کن:  cd frontend-app && npm run build');
+  console.error('build output missing (frontend-app/dist/index.html). Run first:  cd frontend-app && npm run build');
   process.exit(1);
 }
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`ویزیتیک — پیش‌نمایش روی http://0.0.0.0:${PORT}  (داده: mock در حافظه، از هر شماره/رمزی می‌شود وارد شد)`);
+  console.log(`Vizitik dev preview listening on http://0.0.0.0:${PORT} (in-memory mock API - any phone/password signs in)`);
 });

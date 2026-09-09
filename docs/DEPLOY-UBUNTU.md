@@ -129,9 +129,9 @@ PORT=3000
 # نام نرم‌افزار — دلخواه؛ هر وقت خواستی عوض کن (در پیام‌های بله و خوش‌آمد اعمال می‌شود)
 APP_NAME_FA="ویزیتیک"
 APP_NAME_EN="Vizitik"
-BALE_BOT_USERNAME="HesabchinBot"
-BALE_BOT_TOKEN="2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc"
-BALE_ADMIN_CHAT_ID="542633638"
+BALE_BOT_USERNAME="<نام‌کاربریِ ربات>"
+BALE_BOT_TOKEN="<توکنِ ربات خودت>"
+BALE_ADMIN_CHAT_ID="<آی‌دیِ چت ادمین>"
 EOF
 npx prisma db push     # سینک اسکیما با جداول موجود (ایمن)
 npm run build          # خروجی: dist/main.js

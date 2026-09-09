@@ -133,8 +133,8 @@ PORT=3000
 DATABASE_URL="mysql://root:password@localhost:3306/vizitik_db"
 JWT_SECRET="vizitik_super_secure_jwt_secret_key_2026"
 JWT_EXPIRES_IN="30d"
-BALE_BOT_TOKEN="2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc"
-BALE_ADMIN_CHAT_ID="542633638"
+BALE_BOT_TOKEN="<توکنِ ربات خودت>"
+BALE_ADMIN_CHAT_ID="<آی‌دیِ چت ادمین>"
 ```
 
 ---
@@ -160,7 +160,7 @@ php -S localhost:8000
 ## 🤖 یکپارچه‌سازی با ربات بله (Bale Messenger Bot)
 
 این سامانه مستقیماً به API پیام‌رسان بله متصل است و عملیات زیر را به صورت خودکار انجام می‌دهد:
-- **ارسال پیام اعلان راه‌اندازی سرور** به چت پیش‌فرض سوپروایزر (`542633638`).
+- **ارسال پیام اعلان راه‌اندازی سرور** به چت تعیین‌شده در `BALE_ADMIN_CHAT_ID`.
 - **ارسال پیام فاکتور صادر شده** شامل نام مشتری، جمع ناخالص، مجموع تخفیفات، مبلغ نهایی و روش‌های تسویه.
 - **ارسال کدهای OTP** جهت ثبت‌نام ویزیتور جدید و بازیابی رمز عبور.
 

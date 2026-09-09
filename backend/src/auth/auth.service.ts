@@ -272,9 +272,13 @@ export class AuthService {
    * و اتصال خودکار شماره به دیتابیس SQL بدون نیاز به وارد کردن دستی Chat ID
    */
   async handleBaleWebhook(body: any) {
-    const baleToken = process.env.BALE_BOT_TOKEN || '2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc';
+    const baleToken = process.env.BALE_BOT_TOKEN ?? '';
     const message = body?.message || body?.callback_query?.message;
     if (!message) return { ok: true };
+    if (!baleToken) {
+      this.logger.warn('BALE_BOT_TOKEN is not set - webhook handling skipped');
+      return { ok: true, skipped: 'BALE_BOT_TOKEN is not set' };
+    }
 
     const chatId = message?.chat?.id || message?.from?.id;
     if (!chatId) return { ok: true };
@@ -423,7 +427,7 @@ export class AuthService {
    * برودکست پیام آنلاین شدن سرور به تمام کاربران ثبت‌شده در بله
    */
   async broadcastServerOnline() {
-    const baleToken = process.env.BALE_BOT_TOKEN || '2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc';
+    const baleToken = process.env.BALE_BOT_TOKEN ?? '';
     if (!baleToken) return;
 
     try {
@@ -444,7 +448,7 @@ export class AuthService {
                    `⏱ *زمان:* ${nowStr}\n` +
                    `✅ *وضعیت:* آماده صدور فاکتور و ثبت وصولی`;
 
-      const adminChatId = process.env.BALE_ADMIN_CHAT_ID || '542633638';
+      const adminChatId = process.env.BALE_ADMIN_CHAT_ID || '';
       const targetChatIds = new Set<string>();
 
       users.forEach(u => {
@@ -476,10 +480,10 @@ export class AuthService {
   }
 
   private async dispatchBaleMessage(phone: string, code: string, actionTitle: string, chatId?: string | null) {
-    const baleToken = process.env.BALE_BOT_TOKEN || '2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc';
-    const targetChat = chatId || process.env.BALE_ADMIN_CHAT_ID || '542633638';
+    const baleToken = process.env.BALE_BOT_TOKEN ?? '';
+    const targetChat = chatId || process.env.BALE_ADMIN_CHAT_ID;
 
-    if (targetChat) {
+    if (targetChat && baleToken) {
       try {
         const text = `🍦 *${APP.nameFa} — ${actionTitle}*\n\n` +
                      `کد تایید شما:\n` +
@@ -497,7 +501,7 @@ export class AuthService {
           }),
         });
       } catch (err) {
-        console.error('خطا در ارسال پیام به بله:', err);
+        console.error('Bale message delivery failed:', err);
       }
     }
   }
