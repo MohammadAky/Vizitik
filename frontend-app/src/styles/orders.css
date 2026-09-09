@@ -1,0 +1,456 @@
+/* ============================================================
+   ویزیتیک — استایل مدیریت و ویرایش فاکتورهای فروش (orders.css)
+============================================================ */
+
+.orders-header {
+  flex-shrink: 0;
+  background: #001d31;
+  color: #ffffff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 12px 16px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.orders-header .header-title-box h1 {
+  font-size: 17px;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+}
+
+.orders-header .header-title-box .header-sub {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.orders-header .back-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  text-decoration: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.orders-header .back-btn:active {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.orders-header .back-btn .material-symbols-outlined {
+  font-size: 22px;
+  transform: scaleX(-1);
+}
+
+/* اسکرول محتوای سفارشات */
+.orders-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 16px 85px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* فیلتر و جستجو */
+.orders-search-box {
+  display: flex;
+  gap: 8px;
+}
+
+.orders-search-box .search-input-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.orders-search-box .search-input-wrap .material-symbols-outlined {
+  position: absolute;
+  right: 12px;
+  color: var(--text-muted);
+  font-size: 20px;
+}
+
+.orders-search-box .search-input-wrap input {
+  width: 100%;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0 38px 0 12px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+/* کارت سفارش */
+.order-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 18px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s;
+}
+
+.order-card:hover {
+  border-color: var(--primary);
+}
+
+.order-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--surface-variant);
+  padding-bottom: 8px;
+}
+
+.order-cust-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.order-cust-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--primary-light);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.order-cust-name {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.order-invoice-num {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--app-background);
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.order-meta-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.order-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-secondary);
+}
+
+.order-meta-row strong {
+  color: var(--text-primary);
+  font-weight: 800;
+}
+
+.order-meta-row.highlight {
+  font-size: 13.5px;
+  font-weight: 900;
+  color: var(--primary);
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+/* برچسب‌های نحوه تسویه */
+.order-payments-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-top: 4px;
+}
+
+.pay-tag {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.pay-tag.cash {
+  background: #dcfce7;
+  color: #15803d;
+}
+.pay-tag.pos {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.pay-tag.check {
+  background: #fef3c7;
+  color: #b45309;
+}
+.pay-tag.credit {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+/* دکمه‌های عملیات کارت */
+.order-actions-row {
+  display: flex;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--surface-variant);
+}
+
+.order-action-btn {
+  flex: 1;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--app-background);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.order-action-btn.edit-full {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.order-action-btn.reprint {
+  background: var(--primary-light);
+  border-color: rgba(0, 97, 148, 0.2);
+  color: var(--primary);
+}
+
+.order-action-btn.send-bale {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.order-action-btn:active {
+  transform: scale(0.97);
+}
+
+/* ============================================================
+   مدال جامع ویرایش فاکتور (اقلام، تعداد، تخفیفات، تسویه)
+============================================================ */
+
+.edit-order-sheet {
+  background: var(--surface);
+  border-radius: 24px 24px 0 0;
+  width: 100%;
+  max-width: 440px;
+  max-height: 90vh;
+  padding: 16px 16px 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.25);
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+.edit-section-card {
+  background: var(--app-background);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.edit-section-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* کارت کالای داخل فاکتور در حال ویرایش */
+.edit-item-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.edit-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.edit-item-name {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.edit-item-delete-btn {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+
+.edit-steppers-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.stepper-box {
+  background: var(--app-background);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stepper-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+.stepper-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.stepper-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: var(--surface-variant);
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stepper-btn:active {
+  background: var(--border);
+}
+
+.stepper-input {
+  width: 36px;
+  text-align: center;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.edit-item-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  border-top: 1px dashed var(--surface-variant);
+  padding-top: 6px;
+  color: var(--text-secondary);
+}
+
+/* بخش افزودن کالا */
+.add-product-dropdown {
+  width: 100%;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-family: inherit;
+  font-size: 11.5px;
+  padding: 0 8px;
+  outline: none;
+  color: var(--text-primary);
+}
+
+/* تخفیف‌های پلکانی */
+.discount-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #c2410c;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.discount-chip-remove {
+  background: none;
+  border: none;
+  color: #ea580c;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: bold;
+  line-height: 1;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
