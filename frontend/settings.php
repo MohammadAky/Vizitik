@@ -10,9 +10,9 @@ header("Pragma: no-cache");
 
 // ۳. اطلاعات کاربر از سشن
 $user = getUserData();
-$firstName = htmlspecialchars($user["firstName"] ?? "علی");
-$lastName = htmlspecialchars($user["lastName"] ?? "حسینی");
-$userPhone = htmlspecialchars($user["phone"] ?? "09121234567");
+$firstName = htmlspecialchars($user["firstName"] ?? "");
+$lastName = htmlspecialchars($user["lastName"] ?? "");
+$userPhone = htmlspecialchars($user["phone"] ?? "");
 $userRole = ($user["role"] ?? 'VISITOR') === 'ADMIN' ? 'مدیر ارشد سیستم' : 'مسئول توزیع و ویزیتور';
 $initials = mb_substr($firstName, 0, 1, 'UTF-8');
 ?>

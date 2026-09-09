@@ -1,0 +1,78 @@
+/* ============================================================
+   لایهٔ اتصال PWA (فقط همان‌قدر که SPA به آن نیاز دارد)
+   هیچ قانون ظاهری اینجا تکرار/بازنویسی نمی‌شود؛ استایل واقعی
+   عیناً از frontend/css/* کپی شده و این فایل فقط «چسب» است:
+   ۱) ریشهٔ ریکت (‎#root) نباید روی فلوِت بدنه تأثیر بگذارد
+   ۲) در SPA به‌جای <a href="x.php"> از <button> استفاده می‌شود،
+      پس دکمه‌ها باید مثل همان لینک‌های PHP دیده شوند
+   ۳) اعلان صفِ همگام‌سازی آفلاین (مفهومی است که نسخهٔ PHP ندارد)
+============================================================ */
+
+#root {
+  display: contents;
+}
+
+/* دکمه‌ها دقیقاً مثل لینک‌های نسخهٔ PHP رندر شوند */
+button {
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  text-align: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* حالت فعالِ آیتم منو/ناوبری (در PHP با کلاس active روی <a> ست می‌شد) */
+.nav-item.active,
+.side-menu-item.active {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+/* بنر صف آفلاین — همان کارت‌های استاندارد، فقط چیدمان ردیفی */
+.sync-queue-banner {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #b45309;
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sync-queue-banner .material-symbols-outlined {
+  font-size: 20px;
+  margin-inline-end: 6px;
+}
+
+.sync-queue-banner button {
+  background: var(--primary);
+  color: #fff;
+  border-radius: 10px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* فقط برای حالت آفلاین (مفهومی که نسخهٔ PHP ندارد) */
+.dot.off {
+  background: var(--text-muted);
+  animation: none;
+}

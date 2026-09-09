@@ -2,6 +2,7 @@ import { Controller, Post, Get, Put, Body, Param, UseGuards, Inject } from '@nes
 import { AuthGuard } from '@nestjs/passport';
 import { BaleService } from './bale.service';
 import { GetUser } from '../auth/get-user.decorator';
+import { BOT } from '../app.config';
 
 @Controller('api/bale')
 export class BaleController {
@@ -69,8 +70,8 @@ export class BaleController {
   getStatus() {
     return {
       status: 'ONLINE',
-      botUsername: 'VizitikBot',
-      botLink: 'https://ble.ir/VizitikBot',
+      botUsername: BOT.username,
+      botLink: BOT.link,
     };
   }
 }
