@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
-"""
-بررسی برابری نسخهٔ PWA با نسخهٔ PHP — سه کنترل خودکار:
+"""Vizitik PWA / PHP parity checks.
 
- ۱) CSS: فایل‌های css در frontend-app/src/styles باید بایت‌به‌بایت کپی frontend/css باشند
-    (به‌جز فایل‌های inline-* که از <style> داخلی همان صفحهٔ PHP استخراج شده‌اند).
- ۲) کلاس‌ها: هر کلاسی که در JSX یک صفحه استفاده شده، باید در استایل(های) همان صفحه
-    (style.css + css اختصاصی صفحه) تعریف شده باشد؛ و برعکس، کلاس‌ی که PHP در آن صفحه
-    به‌کار برده و در JSX نیست گزارش می‌شود (اختلاف ظاهری محتمل).
- ۳) آیکون‌ها: هر نام آیکون Material Symbols که در فایل PHP آن صفحه آمده، باید در
-    کد PWA هم پیدا شود.
+1) every frontend/css/*.css must be copied byte-for-byte into frontend-app/src/styles
+2) classes used in a screen must exist in the stylesheets that page loads, and PHP
+   classes missing from the screen are reported
+3) Material Symbols icon names used by a PHP page must exist in the PWA code
 
-خروجی: جدول + کد خروجی ۰ اگر هیچ اختلافی نباشد.
+Exit code: 0 when the CSS copies and the icon set are complete.
 """
 import re
 import subprocess
@@ -21,7 +17,6 @@ ROOT = Path(__file__).resolve().parent.parent
 PHP = ROOT / "frontend"
 APP = ROOT / "frontend-app"
 
-# صفحهٔ PHP -> فایل(های) JSX متناظر در PWA
 SHARED = ["src/components/BottomNav.jsx", "src/components/SideMenu.jsx", "src/components/Skeleton.jsx", "src/lib/pages.js", "src/App.jsx"]
 
 PAGES = {
@@ -40,7 +35,6 @@ PAGES = {
     "about.php": ["src/screens/Info.jsx"],
 }
 
-# استایل(های) اختصاصی هر صفحه (همان لینک‌های <link> در فایل PHP)
 PAGE_CSS = {
     "dashboard.php": [],
     "van-loading.php": ["van-loading"],
@@ -66,7 +60,7 @@ IDENT = re.compile(r"^[a-z][a-z0-9-]*$")
 
 
 def css_classes(styles):
-    """همه کلاس‌های تعریف‌شده در style.css + استایل صفحات خواسته‌شده"""
+    """every class defined in style.css + the requested page stylesheets"""
     files = [APP / "src/styles/style.css"] + [APP / f"src/styles/{n}.css" for n in styles]
     out = set()
     for f in files:
@@ -79,9 +73,8 @@ def css_classes(styles):
 
 
 def php_classes(page):
-    """کلاس‌های استفاده‌شده در HTML همان صفحه + JS کمکی‌اش"""
+    """classes used in the page HTML plus the helper JS of that page"""
     src = (PHP / page).read_text(encoding="utf-8", errors="ignore")
-    # حذف بلوک <script>، <style> و کامنت‌های HTML (nav کامنت‌شده در بعضی صفحات)
     body = re.sub(r"<script.*?</script>", "", src, flags=re.S)
     body = re.sub(r"<!--.*?-->", "", body, flags=re.S)
     body = re.sub(r"<style.*?</style>", "", body, flags=re.S)
@@ -107,7 +100,7 @@ def php_classes(page):
 
 
 def jsx_classes(paths):
-    """کلاس‌های استفاده‌شده در JSX: className="..." و className={`...`} و رشته‌های props"""
+    """classes used in the screen: className literals, template classes and string props"""
     found = set()
     dq = chr(34)
     bt = chr(96)
@@ -144,7 +137,7 @@ def php_icons(page):
 
 
 def app_icons():
-    """همه نام آیکون‌های موجود در کل کد PWA"""
+    """every icon name available anywhere in the PWA code"""
     out = set()
     for f in list((APP / "src").rglob("*.jsx")) + list((APP / "src").rglob("*.js")):
         txt = f.read_text(encoding="utf-8", errors="ignore")
@@ -155,13 +148,12 @@ def app_icons():
 
 
 def main():
-    # ۱) یکسان‌بودن CSS
-    print("== ۱) یکسان‌بودن فایل‌های CSS با نسخهٔ PHP ==")
+    print("== 1) CSS copied verbatim from the PHP app ==")
     diff_css = 0
     for f in sorted((PHP / "css").glob("*.css")):
         copy = APP / "src/styles" / f.name
         if not copy.exists():
-            print(f"  MISSING   {f.name} در PWA کپی نشده")
+            print(f"  MISSING   {f.name} (not copied into the PWA)")
             diff_css += 1
             continue
         same = f.read_bytes() == copy.read_bytes()
@@ -169,12 +161,12 @@ def main():
         if not same:
             diff_css += 1
     for f in sorted((APP / "src/styles").glob("inline-*.css")):
-        print(f"  EXTRACTED {f.name} (از <style> داخلی صفحهٔ PHP)")
+        print(f"  EXTRACTED {f.name} (from the page inline <style>)")
 
     app_ic = app_icons()
     total_missing_cls = 0
     total_missing_icons = 0
-    print("\n== ۲ و ۳) کلاس‌ها و آیکون‌های هر صفحه ==")
+    print("\n== 2 and 3) classes and icons per page ==")
     for page, jsx_files in PAGES.items():
         jsx_files = jsx_files + SHARED
         styles = ["style"] + PAGE_CSS.get(page, [])
@@ -189,12 +181,12 @@ def main():
         missing_icons = sorted(i for i in icons if i not in app_ic)
         total_missing_cls += len(missing) + len(undef)
         total_missing_icons += len(missing_icons)
-        print(f"\n  {page}  ({len(php_used)} کلاس در PHP، {len(used)} کلاس در JSX)")
-        print(f"    کلاس‌های JSX تعریف‌نشده در CSS صفحه : {', '.join(undef) if undef else '—'}")
-        print(f"    کلاس‌های PHP که در JSX نیامده      : {', '.join(missing) if missing else '—'}")
-        print(f"    آیکون‌های PHP که در PWA نیست        : {', '.join(missing_icons) if missing_icons else '—'}")
+        print(f"\n  {page}  ({len(php_used)} classes in PHP, {len(used)} classes in JSX)")
+        print(f"    classes used in JSX but not styled here : {', '.join(undef) if undef else '-'}")
+        print(f"    classes used in PHP but missing in JSX  : {', '.join(missing) if missing else '-'}")
+        print(f"    icons used in PHP but missing in PWA   : {', '.join(missing_icons) if missing_icons else '-'}")
 
-    print(f"\n== خلاصه == کپی CSS ناکامل: {diff_css} | اختلاف کلاس: {total_missing_cls} | آیکون جامانده: {total_missing_icons}")
+    print(f"\n== summary == incomplete CSS copies: {diff_css} | class diffs: {total_missing_cls} | missing icons: {total_missing_icons}")
     return 0 if (diff_css == 0 and total_missing_icons == 0) else 1
 
 

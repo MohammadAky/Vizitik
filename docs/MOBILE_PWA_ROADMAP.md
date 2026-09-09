@@ -94,8 +94,8 @@ DATABASE_URL="mysql://vizitik:YOUR_STRONG_PASSWORD@localhost:3306/hesabchin"
 JWT_SECRET="change-me-to-a-long-random-string"
 JWT_EXPIRES_IN="30d"
 PORT=3000
-BALE_BOT_TOKEN="2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc"
-BALE_ADMIN_CHAT_ID="542633638"
+BALE_BOT_TOKEN="<توکنِ ربات خودت>"
+BALE_ADMIN_CHAT_ID="<آی‌دیِ چت ادمین>"
 EOF
 
 # سینک اسکیما (ایمن: جداول را با داده موجود هماهنگ می‌کند)

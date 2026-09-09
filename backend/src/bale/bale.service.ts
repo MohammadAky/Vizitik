@@ -5,8 +5,7 @@ import { APP, BOT } from "../app.config";
 @Injectable()
 export class BaleService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BaleService.name);
-  private readonly baleToken =
-    process.env.BALE_BOT_TOKEN || "2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc";
+  private readonly baleToken = process.env.BALE_BOT_TOKEN ?? "";
   private readonly apiUrl = `https://tapi.bale.ai/bot${this.baleToken}`;
   private isPolling = false;
   private lastUpdateId = 0;
@@ -14,15 +13,17 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   onModuleInit() {
-    this.logger.log(
-      `🤖 ماژول ربات بله ${APP.nameFa} راه‌اندازی شد (Token: ${this.baleToken.substring(0, 15)}...)`,
-    );
+    if (!this.baleToken) {
+      this.logger.warn("BALE_BOT_TOKEN is not set - Bale bot polling is disabled");
+      return;
+    }
+    this.logger.log(`Bale bot module for ${APP.nameEn} started`);
     this.startPollingLoop();
   }
 
   onModuleDestroy() {
     this.isPolling = false;
-    this.logger.log("🛑 ربات بله متوقف شد.");
+    this.logger.log("Bale bot polling stopped.");
   }
 
   /**
@@ -203,7 +204,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       }
 
       // ارسال خودکار به ویزیتور در بله
-      const fallbackChatId = process.env.BALE_ADMIN_CHAT_ID || "542633638";
+      const fallbackChatId = process.env.BALE_ADMIN_CHAT_ID || "";
       const visitorTargetChat = visitor.baleChatId || fallbackChatId;
 
       if (visitorTargetChat) {
@@ -531,7 +532,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
         `#${`${visitor.firstName} ${visitor.lastName || ""}`.trim().replace(/\s+/g, "_")}`
       : "";
 
-    const fallbackChatId = process.env.BALE_ADMIN_CHAT_ID || "542633638";
+    const fallbackChatId = process.env.BALE_ADMIN_CHAT_ID || "";
     let sentCount = 0;
 
     for (const cust of customers) {
