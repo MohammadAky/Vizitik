@@ -337,6 +337,6 @@ function proceedToPayment() {
         return;
     }
 
-    sessionStorage.setItem('hesabchin_current_order', JSON.stringify(orderState));
+    sessionStorage.setItem('vizitik_current_order', JSON.stringify(orderState));
     window.location.href = `payment.php?customerId=${encodeURIComponent(orderState.customerId)}`;
 }
