@@ -3,7 +3,7 @@
 // ============================================================
 
 // کلید ذخیره‌سازی کاتالوگ‌های دانلود شده در کش
-const STORAGE_KEY_CATALOGS = 'hesabchin_downloaded_catalogs';
+const STORAGE_KEY_CATALOGS = 'vizitik_downloaded_catalogs';
 
 // وضعیت فیلترها
 let selectedBrand = 'ALL';

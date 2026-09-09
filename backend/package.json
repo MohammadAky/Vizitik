@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "HesabChin Backend API - Ice Cream Distribution Management",
+  "description": "Vizitik Backend API - Ice Cream Distribution Management",
   "scripts": {
     "start:dev": "nest start --watch",
     "build": "nest build",

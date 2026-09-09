@@ -1,4 +1,4 @@
-# 🍦 پروژه ویزیتیک (HesabChin Backend API)
+# 🍦 پروژه ویزیتیک (Vizitik Backend API)
 ### سیستم جامع مدیریت سفارشات و حسابداری ویزیتورهای پخش بستنی
 
 ---
@@ -24,7 +24,7 @@ npm install
 ```env
 DATABASE_URL="postgresql://postgres.gfszeojgcarobrzpdmni:M%401383138300a@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require&connect_timeout=30"
 DIRECT_URL="postgresql://postgres.gfszeojgcarobrzpdmni:M%401383138300a@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require&connect_timeout=30"
-JWT_SECRET="HesabChin-SuperSecretKey-2026"
+JWT_SECRET="Vizitik-SuperSecretKey-2026"
 PORT=3000
 ```
 

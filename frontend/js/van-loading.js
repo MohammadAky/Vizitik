@@ -2,7 +2,7 @@
 // ویزیتیک — اسکریپت بارگیری خودرو و قفل موجودی (van-loading.js)
 // ============================================================
 
-const STORAGE_KEY_CATALOGS = 'hesabchin_downloaded_catalogs';
+const STORAGE_KEY_CATALOGS = 'vizitik_downloaded_catalogs';
 
 let selectedBrand = 'ALL';
 let selectedCategory = 'ALL';
