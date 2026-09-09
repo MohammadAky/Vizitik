@@ -163,7 +163,7 @@ header("Pragma: no-cache");
                 <form class="auth-view active" id="viewLogin" onsubmit="handleDirectLogin(event)">
                     <div class="input-group">
                         <label for="loginPhone">شماره موبایل ویزیتور</label>
-                        <input type="tel" id="loginPhone" placeholder="09121234567" maxlength="11" value="09121234567" required autocomplete="tel">
+                        <input type="tel" id="loginPhone" placeholder="مثال: 09121234567" maxlength="11" required autocomplete="tel">
                     </div>
 
                     <div class="input-group">

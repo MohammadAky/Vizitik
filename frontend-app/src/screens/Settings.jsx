@@ -61,9 +61,9 @@ function PasswordField({ id, labelHtml, hint, placeholder, value, onChange, onIn
 export default function Settings({ go, logout }) {
   const page = usePhpPage('settings');
   const user = authStorage.user || {};
-  const firstName = user.firstName || 'علی';
-  const lastName = user.lastName || 'حسینی';
-  const userPhone = user.phone || '09121234567';
+  const firstName = user.firstName || '';
+  const lastName = user.lastName || '';
+  const userPhone = user.phone || '';
   const userRole = user.role === 'ADMIN' ? 'مدیر ارشد سیستم' : 'مسئول توزیع و ویزیتور';
 
   const [toast, setToast] = useState({ show: false, type: 'success', text: 'عملیات با موفقیت انجام شد', icon: 'check_circle' });
