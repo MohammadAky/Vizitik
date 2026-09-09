@@ -43,6 +43,7 @@ DOMAIN="${DOMAIN:-}"
 CERT_EMAIL="${CERT_EMAIL:-}"
 
 BACKEND_PORT="${BACKEND_PORT:-3000}"
+WITH_WWW="${WITH_WWW:-0}"
 NODEJS_MAJOR=20
 
 # ------------------------------------------------------------------
@@ -158,7 +159,9 @@ print_config_summary() {
   echo
   echo "  install dir : $INSTALL_DIR"
   echo "  source dir  : $SRC_DIR"
-  echo "  domain      : ${DOMAIN:-<none - plain http on the server ip>}"
+  local shown="$DOMAIN"
+  if [[ -n "$DOMAIN" && "${WITH_WWW:-0}" == "1" ]]; then shown="$DOMAIN www.$DOMAIN"; fi
+  echo "  domain      : ${shown:-<none - plain http on the server ip>}"
   echo "  https       : $ENABLE_HTTPS (email: ${CERT_EMAIL:-<none>})"
   echo "  api         : 127.0.0.1:${BACKEND_PORT}, proxied at /api"
   echo "  database    : ${DB_USER}@${DB_HOST}/${DB_NAME} (password: $dbpass_state)"
@@ -186,6 +189,10 @@ collect_inputs() {
     fi
   else
     ENABLE_HTTPS=0
+  fi
+
+  if [[ -n "$DOMAIN" ]]; then
+    ask_yes WITH_WWW "also serve www.$DOMAIN" 1
   fi
 
   ask BACKEND_PORT "backend port (listens on localhost only)" "3000"
@@ -376,6 +383,7 @@ NODE_ENV=production
 JWT_SECRET="${JWT_SECRET}"
 JWT_EXPIRES_IN="30d"
 PORT=${BACKEND_PORT}
+BIND_HOST=127.0.0.1
 APP_NAME_FA="${APP_NAME_FA}"
 APP_NAME_EN="${APP_NAME_EN}"
 BALE_BOT_USERNAME="${BALE_BOT_USERNAME}"
@@ -443,15 +451,21 @@ EOF
 
 setup_nginx() {
   log "configuring Nginx"
-  local srv="_"
-  [[ -n "$DOMAIN" ]] && srv="$DOMAIN"
+  local names="_"
+  if [[ -n "$DOMAIN" ]]; then
+    names="$DOMAIN"
+    if [[ "$WITH_WWW" == "1" ]]; then names="$DOMAIN www.$DOMAIN"; fi
+  fi
   local conf="/etc/nginx/sites-available/vizitik"
+
+  log "what nginx serves right now (useful when port 80 was already taken)"
+  nginx -T 2>/dev/null | grep -E '^[[:space:]]*(server_name|listen|root|proxy_pass)' | head -20 || true
 
   cat > "$conf" <<EOF
 server {
     listen 80;
     listen [::]:80;
-    server_name ${srv};
+    server_name ${names};
     root $INSTALL_DIR/frontend-app/dist;
     index index.html;
 
@@ -483,9 +497,15 @@ server {
 EOF
 
   ln -sf "$conf" /etc/nginx/sites-enabled/vizitik
-  rm -f /etc/nginx/sites-enabled/default
-  nginx -t && systemctl reload nginx
-  ok "Nginx configured (server_name: ${srv})"
+  if [[ -e /etc/nginx/sites-enabled/default ]]; then
+    mv /etc/nginx/sites-enabled/default /etc/nginx/sites-enabled/default.disabled-by-vizitik 2>/dev/null || true
+    warn "the previous default nginx site was disabled (renamed to default.disabled-by-vizitik)"
+  fi
+  if ! nginx -t; then
+    fail "the nginx configuration test failed - fix the reported error and run this script again"
+  fi
+  systemctl reload nginx
+  ok "Nginx configured (server_name: ${names})"
 }
 
 # ------------------------------------------------------------------
@@ -502,7 +522,11 @@ setup_https() {
     return
   fi
   log "requesting SSL certificate for $DOMAIN"
-  certbot --nginx -d "$DOMAIN" --redirect --agree-tos -m "$CERT_EMAIL" --non-interactive
+  local -a cnames=( -d "$DOMAIN" )
+  if [[ "$WITH_WWW" == "1" ]]; then cnames+=( -d "www.$DOMAIN" ); fi
+  if ! certbot --nginx "${cnames[@]}" --redirect --agree-tos -m "$CERT_EMAIL" --non-interactive; then
+    fail "certbot failed - check that ${DOMAIN} really resolves to this server: dig +short ${DOMAIN}"
+  fi
   ok "HTTPS enabled"
 }
 

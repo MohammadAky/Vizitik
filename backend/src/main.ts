@@ -13,8 +13,10 @@ async function bootstrap() {
   app.enableCors();
 
   const port = process.env.PORT || 3000;
-  await app.listen(port, '0.0.0.0');
-  console.log(`[${APP.nameEn}] API listening on http://0.0.0.0:${port}`);
+  // behind Nginx set BIND_HOST=127.0.0.1 so the API is not reachable from outside
+  const host = process.env.BIND_HOST || '0.0.0.0';
+  await app.listen(port, host);
+  console.log(`[${APP.nameEn}] API listening on http://${host}:${port}`);
 
   // broadcast the "server is online" message through the Bale bot
   try {
