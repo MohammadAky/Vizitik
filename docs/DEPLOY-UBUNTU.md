@@ -9,11 +9,11 @@
 
 ## ۰-الف) ⚡ سریع‌ترین راه: اجرای اسکریپت خودکار
 
-یک اسکریپتِ کامل (`deploy/setup-server.sh`) نوشته‌ام که همین راهنما را **خودکار** اجرا می‌کند: نصب پیش‌نیازها، دیتابیس، بیلد بک‌اند + فرانت، سرویس systemd، Nginx، (اختیاری) HTTPS، فایروال و بکاپ.
+یک اسکریپتِ کامل (`scripts/setup-server.sh`) نوشته‌ام که همین راهنما را **خودکار** اجرا می‌کند: نصب پیش‌نیازها، دیتابیس، بیلد بک‌اند + فرانت، سرویس systemd، Nginx، (اختیاری) HTTPS، فایروال و بکاپ.
 
 ```bash
 # از داخل ریپو، با دسترسی root:
-sudo DOMAIN=app.example.com DB_PASS='رمز_قوی' BALE_BOT_TOKEN='توکن_ربات' bash deploy/setup-server.sh
+sudo DOMAIN=app.example.com DB_PASS='رمز_قوی' BALE_BOT_TOKEN='توکن_ربات' bash scripts/setup-server.sh
 ```
 
 - مقادیر را می‌توانی یا همین‌طور به‌صورت متغیر بدهی، یا در بالای خودِ `setup-server.sh` عوض کنی (بلاک «متغیرهای پیکربندی»).
