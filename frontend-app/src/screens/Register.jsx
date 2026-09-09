@@ -23,87 +23,52 @@ export default function Register({ onAuthed, goLogin }) {
 
   async function submit(e) {
     e.preventDefault();
-    if (!agree) {
-      setError('برای ثبت‌نام باید «قوانین و مقررات» را پذیرفته باشید.');
-      return;
-    }
+    if (!agree) { setError('برای ثبت‌نام باید «قوانین و مقررات» را پذیرفته باشید.'); return; }
     setError('');
     setBusy(true);
     try {
-      const data = await api('/auth/register', {
-        method: 'POST',
-        body: { firstName, lastName, phone: phone.trim(), password }
-      });
+      const data = await api('/auth/register', { method: 'POST', body: { firstName, lastName, phone: phone.trim(), password } });
       if (data && data.accessToken) authStorage.setToken(data.accessToken);
       if (data && data.user) authStorage.setUser(data.user);
       onAuthed();
-    } catch (err) {
-      setError(err.message || 'ثبت‌نام ناموفق بود.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function acceptTerms() {
-    setAgree(true);
-    setShowTerms(false);
+    } catch (err) { setError(err.message || 'ثبت‌نام ناموفق بود.'); }
+    finally { setBusy(false); }
   }
 
   return (
-    <>
-      <form className="auth" onSubmit={submit} style={{ justifyContent: 'flex-start', paddingTop: 40 }}>
-        <h1 style={{ marginBottom: 20 }}>ثبت‌نام ویزیتور</h1>
+    <div className="auth-wrap">
+      <form className="auth" onSubmit={submit} style={{ padding: '30px 0' }}>
+        <h1 style={{ marginBottom: 18 }}>ثبت‌نام ویزیتور</h1>
+        {error && <div className="auth-error">{error}</div>}
 
-        {error && <div className="err">{error}</div>}
+        <div className="field"><label>نام</label><input value={firstName} onChange={(e) => setFirstName(e.target.value)} /></div>
+        <div className="field"><label>نام خانوادگی</label><input value={lastName} onChange={(e) => setLastName(e.target.value)} /></div>
+        <div className="field"><label>شماره موبایل</label><input inputMode="tel" dir="ltr" placeholder="0912…" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
+        <div className="field"><label>رمز عبور</label><input type="password" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
 
-        <div className="field">
-          <label>نام</label>
-          <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-        </div>
-        <div className="field">
-          <label>نام خانوادگی</label>
-          <input value={lastName} onChange={(e) => setLastName(e.target.value)} />
-        </div>
-        <div className="field">
-          <label>شماره موبایل</label>
-          <input inputMode="tel" dir="ltr" placeholder="0912…" value={phone} onChange={(e) => setPhone(e.target.value)} />
-        </div>
-        <div className="field">
-          <label>رمز عبور</label>
-          <input type="password" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} />
-        </div>
-
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, margin: '4px 0 14px', color: '#cfe2ef' }}>
+        <label className="terms-check">
           <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-          <span>قوانین و مقررات را می‌پذیرم — </span>
-          <button type="button" onClick={() => setShowTerms(true)} style={{ background: 'none', color: '#ff8a3d', fontWeight: 700, padding: 0 }}>
-            مشاهدهٔ قوانین
-          </button>
+          <span>
+            قوانین و مقررات را می‌پذیرم —{' '}
+            <button type="button" className="terms-link" onClick={() => setShowTerms(true)}>مشاهدهٔ قوانین</button>
+          </span>
         </label>
 
-        <button className="btn primary" type="submit" disabled={busy}>
-          {busy ? 'در حال ثبت‌نام…' : 'ثبت‌نام'}
-        </button>
-
-        <div className="auth-foot">
-          قبلاً ثبت‌نام کرده‌اید؟{' '}
-          <a href="#" onClick={(e) => { e.preventDefault(); goLogin(); }}>وارد شوید</a>
-        </div>
+        <button className="btn primary" type="submit" disabled={busy}>{busy ? 'در حال ثبت‌نام…' : 'ثبت‌نام'}</button>
+        <div className="auth-foot">قبلاً ثبت‌نام کرده‌اید؟ <a href="#" onClick={(e) => { e.preventDefault(); goLogin(); }}>وارد شوید</a></div>
       </form>
 
       {showTerms && (
-        <div className="terms-overlay" onClick={() => setShowTerms(false)}>
-          <div className="terms-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay modal-center" onClick={() => setShowTerms(false)}>
+          <div className="modal-sheet" style={{ borderRadius: 22 }} onClick={(e) => e.stopPropagation()}>
             <h3>قوانین و مقررات</h3>
-            <div className="terms-scroll">
-              {TERMS.split('\n').map((line, i) => (
-                <p key={i}>{line}</p>
-              ))}
+            <div style={{ maxHeight: '52vh', overflowY: 'auto', fontSize: 13, lineHeight: 2 }}>
+              {TERMS.split('\n').map((line, i) => <p key={i}>{line}</p>)}
             </div>
-            <button className="btn primary" onClick={acceptTerms}>مطالعه کردم و موافقم</button>
+            <button className="btn" onClick={() => { setAgree(true); setShowTerms(false); }}>مطالعه کردم و موافقم</button>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
