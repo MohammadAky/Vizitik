@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { AuthService } from './auth/auth.service';
+import { APP } from './app.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -13,14 +14,14 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port, '0.0.0.0');
-  console.log(`🚀 سرور ویزیتیک با موفقیت روی پورت ${port} اجرا شد: http://0.0.0.0:${port}`);
+  console.log(`[${APP.nameEn}] API listening on http://0.0.0.0:${port}`);
 
-  // ارسال خودکار پیام آنلاین شدن به ربات پیام‌رسان بله
+  // broadcast the "server is online" message through the Bale bot
   try {
     const authService = app.get(AuthService);
     await authService.broadcastServerOnline();
   } catch (err) {
-    // در صورت عدم تنظیم یا دسترسی اولیه خطا سرور را متوقف نمی‌کند
+    // a missing or unreachable bot must never stop the server
   }
 }
 bootstrap();

@@ -19,34 +19,8 @@ function isLoggedIn()
 
 function requireLogin()
 {
+    // بدون نشست معتبر، کاربر به صفحهٔ ورود می‌رود (هیچ لاگین خودکار/حساب پیش‌فرضی وجود ندارد)
     if (!isLoggedIn()) {
-        // لاگین خودکار با کاربر ویزیتور پیش‌فرض در صورت نبود سشن
-        $ch = curl_init(API_BASE_URL . "auth/login");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "Content-Type: application/json",
-            "Accept: application/json"
-        ]);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
-            "phone" => "09121234567",
-            "password" => "123456"
-        ]));
-
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($httpCode >= 200 && $httpCode < 300 && $response) {
-            $data = json_decode($response, true);
-            if (!empty($data['accessToken'])) {
-                $_SESSION['accessToken'] = $data['accessToken'];
-                $_SESSION['user'] = $data['user'] ?? ['firstName' => 'علی', 'lastName' => 'حسینی', 'role' => 'VISITOR'];
-                return;
-            }
-        }
-
         header("Location: index.php");
         exit();
     }

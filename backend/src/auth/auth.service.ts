@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, BadRequestException, NotFoundExcepti
 import { PrismaService } from '../prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { APP } from '../app.config';
 import {
   LoginDto,
   SendRegisterOtpDto,
@@ -271,9 +272,13 @@ export class AuthService {
    * و اتصال خودکار شماره به دیتابیس SQL بدون نیاز به وارد کردن دستی Chat ID
    */
   async handleBaleWebhook(body: any) {
-    const baleToken = process.env.BALE_BOT_TOKEN || '2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc';
+    const baleToken = process.env.BALE_BOT_TOKEN ?? '';
     const message = body?.message || body?.callback_query?.message;
     if (!message) return { ok: true };
+    if (!baleToken) {
+      this.logger.warn('BALE_BOT_TOKEN is not set - webhook handling skipped');
+      return { ok: true, skipped: 'BALE_BOT_TOKEN is not set' };
+    }
 
     const chatId = message?.chat?.id || message?.from?.id;
     if (!chatId) return { ok: true };
@@ -281,7 +286,7 @@ export class AuthService {
     // ۱. اگر کاربر /start زد یا پیامی فرستاد
     if (message.text && !message.contact) {
       const welcomeText =
-        `🍦 *به سامانه اطلاع‌رسانی و پخش ویزیتیک خوش آمدید*\n\n` +
+        `🍦 *به سامانه اطلاع‌رسانی و پخش ${APP.nameFa} خوش آمدید*\n\n` +
         `برای اتصال خودکار شماره شما و دریافت لحظه‌ای فاکتورها، مانده حساب و جشنواره‌های تخفیف، لطفاً دکمه «📱 ارسال شماره موبایل» زیر را لمس نمایید:`;
 
       await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
@@ -366,7 +371,7 @@ export class AuthService {
       if (matchedRole === 'مشتری') {
         replyMsg =
           `✅ *فروشگاه محترم ${matchedName}؛*\n\n` +
-          `شماره شما (${phone}) با موفقیت تایید و به سیستم ویزیتیک متصل شد.\n` +
+          `شماره شما (${phone}) با موفقیت تایید و به سیستم ${APP.nameFa} متصل شد.\n` +
           `از این پس صورت‌حساب‌ها، مانده حساب و جشنواره‌های تخفیف مستقیماً به این صفحه ارسال خواهند شد. 🍦`;
       } else if (matchedRole === 'ویزیتور') {
         replyMsg =
@@ -411,7 +416,7 @@ export class AuthService {
       throw new BadRequestException('کد تایید منقضی شده است.');
     }
 
-    if (stored.code !== code && code !== '12345') {
+    if (stored.code !== code) {
       throw new BadRequestException('کد تایید وارد شده نادرست است.');
     }
 
@@ -422,7 +427,7 @@ export class AuthService {
    * برودکست پیام آنلاین شدن سرور به تمام کاربران ثبت‌شده در بله
    */
   async broadcastServerOnline() {
-    const baleToken = process.env.BALE_BOT_TOKEN || '2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc';
+    const baleToken = process.env.BALE_BOT_TOKEN ?? '';
     if (!baleToken) return;
 
     try {
@@ -438,12 +443,12 @@ export class AuthService {
         timeZone: 'Asia/Tehran',
       }).format(new Date());
 
-      const text = `🍦 *سامانه جامع پخش گرم ویزیتیک*\n\n` +
+      const text = `🍦 *سامانه جامع پخش گرم ${APP.nameFa}*\n\n` +
                    `🚀 *سرور بک‌اند آنلاین شد!*\n` +
                    `⏱ *زمان:* ${nowStr}\n` +
                    `✅ *وضعیت:* آماده صدور فاکتور و ثبت وصولی`;
 
-      const adminChatId = process.env.BALE_ADMIN_CHAT_ID || '542633638';
+      const adminChatId = process.env.BALE_ADMIN_CHAT_ID || '';
       const targetChatIds = new Set<string>();
 
       users.forEach(u => {
@@ -475,12 +480,12 @@ export class AuthService {
   }
 
   private async dispatchBaleMessage(phone: string, code: string, actionTitle: string, chatId?: string | null) {
-    const baleToken = process.env.BALE_BOT_TOKEN || '2089208057:mqfJ2g1Vbxn-gdtP7e3Lm6T24ou6WK0CuFc';
-    const targetChat = chatId || process.env.BALE_ADMIN_CHAT_ID || '542633638';
+    const baleToken = process.env.BALE_BOT_TOKEN ?? '';
+    const targetChat = chatId || process.env.BALE_ADMIN_CHAT_ID;
 
-    if (targetChat) {
+    if (targetChat && baleToken) {
       try {
-        const text = `🍦 *ویزیتیک — ${actionTitle}*\n\n` +
+        const text = `🍦 *${APP.nameFa} — ${actionTitle}*\n\n` +
                      `کد تایید شما:\n` +
                      `👉 \`${code}\` 👈\n\n` +
                      `⏱ این کد به مدت ۲ دقیقه معتبر است.\n` +
@@ -496,7 +501,7 @@ export class AuthService {
           }),
         });
       } catch (err) {
-        console.error('خطا در ارسال پیام به بله:', err);
+        console.error('Bale message delivery failed:', err);
       }
     }
   }
