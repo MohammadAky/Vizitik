@@ -30,7 +30,7 @@ function formatPrice(amount) {
 
 // مقداردهی اولیه در لود صفحه
 document.addEventListener('DOMContentLoaded', () => {
-    const raw = sessionStorage.getItem('hesabchin_current_order');
+    const raw = sessionStorage.getItem('vizitik_current_order');
     if (!raw) {
         window.location.href = 'new-order.php';
         return;
@@ -548,7 +548,7 @@ async function executeOrderSubmission() {
     // در صورت عدم دریافت پاسخ سرور، یک عدد موقت برای نمایش روی رسید
     const fallbackNumber = localUuid.length > 8 ? localUuid.substring(0, 8).toUpperCase() : localUuid;
 
-    sessionStorage.removeItem('hesabchin_current_order');
+    sessionStorage.removeItem('vizitik_current_order');
     renderThermalReceipt(payload, realInvoiceNumber || fallbackNumber, persianDueDateStr);
     document.getElementById('invoiceModal').style.display = 'flex';
 }

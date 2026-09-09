@@ -16,7 +16,7 @@ export const APP = {
 
 export const BOT = {
   /** نام‌کاربری ربات بله (بدون @) */
-  username: process.env.BALE_BOT_USERNAME || 'HesabchinBot',
+  username: process.env.BALE_BOT_USERNAME || 'VizitikBot',
   /** لینک ربات در بله */
-  link: process.env.BALE_BOT_LINK || `https://ble.ir/${process.env.BALE_BOT_USERNAME || 'HesabchinBot'}`,
+  link: process.env.BALE_BOT_LINK || `https://ble.ir/${process.env.BALE_BOT_USERNAME || 'VizitikBot'}`,
 };

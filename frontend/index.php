@@ -236,7 +236,7 @@ header("Pragma: no-cache");
 
                     <div class="bale-banner">
                         <span class="material-symbols-outlined" style="font-size: 18px;">smart_toy</span>
-                        <span>کد به ربات بله ارسال می‌شود: <a href="https://ble.ir/HesabchinBot" target="_blank">استارت ربات</a></span>
+                        <span>کد به ربات بله ارسال می‌شود: <a href="https://ble.ir/VizitikBot" target="_blank">استارت ربات</a></span>
                     </div>
 
                     <div class="switch-auth-box">

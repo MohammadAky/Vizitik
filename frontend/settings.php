@@ -159,9 +159,9 @@ $initials = mb_substr($firstName, 0, 1, 'UTF-8');
                     </p>
                 </div>
 
-                <a href="https://ble.ir/HesabchinBot" target="_blank" class="bale-action-btn">
+                <a href="https://ble.ir/VizitikBot" target="_blank" class="bale-action-btn">
                     <span class="material-symbols-outlined">open_in_new</span>
-                    <span>ورود و استارت ربات بله (@HesabchinBot)</span>
+                    <span>ورود و استارت ربات بله (@VizitikBot)</span>
                 </a>
             </section>
 
@@ -372,13 +372,13 @@ $initials = mb_substr($firstName, 0, 1, 'UTF-8');
                 prevDebt: document.getElementById('prefPrevDebt').checked,
                 vanStockAlert: document.getElementById('prefVanStockAlert').checked,
             };
-            localStorage.setItem('hesabchin_invoice_prefs', JSON.stringify(prefs));
+            localStorage.setItem('vizitik_invoice_prefs', JSON.stringify(prefs));
             showToast('تنظیمات چاپ و فاکتور با موفقیت ذخیره شد.', 'success');
         }
 
         // بازیابی تنظیمات هنگام لود صفحه
         document.addEventListener('DOMContentLoaded', () => {
-            const saved = localStorage.getItem('hesabchin_invoice_prefs');
+            const saved = localStorage.getItem('vizitik_invoice_prefs');
             if (saved) {
                 try {
                     const prefs = JSON.parse(saved);
