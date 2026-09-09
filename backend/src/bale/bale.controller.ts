@@ -69,8 +69,8 @@ export class BaleController {
   getStatus() {
     return {
       status: 'ONLINE',
-      botUsername: 'HesabchinBot',
-      botLink: 'https://ble.ir/HesabchinBot',
+      botUsername: 'VizitikBot',
+      botLink: 'https://ble.ir/VizitikBot',
     };
   }
 }

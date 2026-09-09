@@ -170,7 +170,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
         `\n— — —\n` +
         `🤝 *هم‌توزیع‌کننده‌ها را هم به ویزیتیک دعوت کنید*\n` +
         `اگر ویزیتور یا پخش‌کننده‌ی دیگری را می‌شناسید که به این فروشگاه یا محله‌های دیگر سر می‌زند، این ربات را به او معرفی کنید تا سفارش، فاکتور و حسابِ او هم دقیق و منظم در *ویزیتیک* ثبت و همین‌جا در بله ارسال شود.\n` +
-        `ربات: ble.ir/HesabchinBot`;
+        `ربات: ble.ir/VizitikBot`;
 
       // ۲. پیام اختصاصی برای ویزیتور
       const visitorMessage =
@@ -252,8 +252,8 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
     return {
       botInfo: {
-        username: "HesabchinBot",
-        link: "https://ble.ir/HesabchinBot",
+        username: "VizitikBot",
+        link: "https://ble.ir/VizitikBot",
         status: "ONLINE",
       },
       visitorStatus: {
