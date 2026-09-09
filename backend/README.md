@@ -7,7 +7,7 @@
 
 - **Node.js**: نسخه 18 یا بالاتر (تست‌شده روی Node v20 و v24)
 - **NPM**: نسخه 9 یا بالاتر
-- **PostgreSQL**: دیتابیس ابری Supabase (کانفیگ‌شده)
+- **MySQL/MariaDB**: همان چیزی که `backend/prisma/schema.prisma` با `provider = "mysql"` انتظار دارد (ساختار از `documents/hesabchin.sql` یا `prisma db push`)
 - **TypeScript**: نسخه 5.7+
 
 ---
@@ -22,10 +22,13 @@ npm install
 ### ۲. تنظیم متغیرهای محیطی:
 فایل `.env` را در ریشه پوشه `backend` بسازید:
 ```env
-DATABASE_URL="postgresql://postgres.gfszeojgcarobrzpdmni:M%401383138300a@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require&connect_timeout=30"
-DIRECT_URL="postgresql://postgres.gfszeojgcarobrzpdmni:M%401383138300a@aws-0-eu-central-1.pooler.supabase.com:5432/postgres?sslmode=require&connect_timeout=30"
-JWT_SECRET="Vizitik-SuperSecretKey-2026"
+# اسکیما (backend/prisma/schema.prisma) روی MySQL/MariaDB است؛ همان را در .env بده
+DATABASE_URL="mysql://DB_USER:DB_PASSWORD@localhost:3306/DB_NAME"
 PORT=3000
+NODE_ENV=production
+# ساخت کلید: openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48
+JWT_SECRET="<یک رشتهٔ تصادفی بلند>"
+JWT_EXPIRES_IN="30d"
 ```
 
 ### ۳. سینک دیتابیس و تولید پریسما:
