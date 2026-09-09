@@ -37,13 +37,26 @@ APP_NAME_EN="${APP_NAME_EN:-Vizitik}"
 BALE_BOT_TOKEN="${BALE_BOT_TOKEN:-}"
 BALE_BOT_USERNAME="${BALE_BOT_USERNAME:-}"
 BALE_ADMIN_CHAT_ID="${BALE_ADMIN_CHAT_ID:-}"
-JWT_SECRET="${JWT_SECRET:-$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48)}"
+JWT_SECRET="${JWT_SECRET:-}"   # a fresh one is generated while asking, if this is empty
 
 DOMAIN="${DOMAIN:-}"
-CERT_EMAIL="${CERT_EMAIL:-admin@example.com}"
+CERT_EMAIL="${CERT_EMAIL:-}"
 
 BACKEND_PORT="${BACKEND_PORT:-3000}"
 NODEJS_MAJOR=20
+
+# ------------------------------------------------------------------
+# Behaviour switches - each one is also offered as a question
+#   ASK=1 ask for anything that is not already set in the environment
+#   ASK=0 never ask, use the environment values and the defaults above
+# ------------------------------------------------------------------
+ASK="${ASK:-1}"
+YES="${YES:-0}"
+ENABLE_HTTPS="${ENABLE_HTTPS:-1}"
+ENABLE_UFW="${ENABLE_UFW:-1}"
+ENABLE_BACKUP="${ENABLE_BACKUP:-1}"
+TEST_PHONE="${TEST_PHONE:-}"
+TEST_PASSWORD="${TEST_PASSWORD:-}"
 
 # ------------------------------------------------------------------
 # 2) helpers
@@ -57,6 +70,197 @@ fail() { echo -e "\033[1;31m  FAIL $*\033[0m" >&2; exit 1; }
 urlencode() {
   local s="$1"
   jq -rn --arg v "$s" '$v|@uri'
+}
+
+gen_secret() {
+  head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48
+}
+
+is_tty() { [[ -t 0 ]]; }
+
+can_ask() { [[ "${ASK:-1}" == "1" ]] && is_tty; }
+
+set_var() { printf -v "$1" '%s' "$2"; }
+
+# ask <varname> <prompt> [default] - Enter keeps the value in brackets
+ask() {
+  local name="$1" prompt="$2" default="${3:-}" cur="" ans=""
+  cur="${!name:-}"
+  if ! can_ask; then
+    if [[ -z "$cur" ]]; then set_var "$name" "$default"; fi
+    return 0
+  fi
+  if [[ -n "$cur" ]]; then
+    read -r -p "  $prompt [$cur]: " ans || ans=""
+  else
+    read -r -p "  $prompt [${default:-none}]: " ans || ans=""
+  fi
+  if [[ -z "$ans" ]]; then ans="${cur:-$default}"; fi
+  set_var "$name" "$ans"
+}
+
+# ask_secret <varname> <prompt> - hidden input typed twice; empty input keeps the current value
+ask_secret() {
+  local name="$1" prompt="$2" cur="" a="" b="" keep=""
+  cur="${!name:-}"
+  if ! can_ask; then
+    if [[ -z "$cur" || "$cur" == CHANGE_ME* ]]; then
+      warn "$name is not set (or still a placeholder) and there is no terminal to ask for it"
+      return 1
+    fi
+    return 0
+  fi
+  local tries=0
+  while :; do
+    read -r -s -p "  $prompt: " a || { printf '\n'; return 1; }
+    printf '\n'
+    if [[ -z "$a" ]]; then
+      read -r -p "  keep the current value? [y/N]: " keep || return 1
+      if [[ "$keep" =~ ^[Yy] ]]; then return 0; fi
+      continue
+    fi
+    read -r -s -p "  repeat it: " b || { printf '\n'; return 1; }
+    printf '\n'
+    if [[ "$a" != "$b" ]]; then
+      (( ++tries ))
+      if (( tries >= 3 )); then warn "too many mismatches for $name"; return 1; fi
+      warn "the two entries do not match"
+      continue
+    fi
+    set_var "$name" "$a"
+    return 0
+  done
+}
+
+# ask_yes <varname> <prompt> <1|0 default>
+ask_yes() {
+  local name="$1" prompt="$2" default="${3:-1}" cur="" ans=""
+  cur="${!name:-}"
+  if ! can_ask; then
+    if [[ -z "$cur" ]]; then set_var "$name" "$default"; fi
+    return 0
+  fi
+  read -r -p "  $prompt [Y/n]: " ans || ans=""
+  if [[ -z "$ans" ]]; then ans="${cur:-$default}"; fi
+  case "$ans" in
+    [Nn]*|0) set_var "$name" 0 ;;
+    *)       set_var "$name" 1 ;;
+  esac
+}
+
+print_config_summary() {
+  local dbpass_state="not set"
+  if [[ -n "$DB_PASS" ]]; then dbpass_state="set"; fi
+  local tok_state="none"
+  if [[ -n "$BALE_BOT_TOKEN" ]]; then tok_state="set"; fi
+  local test_state="skipped"
+  if [[ -n "$TEST_PHONE" ]]; then test_state="$TEST_PHONE"; fi
+  echo
+  echo "  install dir : $INSTALL_DIR"
+  echo "  source dir  : $SRC_DIR"
+  echo "  domain      : ${DOMAIN:-<none - plain http on the server ip>}"
+  echo "  https       : $ENABLE_HTTPS (email: ${CERT_EMAIL:-<none>})"
+  echo "  api         : 127.0.0.1:${BACKEND_PORT}, proxied at /api"
+  echo "  database    : ${DB_USER}@${DB_HOST}/${DB_NAME} (password: $dbpass_state)"
+  echo "  jwt secret  : ${#JWT_SECRET} characters"
+  echo "  bale bot    : ${BALE_BOT_USERNAME:-<disabled>} token: $tok_state admin chat: ${BALE_ADMIN_CHAT_ID:-<none>}"
+  echo "  brand       : ${APP_NAME_EN} / ${APP_NAME_FA}"
+  echo "  firewall    : $ENABLE_UFW   nightly backup: $ENABLE_BACKUP"
+  echo "  smoke test  : $test_state"
+}
+
+collect_inputs() {
+  log "questions - press Enter to keep the value shown in brackets"
+
+  ask INSTALL_DIR "install directory" "/opt/vizitik"
+
+  ask DOMAIN "public domain of the app (empty = no https)" ""
+  if [[ -n "$DOMAIN" ]] && ! [[ "$DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*\.)+[A-Za-z]{2,}$ ]]; then
+    warn "'$DOMAIN' does not look like a full domain name (app.example.com expected)"
+  fi
+  if [[ -n "$DOMAIN" ]]; then
+    ask_yes ENABLE_HTTPS "get a Let's Encrypt certificate for $DOMAIN" 1
+    if [[ "$ENABLE_HTTPS" == "1" ]]; then
+      ask CERT_EMAIL "email used for the certificate" ""
+      if [[ "$CERT_EMAIL" != *@*.* ]]; then warn "'$CERT_EMAIL' is not a valid email, certbot may fail"; fi
+    fi
+  else
+    ENABLE_HTTPS=0
+  fi
+
+  ask BACKEND_PORT "backend port (listens on localhost only)" "3000"
+  if ! [[ "$BACKEND_PORT" =~ ^[0-9]+$ ]] || (( BACKEND_PORT <= 1024 || BACKEND_PORT >= 65536 )); then
+    fail "BACKEND_PORT must be a number between 1025 and 65535"
+  fi
+
+  ask DB_HOST "database host" "localhost"
+  ask DB_NAME "database name" "vizitik_db"
+  if ! [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
+    fail "the database name may only contain letters, digits and underscore"
+  fi
+  ask DB_USER "database user" "vizitik"
+  if [[ -z "$DB_PASS" || "$DB_PASS" == CHANGE_ME* ]]; then
+    if ! ask_secret DB_PASS "password for the database user '$DB_USER'"; then DB_PASS=""; fi
+  fi
+  if [[ -z "$DB_PASS" ]]; then fail "a database password is required (export DB_PASS or answer the prompt)"; fi
+  if [[ "$DB_PASS" == CHANGE_ME* ]]; then fail "DB_PASS still contains the CHANGE_ME placeholder"; fi
+  if (( ${#DB_PASS} < 8 )); then warn "the database password is short - 8 characters or more is better"; fi
+
+  ask APP_NAME_EN "brand name (latin, used by the API and the logs)" "Vizitik"
+  ask APP_NAME_FA "brand name (persian, shown in bot messages)" ""
+  ask BALE_BOT_USERNAME "Bale bot username without @ (empty = bot stays off)" ""
+  if [[ -n "$BALE_BOT_USERNAME" ]]; then
+    if ! ask_secret BALE_BOT_TOKEN "Bale bot token (the one from BotFather)"; then BALE_BOT_TOKEN=""; fi
+    if [[ -n "$BALE_BOT_TOKEN" ]] && ! [[ "$BALE_BOT_TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]{20,}$ ]]; then
+      warn "that does not look like a Bale token (expected 123456789:long-random-part)"
+    fi
+    if [[ -z "$BALE_BOT_TOKEN" ]]; then warn "no token - OTP codes and invoices will not be delivered"; fi
+    ask BALE_ADMIN_CHAT_ID "admin chat id for alerts (digits, empty = none)" ""
+    if [[ -n "$BALE_ADMIN_CHAT_ID" ]] && ! [[ "$BALE_ADMIN_CHAT_ID" =~ ^[0-9]+$ ]]; then
+      warn "BALE_ADMIN_CHAT_ID should contain digits only, got: $BALE_ADMIN_CHAT_ID"
+    fi
+  else
+    BALE_BOT_TOKEN=""
+    BALE_ADMIN_CHAT_ID=""
+    warn "Bale bot disabled - users cannot receive OTP codes on Bale"
+  fi
+
+  if [[ -z "$JWT_SECRET" ]]; then
+    JWT_SECRET="$(gen_secret)"
+    ok "generated a fresh JWT secret - it is written to $INSTALL_DIR/backend/.env"
+  fi
+
+  ask_yes ENABLE_UFW "enable the UFW firewall (SSH and Nginx get allowed)" 1
+  ask_yes ENABLE_BACKUP "install a nightly database backup cron job" 1
+
+  ask TEST_PHONE "phone of an existing account for the login test (empty = skip)" ""
+  if [[ -n "$TEST_PHONE" ]]; then
+    if ! ask_secret TEST_PASSWORD "and its password"; then TEST_PASSWORD=""; fi
+  fi
+
+  print_config_summary
+  if [[ "$YES" != "1" && "${CHECK_ONLY:-0}" != "1" ]] && is_tty; then
+    local reply=""
+    read -r -p "  apply all of this to the current server? [y/N]: " reply || reply=""
+    if ! [[ "$reply" =~ ^[Yy] ]]; then fail "aborted by the user - nothing was changed"; fi
+  fi
+}
+
+usage() {
+  cat <<'TXT'
+usage: sudo bash scripts/setup-server.sh [options]
+
+  --check              answer the questions and print the summary, change nothing
+  -y, --yes            skip the final confirmation
+  --non-interactive    never prompt; use environment values and the defaults
+  -h, --help           this text
+
+environment overrides:
+  INSTALL_DIR SRC_DIR DOMAIN CERT_EMAIL BACKEND_PORT
+  DB_HOST DB_NAME DB_USER DB_PASS APP_NAME_FA APP_NAME_EN
+  BALE_BOT_USERNAME BALE_BOT_TOKEN BALE_ADMIN_CHAT_ID JWT_SECRET
+  ENABLE_HTTPS ENABLE_UFW ENABLE_BACKUP TEST_PHONE TEST_PASSWORD
+TXT
 }
 
 require_root() {
@@ -289,8 +493,12 @@ EOF
 # ------------------------------------------------------------------
 
 setup_https() {
-  if [[ -z "$DOMAIN" ]]; then
-    warn "DOMAIN not given; skipping TLS. (PWA install/offline needs valid HTTPS - see docs/DEPLOY-UBUNTU.md section 11)"
+  if [[ -z "$CERT_EMAIL" ]]; then
+    warn "CERT_EMAIL is empty; certbot needs one. Skipping HTTPS."
+    return
+  fi
+  if [[ "$ENABLE_HTTPS" != "1" ]] || [[ -z "$DOMAIN" ]]; then
+    warn "HTTPS skipped. (installing the PWA needs valid HTTPS - see docs/DEPLOY-UBUNTU.md section 11)"
     return
   fi
   log "requesting SSL certificate for $DOMAIN"
@@ -303,6 +511,7 @@ setup_https() {
 # ------------------------------------------------------------------
 
 setup_firewall() {
+  if [[ "$ENABLE_UFW" != "1" ]]; then warn "UFW skipped (ENABLE_UFW=0)"; return 0; fi
   log "configuring the UFW firewall"
   ufw allow OpenSSH >/dev/null 2>&1 || ufw allow 22/tcp >/dev/null 2>&1
   ufw allow 'Nginx Full' >/dev/null 2>&1
@@ -315,6 +524,7 @@ setup_firewall() {
 # ------------------------------------------------------------------
 
 setup_backup() {
+  if [[ "$ENABLE_BACKUP" != "1" ]]; then warn "backup cron skipped (ENABLE_BACKUP=0)"; return 0; fi
   log "creating the daily database backup cron job"
   mkdir -p /var/backups
   local cron="/etc/cron.d/vizitik-backup"
@@ -352,6 +562,10 @@ final_summary() {
   echo -e "\033[1;32m  API:      $url/api\033[0m"
   echo -e "\033[1;32m======================================================\033[0m"
   echo "  next steps:"
+  if [[ -n "$DOMAIN" ]]; then
+    echo "   - open $url in a browser and register the first visitor account"
+    echo "     (the registration OTP is delivered by the Bale bot, so BALE_BOT_TOKEN must be set)"
+  fi
   echo "   - review $INSTALL_DIR/backend/.env (BALE_BOT_TOKEN and JWT_SECRET)"
   echo "   - backend logs: journalctl -u vizitik-backend -f"
   echo "   - without a domain, see docs/DEPLOY-UBUNTU.md section 11 for PWA install"
@@ -361,8 +575,28 @@ final_summary() {
 # ------------------------------------------------------------------
 
 main() {
+  local mode="deploy"
+  local a
+  for a in "$@"; do
+    case "$a" in
+      --check) mode="check" ;;
+      -y|--yes) YES=1 ;;
+      --non-interactive|--defaults) ASK=0 ;;
+      -h|--help) usage; exit 0 ;;
+      *) fail "unknown argument: $a (see --help)" ;;
+    esac
+  done
+
+  if [[ "$mode" == "check" ]]; then
+    CHECK_ONLY=1
+    collect_inputs
+    ok "preflight finished - nothing on this server was changed"
+    exit 0
+  fi
+
   require_root
   distro_check
+  collect_inputs
   install_prereqs
   setup_database
   copy_source
