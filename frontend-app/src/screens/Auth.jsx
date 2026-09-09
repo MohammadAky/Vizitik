@@ -110,7 +110,7 @@ export default function Auth({ onAuthed }) {
   const [busy, setBusy] = useState('');
   const [termsOpen, setTermsOpen] = useState(false);
 
-  const [loginPhone, setLoginPhone] = useState('09121234567');
+  const [loginPhone, setLoginPhone] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [reg, setReg] = useState({ firstName: '', lastName: '', phone: '', password: '', terms: false });
   const [regOtp, setRegOtp] = useState(['', '', '', '', '']);
@@ -300,7 +300,7 @@ export default function Auth({ onAuthed }) {
                 <input
                   type="tel"
                   id="loginPhone"
-                  placeholder="09121234567"
+                  placeholder="مثال: 09121234567"
                   maxLength="11"
                   value={loginPhone}
                   onChange={(e) => setLoginPhone(e.target.value)}

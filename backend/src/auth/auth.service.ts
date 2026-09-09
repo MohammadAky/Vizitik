@@ -412,7 +412,7 @@ export class AuthService {
       throw new BadRequestException('کد تایید منقضی شده است.');
     }
 
-    if (stored.code !== code && code !== '12345') {
+    if (stored.code !== code) {
       throw new BadRequestException('کد تایید وارد شده نادرست است.');
     }
 
