@@ -82,8 +82,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ثبت‌نام ویزیتور | ویزیتیک</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <link rel="stylesheet" href="./fonts/vazirmatn/vazirmatn.css">
+    <link rel="stylesheet" href="./fonts/material-symbols/material-symbols.css" />
     <link rel="stylesheet" href="./css/style.css?v=<?php echo time(); ?>">
 </head>
 

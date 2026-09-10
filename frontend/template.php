@@ -24,8 +24,8 @@ $subtitle = "توضیح کوتاه صفحه";
     <title>ویزیتیک — <?php echo htmlspecialchars($pageTitle); ?></title>
 
     <!-- فونت وزیرمتن و آیکون‌های گوگل -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <link rel="stylesheet" href="./fonts/vazirmatn/vazirmatn.css">
+    <link rel="stylesheet" href="./fonts/material-symbols/material-symbols.css" />
 
     <!-- استایل پایه برنامه -->
     <link rel="stylesheet" href="./css/style.css">
