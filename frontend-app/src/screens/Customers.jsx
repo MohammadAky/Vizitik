@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { api, apiSilent } from '../lib/api.js';
 import { kv } from '../lib/db.js';
 import { useLocalData } from '../lib/data.js';
-import { toPersianNum } from '../lib/format.js';
+import { toPersianNum, onlyDigits, parseFaNumber } from '../lib/format.js';
 import { usePhpPage } from '../lib/usePhpPage.js';
 import { showToast } from '../components/AppToast.jsx';
 
@@ -121,10 +121,10 @@ export default function Customers({ go }) {
     setForm((f) => ({ ...f, saving: true }));
     const payload = {
       name: (d.name || '').trim(),
-      phone: (d.phone || '').trim(),
+      phone: onlyDigits(d.phone || '').trim(),
       notes: (d.notes || '').trim(),
       address: (d.address || '').trim() || null,
-      ...(form.mode === 'edit' ? {} : { initialDebt: parseFloat(d.initialDebt) || 0 })
+      ...(form.mode === 'edit' ? {} : { initialDebt: parseFaNumber(d.initialDebt, 0) || 0 })
     };
     try {
       if (form.mode === 'edit' && d.id) await api(`/customers/${d.id}`, { method: 'PUT', body: payload });
@@ -421,12 +421,12 @@ export default function Customers({ go }) {
                 <label>
                   شماره تماس / موبایل <span className="req">*</span>
                 </label>
-                <input type="tel" id="custPhoneInput" placeholder="مثال: 09121234567" required value={d.phone} onChange={(e) => setD({ phone: e.target.value })} />
+                <input type="tel" id="custPhoneInput" placeholder="مثال: 09121234567" required value={d.phone} onChange={(e) => setD({ phone: onlyDigits(e.target.value) })} />
               </div>
               {form.mode !== 'edit' && (
                 <div className="input-group" id="custDebtGroup">
                   <label>مانده بدهی اول‌دوره (تومان)</label>
-                  <input type="number" id="custDebtInput" placeholder="0" min="0" value={d.initialDebt} onChange={(e) => setD({ initialDebt: e.target.value })} />
+                  <input type="text" inputMode="numeric" id="custDebtInput" placeholder="0" value={d.initialDebt} onChange={(e) => setD({ initialDebt: e.target.value })} />
                 </div>
               )}
             </div>

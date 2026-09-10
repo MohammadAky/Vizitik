@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, authStorage } from '../lib/api.js';
 import { TERMS } from '../lib/terms.js';
+import { onlyDigits } from '../lib/format.js';
+import { BALE_BOT_LINK, BALE_BOT_MENTION } from '../lib/brand.js';
 
 /**
  * ورود / ثبت‌نام / بازیابی رمز — پورت ۱:۱ از frontend/index.php
@@ -42,7 +44,7 @@ function OtpBoxes({ kind, value, onChange }) {
   function onPaste(e, i) {
     e.preventDefault();
     e.stopPropagation();
-    const digits = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '').slice(0, 5);
+    const digits = onlyDigits((e.clipboardData || window.clipboardData).getData('text')).slice(0, 5);
     if (!digits) return;
     const next = ['', '', '', '', ''];
     const start = Math.min(i, 4);
@@ -68,7 +70,7 @@ function OtpBoxes({ kind, value, onChange }) {
           autoComplete="one-time-code"
           required
           value={value[i] || ''}
-          onChange={(e) => setAt(i, e.target.value.replace(/[^0-9]/g, '').slice(-1))}
+          onChange={(e) => setAt(i, onlyDigits(e.target.value).slice(-1))}
           onKeyDown={(e) => {
             if (e.key === 'Backspace' && !value[i] && i > 0) refs.current[i - 1]?.focus();
           }}
@@ -165,7 +167,7 @@ export default function Auth({ onAuthed }) {
     setBusy('login');
     setError('');
     try {
-      const data = await api('/auth/login', { method: 'POST', body: { phone: loginPhone.trim(), password: loginPassword } });
+      const data = await api('/auth/login', { method: 'POST', body: { phone: onlyDigits(loginPhone).trim(), password: loginPassword } });
       if (data && data.accessToken) {
         await proceedSuccessfulLogin(data);
         return;
@@ -186,7 +188,7 @@ export default function Auth({ onAuthed }) {
     }
     setBusy('sendRegOtp');
     setError('');
-    regData.current = { firstName: reg.firstName.trim(), lastName: reg.lastName.trim(), phone: reg.phone.trim(), password: reg.password };
+    regData.current = { firstName: reg.firstName.trim(), lastName: reg.lastName.trim(), phone: onlyDigits(reg.phone).trim(), password: reg.password };
     try {
       const data = await api('/auth/send-register-otp', { method: 'POST', body: { phone: regData.current.phone } });
       rememberOtpDelivery(data);
@@ -225,7 +227,7 @@ export default function Auth({ onAuthed }) {
     e.preventDefault();
     setBusy('sendForgotOtp');
     setError('');
-    resetPhoneRef.current = forgotPhone.trim();
+    resetPhoneRef.current = onlyDigits(forgotPhone).trim();
     try {
       const data = await api('/auth/send-reset-otp', { method: 'POST', body: { phone: resetPhoneRef.current } });
       rememberOtpDelivery(data);
@@ -314,7 +316,7 @@ export default function Auth({ onAuthed }) {
                   placeholder="مثال: 09121234567"
                   maxLength="11"
                   value={loginPhone}
-                  onChange={(e) => setLoginPhone(e.target.value)}
+                  onChange={(e) => setLoginPhone(onlyDigits(e.target.value))}
                   required
                   autoComplete="tel"
                 />
@@ -348,6 +350,18 @@ export default function Auth({ onAuthed }) {
                   </>
                 )}
               </button>
+
+              <div className="bale-banner">
+                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
+                  smart_toy
+                </span>
+                <span>
+                  ربات بله ویزیتیک ({BALE_BOT_MENTION}):{' '}
+                  <a href={BALE_BOT_LINK} target="_blank" rel="noreferrer">
+                    استارت ربات
+                  </a>
+                </span>
+              </div>
 
               <div className="switch-auth-box">
                 حساب کاربری ندارید؟ <a href="#register" onClick={(e) => { e.preventDefault(); switchView('registerForm'); }}>ثبت‌نام ویزیتور جدید</a>
@@ -394,7 +408,7 @@ export default function Auth({ onAuthed }) {
                   maxLength="11"
                   required
                   value={reg.phone}
-                  onChange={(e) => setReg({ ...reg, phone: e.target.value })}
+                  onChange={(e) => setReg({ ...reg, phone: onlyDigits(e.target.value) })}
                 />
               </div>
 
@@ -447,8 +461,8 @@ export default function Auth({ onAuthed }) {
                   smart_toy
                 </span>
                 <span>
-                  کد به ربات بله ارسال می‌شود:{' '}
-                  <a href="https://ble.ir/VizitikBot" target="_blank" rel="noreferrer">
+                  کد به ربات بله ({BALE_BOT_MENTION}) ارسال می‌شود:{' '}
+                  <a href={BALE_BOT_LINK} target="_blank" rel="noreferrer">
                     استارت ربات
                   </a>
                 </span>
@@ -523,6 +537,18 @@ export default function Auth({ onAuthed }) {
                   </>
                 )}
               </button>
+
+              <div className="bale-banner">
+                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
+                  smart_toy
+                </span>
+                <span>
+                  کد به ربات بله ({BALE_BOT_MENTION}) ارسال می‌شود:{' '}
+                  <a href={BALE_BOT_LINK} target="_blank" rel="noreferrer">
+                    استارت ربات
+                  </a>
+                </span>
+              </div>
 
               <div className="switch-auth-box">
                 رمز را به یاد آوردید؟{' '}

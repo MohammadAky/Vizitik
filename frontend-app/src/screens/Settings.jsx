@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, authStorage } from '../lib/api.js';
 import { toPersianNum } from '../lib/format.js';
+import { BALE_BOT_LINK, BALE_BOT_MENTION } from '../lib/brand.js';
 import { usePhpPage } from '../lib/usePhpPage.js';
 import BottomNav from '../components/BottomNav.jsx';
 
@@ -234,9 +235,9 @@ export default function Settings({ go, logout }) {
             </p>
           </div>
 
-          <a href="https://ble.ir/VizitikBot" target="_blank" rel="noreferrer" className="bale-action-btn">
+          <a href={BALE_BOT_LINK} target="_blank" rel="noreferrer" className="bale-action-btn">
             <span className="material-symbols-outlined">open_in_new</span>
-            <span>ورود و استارت ربات بله (@VizitikBot)</span>
+            <span>ورود و استارت ربات بله ({BALE_BOT_MENTION})</span>
           </a>
         </Section>
 

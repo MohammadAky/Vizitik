@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, apiSilent } from '../lib/api.js';
 import { useLocalData } from '../lib/data.js';
-import { toPersianNum } from '../lib/format.js';
+import { toPersianNum, parseFaNumber, parseFaInt, onlyDigits } from '../lib/format.js';
 import { usePhpPage } from '../lib/usePhpPage.js';
 import { DEFAULT_CATEGORIES, CATEGORY_OPTIONS, PRESET_BRANDS } from '../lib/catalog.js';
 import { showToast } from '../components/AppToast.jsx';
 
 const fa = (n) => toPersianNum(Number(n || 0).toLocaleString('en-US'));
 // products.js: unitPrice = packSize > 0 ? Math.round(cartonPrice / packSize) : 0
+// با پارس فارسی‌فهم تا «۷۲۰٬۰۰۰» هم درست محاسبه شود، نه صفر.
 const unitPriceOf = (m) => {
-  const pack = Number(m.unitsPerCarton) || 0;
-  const carton = Number(m.cartonPrice) || 0;
+  const pack = parseFaInt(m.unitsPerCarton, 0);
+  const carton = parseFaNumber(m.cartonPrice, 0);
   return pack > 0 ? Math.round(carton / pack) : 0;
 };
 const CATALOGS_KEY = 'vizitik_downloaded_catalogs';
@@ -74,64 +75,110 @@ export default function Products({ go }) {
 
   const items = useMemo(
     () =>
-      (products || []).map((p, i) => ({
-        id: p.id || `p${i}`,
-        name: p.name || '',
-        brand: p.brand || 'متفرقه',
-        category: p.category || 'سایر',
-        packSize: Number(p.unitsPerCarton || p.unitsPerCartonDefault || 24),
-        cartonPrice: Number(p.cartonPrice ?? p.baseUnitPrice * (p.unitsPerCartonDefault || 1) ?? 0),
-        unitPrice: Number(p.baseUnitPrice ?? p.unitPrice ?? 0),
-        imageUrl: p.imageUrl || null,
-        isGlobal: !!p.isGlobal,
-        isCustom: !!p.isCustomUserProduct,
-        hasCustomPrice: !!p.hasCustomPrice
-      })),
+      (products || []).map((p, i) => {
+        // بک‌اند قیمتِ موثر (custom یا پایه) را در unitsPerCarton/cartonPrice/baseUnitPrice می‌دهد؛
+        // اگر فیلدی جا افتاد، از ترکیب همان مقادیر موثر بازسازی می‌شود — نه از پیش‌فرض کارخانه.
+        const packSize = Number(p.unitsPerCarton ?? p.unitsPerCartonDefault ?? 24) || 24;
+        const unitPrice = Number(p.baseUnitPrice ?? p.unitPrice ?? 0) || 0;
+        const cartonPrice = Number(p.cartonPrice ?? unitPrice * packSize ?? 0) || 0;
+        return {
+          id: p.id || `p${i}`,
+          name: p.name || '',
+          brand: p.brand || 'متفرقه',
+          category: p.category || 'سایر',
+          packSize,
+          cartonPrice,
+          unitPrice,
+          imageUrl: p.imageUrl || null,
+          isGlobal: !!p.isGlobal,
+          isCustom: !!p.isCustomUserProduct,
+          hasCustomPrice: !!p.hasCustomPrice
+        };
+      }),
     [products]
   );
 
   const brands = useMemo(() => Array.from(new Set(items.map((i) => i.brand))).filter((b) => b !== 'میهن' && b !== 'پاندا'), [items]);
   // products.php: the chip row is the fixed $defaultCategories list, never a derived one
   const categories = DEFAULT_CATEGORIES;
+  // products.php: $myCustomCount فقط کالاهای اختصاصی خود کاربر است
   const myCount = items.filter((i) => i.isCustom).length;
+
+  // products.js → applyAllFilters: کالای اختصاصی همیشه فعال است؛
+  // کالای کاتالوگ شرکتی فقط وقتی دیده می‌شود که کاتالوگ برندش دانلود شده باشد.
+  const eligible = useMemo(
+    () => items.filter((p) => p.isCustom || downloaded.includes(p.brand)),
+    [items, downloaded]
+  );
 
   const visible = useMemo(() => {
     const q = (search || '').trim().toLowerCase();
-    return items.filter((p) => {
+    return eligible.filter((p) => {
       const matchSearch = !q || p.name.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q) || p.category.toLowerCase().includes(q);
       let matchBrand = true;
-      if (brand === 'MY_PRODUCTS') matchBrand = p.isCustom || downloaded.includes(p.brand);
+      // products.js: در حالت MY_PRODUCTS فقط isCustom قبول است
+      if (brand === 'MY_PRODUCTS') matchBrand = p.isCustom;
       else if (brand !== 'ALL') matchBrand = p.brand === brand;
       const matchCat = category === 'ALL' || p.category === category;
       return matchSearch && matchBrand && matchCat;
     });
-  }, [items, search, brand, category, downloaded]);
+  }, [eligible, search, brand, category]);
 
   async function toggleBrandCatalog(brandName) {
-    const has = downloaded.includes(brandName);
-    const next = has ? downloaded.filter((b) => b !== brandName) : [...downloaded, brandName];
-    setDownloaded(next);
-    localStorage.setItem(CATALOGS_KEY, JSON.stringify(next));
-    showToast(has ? `کاتالوگ ${brandName} از لیست شما حذف شد.` : `کاتالوگ ${brandName} به لیست شما اضافه شد.`, 'success');
+    // products.js → toggleBrandCatalog
+    const count = items.filter((i) => i.brand === brandName).length;
+    if (downloaded.includes(brandName)) {
+      const next = downloaded.filter((b) => b !== brandName);
+      setDownloaded(next);
+      localStorage.setItem(CATALOGS_KEY, JSON.stringify(next));
+      if (brand === brandName) setBrand('ALL');
+      showToast(`کاتالوگ «${brandName}» از لیست کالاهای شما حذف شد.`, 'info');
+    } else {
+      const next = [...downloaded, brandName];
+      setDownloaded(next);
+      localStorage.setItem(CATALOGS_KEY, JSON.stringify(next));
+      setDrawer(false);
+      const countStr = count > 0 ? ` (${toPersianNum(count)} قلم)` : '';
+      showToast(`کاتالوگ «${brandName}»${countStr} دریافت و در لیست شما فعال شد!`, 'success');
+    }
     await reload({ sync: true });
   }
 
+  // products.js → resetBrandPrices: بازنشانی واقعی قیمت‌های یک برند در سرور
+  async function resetBrandPrices(brandName) {
+    if (!window.confirm(`آیا مطمئن هستید می‌خواهید تمام قیمت‌های دستکاری‌شده کاتالوگ «${brandName}» به قیمت رسمی کارخانه (سرور) بازنشانی شوند؟`)) return;
+    try {
+      const data = await api('/products/reset-brand-prices', { method: 'POST', body: { brand: brandName } });
+      setDrawer(false);
+      showToast((data && data.message) || `قیمت‌های «${brandName}» به حالت اولیه سرور بازگشت.`, 'success');
+      await refresh();
+      await reload({ sync: true });
+    } catch (err) {
+      showToast(err.message || 'خطا در بازنشانی قیمت‌ها.', 'error');
+    }
+  }
+
   async function clearAllDownloadedCatalogs() {
+    // products.js → clearAllDownloadedCatalogs
+    if (!window.confirm('آیا از حذف تمام کاتالوگ‌های آماده از لیست خود مطمئن هستید؟ (محصولات دست‌ساز شما باقی می‌مانند)')) return;
     setDownloaded([]);
     localStorage.setItem(CATALOGS_KEY, '[]');
-    showToast('تمام کاتالوگ‌های دریافتی از لیست شما حذف شد.', 'info');
+    setBrand('ALL');
+    setDrawer(false);
+    showToast('تمام کاتالوگ‌های آماده از لیست شما حذف شدند.', 'success');
     await reload({ sync: true });
   }
 
   function openAddProductModal() {
-    setModal({ open: true, mode: 'add', data: { name: '', brand: 'میهن', category: categories[0] || 'سایر', unitsPerCarton: 24, cartonPrice: '', brand: '' } });
+    // products.js → openAddProductModal: برند پیش‌فرض «شخصی»، دسته «چوبی»، تعداد ۲۴
+    setModal({ open: true, mode: 'add', data: { name: '', brand: 'شخصی', category: 'چوبی', unitsPerCarton: 24, cartonPrice: '' } });
   }
 
   function openEditProductModal(p) {
     setModal({
       open: true,
       mode: 'edit',
-      data: { id: p.id, name: p.name, brand: p.brand || '', category: p.category, unitsPerCarton: p.packSize, cartonPrice: p.cartonPrice, isCustom: p.isCustom }
+      data: { id: p.id, name: p.name, brand: p.brand || '', category: p.category, unitsPerCarton: p.packSize, cartonPrice: p.cartonPrice, isCustom: p.isCustom, hasCustomPrice: p.hasCustomPrice }
     });
   }
 
@@ -143,8 +190,9 @@ export default function Products({ go }) {
     setBusy(true);
     // names must match CreateProductDto: the quantity is unitsPerCartonDefault,
     // sending "unitsPerCarton" makes the api answer "تعداد در کارتن الزامی است"
-    const packSize = parseInt(m.unitsPerCarton, 10) || 24;
-    const cartonPrice = parseFloat(m.cartonPrice) || 0;
+    // پارس فارسی‌فهم: «۷۲۰٬۰۰۰» و «720,000» هر دو درست خوانده می‌شوند.
+    const packSize = Math.max(1, parseFaInt(m.unitsPerCarton, 24));
+    const cartonPrice = Math.max(0, parseFaNumber(m.cartonPrice, 0));
     const unitPrice = packSize > 0 ? Math.round(cartonPrice / packSize) : 0;
     const payload = {
       name: (m.name || '').trim(),
@@ -269,7 +317,7 @@ export default function Products({ go }) {
                   </button>
                 </div>
                 {downloaded.includes(p.brand) && (
-                  <button type="button" className="preset-reset-prices-btn" id={p.resetId} onClick={() => showToast('قیمت‌های این برند به پیش‌فرض کارخانه بازنشانی شد.', 'info')}>
+                  <button type="button" className="preset-reset-prices-btn" id={p.resetId} onClick={() => resetBrandPrices(p.brand)}>
                     <span className="material-symbols-outlined">restart_alt</span>
                     <span>بازنشانی قیمت‌های {p.brand} به پیش‌فرض کارخانه</span>
                   </button>
@@ -341,11 +389,11 @@ export default function Products({ go }) {
               <span>کالاهای من ({toPersianNum(myCount)})</span>
             </button>
 
-            <button className={`filter-chip brand-chip-mihan ${brand === 'میهن' ? 'active' : ''}`} data-brand="میهن" type="button" style={{ display: items.some((i) => i.brand === 'میهن') ? '' : 'none' }} onClick={() => setBrand('میهن')}>
+            <button className={`filter-chip brand-chip-mihan ${brand === 'میهن' ? 'active' : ''}`} data-brand="میهن" type="button" style={{ display: downloaded.includes('میهن') ? '' : 'none' }} onClick={() => setBrand('میهن')}>
               میهن
             </button>
 
-            <button className={`filter-chip brand-chip-panda ${brand === 'پاندا' ? 'active' : ''}`} data-brand="پاندا" type="button" style={{ display: items.some((i) => i.brand === 'پاندا') ? '' : 'none' }} onClick={() => setBrand('پاندا')}>
+            <button className={`filter-chip brand-chip-panda ${brand === 'پاندا' ? 'active' : ''}`} data-brand="پاندا" type="button" style={{ display: downloaded.includes('پاندا') ? '' : 'none' }} onClick={() => setBrand('پاندا')}>
               پاندا
             </button>
 
@@ -375,7 +423,7 @@ export default function Products({ go }) {
 
       {/* لیست کالاها */}
       <main className="products-content" id="productsList">
-        {items.length === 0 && (
+        {eligible.length === 0 && (
           <div className="empty-catalog-state" id="emptyCatalogState" style={{ display: 'flex' }}>
             <div className="empty-icon-box">
               <span className="material-symbols-outlined">cloud_download</span>
@@ -450,7 +498,7 @@ export default function Products({ go }) {
         ))}
 
         {/* استیت عدم یافت کالا */}
-        <div id="noProductsFound" className="empty-products-box" style={{ display: items.length > 0 && visible.length === 0 ? 'flex' : 'none' }}>
+        <div id="noProductsFound" className="empty-products-box" style={{ display: eligible.length > 0 && visible.length === 0 ? 'flex' : 'none' }}>
           <span className="material-symbols-outlined">search_off</span>
           <p>هیچ کالایی با این مشخصات یافت نشد</p>
           <button type="button" onClick={() => { setBrand('ALL'); setCategory('ALL'); setSearch(''); }} className="reset-filter-btn">
@@ -473,7 +521,14 @@ export default function Products({ go }) {
       >
         <div className="modal-card">
           <div className="modal-header">
-            <h3 id="productModalTitle">{modal.mode === 'edit' ? 'ویرایش اطلاعات کالا' : 'ثبت کالای جدید'}</h3>
+            {/* products.js: عنوان و دکمه ثبت بسته به حالت (افزودن/ویرایش اختصاصی/تغییر قیمت شرکتی) */}
+            <h3 id="productModalTitle">
+              {modal.mode !== 'edit'
+                ? 'تعریف کالای اختصاصی جدید'
+                : m.isCustom
+                  ? 'ویرایش کالای اختصاصی من'
+                  : `تغییر قیمت فروش (${m.name || ''})`}
+            </h3>
             <button type="button" className="modal-close" onClick={() => setModal({ open: false, mode: 'add', data: {} })}>
               <span className="material-symbols-outlined">close</span>
             </button>
@@ -482,17 +537,17 @@ export default function Products({ go }) {
           <form className="modal-form" id="productForm" onSubmit={handleSaveProduct}>
             <div className="modal-input-group">
               <label>نام بستنی <span className="req">*</span></label>
-              <input type="text" id="prodName" placeholder="مثال: مگنوم فندقی دست‌ساز" required value={m.name || ''} onChange={(e) => setM({ name: e.target.value })} />
+              <input type="text" id="prodName" placeholder="مثال: مگنوم فندقی دست‌ساز" required disabled={modal.mode === 'edit' && !m.isCustom} value={m.name || ''} onChange={(e) => setM({ name: e.target.value })} />
             </div>
 
             <div className="modal-input-row">
               <div className="modal-input-group">
                 <label>برند / شرکت</label>
-                <input type="text" id="prodBrand" placeholder="مثال: کارگاه من" value={m.brand ?? ''} onChange={(e) => setM({ brand: e.target.value })} />
+                <input type="text" id="prodBrand" placeholder="مثال: کارگاه من" disabled={modal.mode === 'edit' && !m.isCustom} value={m.brand ?? ''} onChange={(e) => setM({ brand: e.target.value })} />
               </div>
               <div className="modal-input-group">
                 <label>دسته‌بندی</label>
-                <select id="prodCategory" className="modal-select" value={m.category || 'چوبی'} onChange={(e) => setM({ category: e.target.value })}>
+                <select id="prodCategory" className="modal-select" disabled={modal.mode === 'edit' && !m.isCustom} value={m.category || 'چوبی'} onChange={(e) => setM({ category: e.target.value })}>
                   {CATEGORY_OPTIONS.map((c) => (
                     <option key={c} value={c}>
                       {c}
@@ -505,11 +560,12 @@ export default function Products({ go }) {
             <div className="modal-input-row">
               <div className="modal-input-group">
                 <label>تعداد در کارتن <span className="req">*</span></label>
-                <input type="number" id="prodPackSize" min="1" required value={m.unitsPerCarton ?? 24} onChange={(e) => setM({ unitsPerCarton: e.target.value })} />
+                {/* text + inputMode تا کیبورد فارسی موبایل هم کار کند؛ ارقام فارسی نرمال می‌شوند */}
+                <input type="text" inputMode="numeric" id="prodPackSize" required value={m.unitsPerCarton ?? 24} onChange={(e) => setM({ unitsPerCarton: onlyDigits(e.target.value) })} />
               </div>
               <div className="modal-input-group">
                 <label>قیمت کارتن (تومان) <span className="req">*</span></label>
-                <input type="number" id="prodCartonPrice" placeholder="مثال: 720000" min="0" required value={m.cartonPrice ?? ''} onChange={(e) => setM({ cartonPrice: e.target.value })} />
+                <input type="text" inputMode="numeric" id="prodCartonPrice" placeholder="مثال: 720000" required value={m.cartonPrice ?? ''} onChange={(e) => setM({ cartonPrice: e.target.value })} />
               </div>
             </div>
 
@@ -518,17 +574,25 @@ export default function Products({ go }) {
             </div>
 
             <button type="submit" className="modal-submit-btn" id="modalSubmitBtn" disabled={busy}>
-              {busy ? 'در حال ذخیره...' : 'ثبت کالا'}
+              {busy
+                ? 'در حال ذخیره...'
+                : modal.mode !== 'edit'
+                  ? 'ثبت و افزودن کالا'
+                  : m.isCustom
+                    ? 'ذخیره تغییرات'
+                    : 'ذخیره قیمت جدید'}
             </button>
 
-            {modal.mode === 'edit' && (
+            {/* products.js: دکمه بازنشانی فقط برای کالای شرکتیِ دارای قیمت سفارشی */}
+            {modal.mode === 'edit' && !m.isCustom && m.hasCustomPrice && (
               <button type="button" className="modal-reset-btn" id="modalResetBtn" onClick={handleResetCurrentProductPrice}>
                 <span className="material-symbols-outlined">restart_alt</span>
                 <span>بازنشانی به قیمت پایه کارخانه</span>
               </button>
             )}
 
-            {modal.mode === 'edit' && (
+            {/* products.js: دکمه حذف فقط برای کالای اختصاصی خود کاربر */}
+            {modal.mode === 'edit' && m.isCustom && (
               <button type="button" className="modal-delete-btn" id="modalDeleteBtn" onClick={handleDeleteProduct}>
                 <span className="material-symbols-outlined">delete</span>
                 <span>حذف این محصول از لیست من</span>
