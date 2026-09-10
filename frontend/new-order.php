@@ -111,7 +111,7 @@ $categories = array_values(array_unique(array_filter(array_column($loadedProduct
             <?php if (empty($loadedProducts)): ?>
                 <!-- حالت خالی بودن بار خودرو (بدون هیچ بای‌پسی) -->
                 <div class="empty-van-box">
-                    <span class="material-symbols-outlined">inventory_2</span>
+                    <!-- <span class="material-symbols-outlined">inventory_2</span> -->
                     <h3>هیچ کالایی در خودرو بارگیری نشده است</h3>
                     <p>برای ثبت سفارش مشتری در پخش گرم، ابتدا اقلام موجود را در خودرو بارگیری نمایید.</p>
                     <a href="van-loading.php" class="goto-loading-btn">
