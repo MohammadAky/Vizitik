@@ -15,6 +15,7 @@
 #   DOMAIN=app.example.com DB_PASS='...' BALE_BOT_TOKEN='...' sudo -E bash scripts/setup-server.sh
 #
 # Idempotent: re-running updates services and configuration without breaking anything.
+# On a box with little RAM it adds a swap file first, otherwise npm/vite get killed.
 set -euo pipefail
 
 # ------------------------------------------------------------------
@@ -64,6 +65,15 @@ ENABLE_BACKUP="${ENABLE_BACKUP:-1}"
 TEST_PHONE="${TEST_PHONE:-}"
 TEST_PASSWORD="${TEST_PASSWORD:-}"
 
+# A 1 GB VPS without swap gets the build SIGKILLed in the middle of npm install
+# (exit 137), and the deploy stops half way: no dist, no service, no certificate.
+# The script therefore creates a swap file when RAM+swap is under MIN_TOTAL_MB.
+MIN_TOTAL_MB="${MIN_TOTAL_MB:-2048}"
+CREATE_SWAP="${CREATE_SWAP:-auto}"    # auto = do it (asks first), 0 = never touch this box
+SWAP_FILE="${SWAP_FILE:-/swapfile}"
+SWAP_MB="${SWAP_MB:-auto}"            # auto = enough to pass MIN_TOTAL_MB plus 1 GB
+NODE_HEAP_MB="${NODE_HEAP_MB:-auto}"  # auto = 60% of RAM+swap, clamped to 512..3072
+
 # ------------------------------------------------------------------
 # 2) helpers
 # ------------------------------------------------------------------
@@ -71,7 +81,126 @@ TEST_PASSWORD="${TEST_PASSWORD:-}"
 log()  { echo -e "\n\033[1;36m> $*\033[0m"; }
 ok()   { echo -e "\033[1;32m  OK  $*\033[0m"; }
 warn() { echo -e "\033[1;33m  WARN $*\033[0m"; }
+info() { echo -e "\033[0;36m  ..  $*\033[0m"; }
 fail() { echo -e "\033[1;31m  FAIL $*\033[0m" >&2; exit 1; }
+err() { echo -e "\033[1;31m  FAIL $*\033[0m" >&2; }
+
+# ------------------------------------------------------------------
+# 2) memory: the npm/vite builds are the heaviest thing a small VPS runs
+# ------------------------------------------------------------------
+
+# every build step goes through these so an out-of-memory kill is explained
+# instead of leaving the operator with a bare "Killed" line.
+report_step_rc() {
+  local rc="$1" label="$2"
+  if (( rc == 0 )); then return 0; fi
+  err "step failed (exit $rc): $label"
+  if (( rc == 137 )) || (( rc == 143 )); then
+    err "exit $rc means the kernel killed the process: this box ran out of memory."
+    err "  what is left:  $(free -m | awk '/^Mem:/{print $2" MB ram, "$3" used"}') | $(free -m | awk '/^Swap:/{print $2" MB swap"}')"
+    err "  other node processes fight for it:  pm2 delete all; pkill -f 'dist/main.js'"
+    err "  swap on demand:  CREATE_SWAP=auto bash scripts/setup-server.sh --yes"
+  fi
+  err "this script is idempotent - fix the cause and run it again, it redoes every step"
+  exit "$rc"
+}
+
+run_here() {  # run_here <label> <command...>
+  local label="$1"; shift
+  local rc=0
+  "$@" || rc=$?
+  report_step_rc "$rc" "$label"
+}
+
+run_in() {  # run_in <directory> <label> <command...>
+  local dir="$1" label="$2"; shift 2
+  local rc=0
+  ( cd "$dir" && "$@" ) || rc=$?
+  report_step_rc "$rc" "$label"
+}
+
+memory_totals() {  # prints "<ram> <swap>" in MB
+  local r sm
+  r="$(awk '/^MemTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null)"
+  sm="$(awk '/^SwapTotal:/{t+=$2} END{print int(t/1024)}' /proc/meminfo 2>/dev/null)"
+  echo "${r:-0} ${sm:-0}"
+}
+
+ensure_swapfile() {  # $1 = MB to have available
+  local mb="$1"
+  if command -v swapon >/dev/null 2>&1 && swapon --show=NAME --noheadings 2>/dev/null | grep -qx "$SWAP_FILE"; then
+    ok "swap file $SWAP_FILE is already active"
+    return 0
+  fi
+  log "creating ${mb} MB of swap at $SWAP_FILE (a minute on a slow disk)"
+  if [[ ! -f "$SWAP_FILE" ]]; then
+    if ! fallocate -l "${mb}M" "$SWAP_FILE" 2>/dev/null; then
+      dd if=/dev/zero of="$SWAP_FILE" bs=1M count="$mb" status=none || { err "could not create $SWAP_FILE"; return 0; }
+    fi
+    chmod 600 "$SWAP_FILE"
+    mkswap "$SWAP_FILE" >/dev/null 2>&1 || { err "mkswap failed on $SWAP_FILE"; return 0; }
+  fi
+  swapon "$SWAP_FILE" 2>/dev/null || { warn "swapon refused; the builds may still be killed"; return 0; }
+  if ! grep -qs "^$SWAP_FILE" /etc/fstab; then
+    if echo "$SWAP_FILE none swap sw 0 0" >> /etc/fstab 2>/dev/null; then
+      info "added $SWAP_FILE to /etc/fstab (it survives a reboot)"
+    else
+      warn "could not write /etc/fstab; enable $SWAP_FILE at boot yourself"
+    fi
+  fi
+  ok "swap enabled: $(swapon --show=NAME,TOTAL --noheadings 2>/dev/null | tr '\n' ' ')"
+}
+
+memory_guard() {
+  local parts ram swap total want heap
+  parts=($(memory_totals)); ram="${parts[0]}"; swap="${parts[1]}"; total=$(( ram + swap ))
+  info "memory: ${ram} MB ram + ${swap} MB swap = ${total} MB"
+  if [[ "${CHECK_ONLY:-0}" == "1" ]]; then
+    if (( total < MIN_TOTAL_MB )); then
+      warn "under ${MIN_TOTAL_MB} MB: the npm/vite builds can be killed, a swap file would fix it"
+    fi
+    return 0
+  fi
+  if (( total >= MIN_TOTAL_MB )); then
+    ok "enough memory for the builds"
+  elif [[ "$CREATE_SWAP" == "0" ]]; then
+    warn "only ${total} MB and CREATE_SWAP=0: a killed build is expected, add swap yourself"
+  else
+    want="$SWAP_MB"
+    if [[ "$want" == "auto" ]]; then want=$(( MIN_TOTAL_MB - total + 1024 )); fi
+    if can_ask && [[ "$YES" != "1" ]]; then
+      ask_yes SWAP_OK "create a ${want} MB swap file so the build is not killed" 1
+      if [[ "${SWAP_OK:-1}" != "1" ]]; then warn "no swap; if the build dies, rerun with CREATE_SWAP=auto"; want=0; fi
+    fi
+    if [[ "$want" != "0" ]]; then ensure_swapfile "$want"; fi
+    parts=($(memory_totals)); ram="${parts[0]}"; swap="${parts[1]}"; total=$(( ram + swap ))
+  fi
+  heap="$NODE_HEAP_MB"
+  if [[ "$heap" == "auto" ]]; then
+    heap=$(( total * 6 / 10 ))
+    if (( heap < 512 )); then heap=512; fi
+    if (( heap > 3072 )); then heap=3072; fi
+  fi
+  # an explicit heap ceiling makes node fail with a readable JS error instead of
+  # being SIGKILLed by the kernel halfway through a dependency install
+  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${heap}"
+  info "node heap capped at ${heap} MB"
+}
+
+# a lockfile means npm ci: it wipes node_modules first, so a half finished and
+# killed install from the previous run cannot poison this one
+npm_install_in() {  # $1 = directory
+  local dir="$1" rc=0
+  if [[ -f "$dir/package-lock.json" ]]; then
+    ( cd "$dir" && npm ci --no-audit --no-fund --no-progress --loglevel=error ) || rc=$?
+    if (( rc == 0 )); then return 0; fi
+    if (( rc == 137 )) || (( rc == 143 )); then
+      report_step_rc "$rc" "npm ci in $dir"        # out of memory: no point retrying
+    fi
+    warn "npm ci failed (exit $rc); retrying with a plain npm install"
+  fi
+  run_in "$dir" "npm install in $dir" npm install --no-audit --no-fund --no-progress --loglevel=error
+}
 
 urlencode() {
   local s="$1"
@@ -175,6 +304,8 @@ print_config_summary() {
   echo "  brand       : ${APP_NAME_EN} / ${APP_NAME_FA}"
   echo "  firewall    : $ENABLE_UFW   nightly backup: $ENABLE_BACKUP"
   echo "  smoke test  : $test_state"
+  local mt; mt=($(memory_totals))
+  echo "  memory      : ${mt[0]} MB ram + ${mt[1]} MB swap (builds need ${MIN_TOTAL_MB} MB)"
 }
 
 collect_inputs() {
@@ -189,8 +320,11 @@ collect_inputs() {
   if [[ -n "$DOMAIN" ]]; then
     ask_yes ENABLE_HTTPS "get a Let's Encrypt certificate for $DOMAIN" 1
     if [[ "$ENABLE_HTTPS" == "1" ]]; then
-      ask CERT_EMAIL "email used for the certificate" ""
-      if [[ "$CERT_EMAIL" != *@*.* ]]; then warn "'$CERT_EMAIL' is not a valid email, certbot may fail"; fi
+      ask CERT_EMAIL "email used for the certificate (empty = no expiry notices)" ""
+      if [[ -n "$CERT_EMAIL" && "$CERT_EMAIL" != *@*.* ]]; then
+        warn "'$CERT_EMAIL' does not look like an email; it will be left out"
+        CERT_EMAIL=""
+      fi
     fi
   else
     ENABLE_HTTPS=0
@@ -290,6 +424,8 @@ usage: sudo bash scripts/setup-server.sh [options]
 
 environment overrides:
   INSTALL_DIR SRC_DIR DOMAIN CERT_EMAIL BACKEND_PORT
+  WITH_WWW HTTPS_MODE CF_API_TOKEN
+  MIN_TOTAL_MB CREATE_SWAP SWAP_FILE SWAP_MB NODE_HEAP_MB
   DB_HOST DB_NAME DB_USER DB_PASS APP_NAME_FA APP_NAME_EN
   BALE_BOT_USERNAME BALE_BOT_TOKEN BALE_ADMIN_CHAT_ID JWT_SECRET
   ENABLE_HTTPS ENABLE_UFW ENABLE_BACKUP TEST_PHONE TEST_PASSWORD
@@ -396,9 +532,8 @@ copy_source() {
 build_backend() {
   log "installing dependencies and building backend"
   cd "$INSTALL_DIR/backend"
-  npm install --no-audit --no-fund
-
-  npx prisma generate
+  npm_install_in "$INSTALL_DIR/backend"
+  run_here "prisma generate" npx prisma generate
 
   local DB_PASS_URL
   DB_PASS_URL="$(urlencode "$DB_PASS")"
@@ -420,7 +555,7 @@ EOF
     warn "BALE_BOT_TOKEN is empty; the bot will not send messages (fill it in .env and restart the service)"
   fi
   npx prisma db push --skip-generate || warn "prisma db push failed; check the tables manually"
-  npm run build
+  run_here "backend build (tsc)" npm run build
   ok "backend built (dist/main.js)"
 }
 
@@ -431,12 +566,12 @@ EOF
 build_frontend() {
   log "installing and building the PWA frontend"
   cd "$INSTALL_DIR/frontend-app"
-  npm install --no-audit --no-fund
+  npm_install_in "$INSTALL_DIR/frontend-app"
   # only VITE_* is exposed to the browser; the app name is fixed in vite.config.js
   cat > .env <<EOF
 VITE_API_URL="/api"
 EOF
-  npm run build
+  run_here "PWA build (vite)" npm run build
   ok "PWA built ($INSTALL_DIR/frontend-app/dist)"
 }
 
@@ -539,10 +674,6 @@ EOF
 # ------------------------------------------------------------------
 
 setup_https() {
-  if [[ -z "$CERT_EMAIL" ]]; then
-    warn "CERT_EMAIL is empty; certbot needs one. Skipping HTTPS."
-    return
-  fi
   if [[ "$ENABLE_HTTPS" != "1" ]] || [[ -z "$DOMAIN" ]]; then
     warn "HTTPS skipped. (installing the PWA needs valid HTTPS - see docs/DEPLOY-UBUNTU.md section 11)"
     return
@@ -551,6 +682,15 @@ setup_https() {
   local logf="/var/log/vizitik-certbot.log"
   local -a cnames=( -d "$DOMAIN" )
   if [[ "$WITH_WWW" == "1" ]]; then cnames+=( -d "www.$DOMAIN" ); fi
+
+  # an empty contact address is legal (only the expiry notice is missed) but
+  # "certbot -m ''" is not, so the flag is decided here once
+  local -a email_args=( --register-unsafely-without-email )
+  if [[ "$CERT_EMAIL" == *@*.* ]]; then
+    email_args=( -m "$CERT_EMAIL" )
+  else
+    warn "no certificate e-mail given; Let's Encrypt cannot warn you before it expires"
+  fi
 
   report_certbot_failure() {
     local rc="$1"
@@ -600,7 +740,7 @@ setup_https() {
     creds="$(write_dns_credentials | tail -n 1)"
     local rc=0
     certbot certonly -a dns-cloudflare --dns-cloudflare-credentials "$creds" \
-      --dns-cloudflare-propagation-seconds 30 "${cnames[@]}" --agree-tos -m "$CERT_EMAIL" -n \
+      --dns-cloudflare-propagation-seconds 30 "${cnames[@]}" --agree-tos "${email_args[@]}" -n \
       >"$logf" 2>&1 || rc=$?
     if (( rc != 0 )); then report_certbot_failure "$rc"; fi
     certbot --nginx --redirect -n "${cnames[@]}" >>"$logf" 2>&1 \
@@ -632,7 +772,7 @@ setup_https() {
   fi
 
   local rc=0
-  certbot --nginx "${cnames[@]}" --redirect --agree-tos -m "$CERT_EMAIL" --non-interactive >"$logf" 2>&1 || rc=$?
+  certbot --nginx "${cnames[@]}" --redirect --agree-tos "${email_args[@]}" --non-interactive >"$logf" 2>&1 || rc=$?
   if (( rc != 0 )); then
     if can_ask && ! grep -qiE "rate limit|too many certificates" "$logf" 2>/dev/null; then
       local reply=""
@@ -733,6 +873,7 @@ main() {
   if [[ "$mode" == "check" ]]; then
     CHECK_ONLY=1
     collect_inputs
+    memory_guard
     ok "preflight finished - nothing on this server was changed"
     exit 0
   fi
@@ -740,6 +881,7 @@ main() {
   require_root
   distro_check
   collect_inputs
+  memory_guard
   install_prereqs
   setup_database
   copy_source
