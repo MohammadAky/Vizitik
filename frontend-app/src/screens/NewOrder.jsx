@@ -1,33 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiSilent } from "../lib/api.js";
 import { useLocalData } from "../lib/data.js";
-import { enqueue } from "../lib/sync.js";
-import { computeOrderTotals, generateLocalUuid } from "../lib/pricing.js";
-import { formatPrice, toPersianNum, onlyDigits, parseFaNumber } from "../lib/format.js";
+import { formatPrice, toPersianNum } from "../lib/format.js";
 import { usePhpPage } from "../lib/usePhpPage.js";
 import { showToast } from "../components/AppToast.jsx";
 
-const CUST_KEY = "vizitik_current_order";
+// انتخاب مشتری جدا از پیش‌نویس سفارش نگه داشته می‌شود تا روی vizitik_current_order نیفتد
+const CUST_KEY = "vizitik_order_customer";
+const DRAFT_KEY = "vizitik_current_order";
 
 /**
- * ثبت سفارش و صدور فاکتور — پورت ساختاری از frontend/new-order.php
+ * ثبت سفارش و صدور فاکتور — پورت ساختاری از frontend/new-order.php + js/new-order.js
  * (هدر تیره با header-van-btn، کارت انتخاب مشتری، لیست کالاهای بار با استپر،
- *  خلاصه محاسبات و شیت تأیید نهایی) — همان کلاس‌های new-order.css
+ *  نوار پایینی با جمع اقلام و دکمه ادامه به تسویه، شیت تأیید اقلام و تحویل
+ *  پیش‌نویس به صفحه پرداخت از طریق sessionStorage) — همان کلاس‌های new-order.css
+ * تخفیف و تسهیم پرداخت در این صفحه نیست — عین PHP در مرحله پرداخت اعمال می‌شود.
  */
 export default function NewOrder({ go }) {
   const page = usePhpPage("order");
-  const { customers, inventory, online, reload } = useLocalData();
+  const { customers, inventory } = useLocalData();
   const [custId, setCustId] = useState(() => sessionStorage.getItem(CUST_KEY) || "");
   const [picker, setPicker] = useState(false);
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("ALL");
   const [qty, setQty] = useState({});
   const [confirm, setConfirm] = useState(false);
-  const [cash, setCash] = useState("");
-  const [pos, setPos] = useState("");
-  const [check, setCheck] = useState("");
-  const [discounts, setDiscounts] = useState([]);
-  const [newPct, setNewPct] = useState("");
 
   const bar = useMemo(
     () => inventory.filter((i) => (i.quantityCartons || 0) > 0 || (i.quantityUnits || 0) > 0),
@@ -58,12 +54,13 @@ export default function NewOrder({ go }) {
   );
 
   const chosen = lines.filter((l) => l.cartonCount > 0 || l.unitCount > 0);
-  const totals = computeOrderTotals(chosen, discounts);
-  const cashNum = parseFaNumber(cash, 0) || 0;
-  const posNum = parseFaNumber(pos, 0) || 0;
-  const checkNum = parseFaNumber(check, 0) || 0;
-  const paid = cashNum + posNum + checkNum;
-  const credit = Math.max(0, totals.finalAmount - paid);
+  // new-order.js → recalculateOrder: جمع خط‌به‌خط اقلام انتخابی
+  const subtotal = chosen.reduce(
+    (s, l) => s + l.cartonCount * (l.cartonPrice || 0) + l.unitCount * (l.unitPrice || 0),
+    0,
+  );
+  const totalCartons = chosen.reduce((s, l) => s + l.cartonCount, 0);
+  const totalUnits = chosen.reduce((s, l) => s + l.unitCount, 0);
 
   function step(id, key, delta, max) {
     setQty((prev) => {
@@ -74,53 +71,66 @@ export default function NewOrder({ go }) {
     });
   }
 
-  async function submit() {
-    const payload = {
-      customerId: custId,
-      localUuid: generateLocalUuid(),
-      items: chosen.map((l) => ({
+  // new-order.js → proceedToPayment: ذخیره پیش‌نویس و رفتن به صفحه پرداخت
+  function proceedToPayment() {
+    if (!custId || chosen.length === 0) {
+      showToast("لطفاً مشتری و حداقل یک کالا را انتخاب نمایید.", "error");
+      return;
+    }
+    const items = {};
+    chosen.forEach((l) => {
+      items[l.productId] = {
         productId: l.productId,
+        name: l.productName,
+        brand: l.brand || "متفرقه",
         cartonCount: l.cartonCount,
         unitCount: l.unitCount,
-      })),
-      discountSteps: discounts.map((v) => ({ type: "percent", value: parseFaNumber(v, 0) })),
-      payments: [
-        ...(cashNum > 0 ? [{ method: "CASH", amount: cashNum }] : []),
-        ...(posNum > 0 ? [{ method: "CARD", amount: posNum }] : []),
-        ...(checkNum > 0 ?
-          [
-            {
-              method: "CHECK",
-              amount: checkNum,
-              checkDetails: {
-                checkNumber: "---",
-                bankName: "بانک",
-                dueDate: new Date().toISOString(),
-              },
-            },
-          ]
-        : []),
-      ],
+        cartonPrice: l.cartonPrice || 0,
+        unitPrice: l.unitPrice || 0,
+        lineTotal: l.cartonCount * (l.cartonPrice || 0) + l.unitCount * (l.unitPrice || 0),
+        unitsPerCarton: l.unitsPerCarton || 24,
+      };
+    });
+    const orderState = {
+      customerId: custId,
+      customerName: cust ? cust.name : "",
+      customerDebt: cust ? Number(cust.currentDebt || 0) : 0,
+      customerPhone: cust ? cust.phone || "" : "",
+      items,
+      subtotal,
+      totalCartons,
+      totalUnits,
     };
-    try {
-      if (!navigator.onLine) throw new Error("offline");
-      await (
-        await import("../lib/api.js")
-      ).api("/orders", { method: "POST", body: payload, timeout: 20000 });
-      showToast("فاکتور صادر و بار خودرو به‌روزرسانی شد.", "success");
-    } catch (e) {
-      await enqueue("ORDER", payload);
-      showToast("آفلاین — فاکتور در صف همگام‌سازی ثبت شد.", "warning");
-    }
-    setQty({});
-    setCash("");
-    setPos("");
-    setCheck("");
-    setDiscounts([]);
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(orderState));
     setConfirm(false);
-    await reload({ sync: true });
-    go("orders");
+    go("payment");
   }
+
+  const custDebt = cust ? Number(cust.currentDebt || 0) : 0;
+  let ctaContent = null;
+  if (!cust) {
+    ctaContent = <span>لطفاً ابتدا مشتری را انتخاب کنید</span>;
+  } else if (chosen.length === 0 || subtotal <= 0) {
+    ctaContent = <span>حداقل یک محصول را انتخاب نمایید</span>;
+  } else {
+    let itemsSummary = "";
+    if (totalCartons > 0 && totalUnits > 0) {
+      itemsSummary = `${toPersianNum(totalCartons)} کارتن و ${toPersianNum(totalUnits)} دانه`;
+    } else if (totalCartons > 0) {
+      itemsSummary = `${toPersianNum(totalCartons)} کارتن`;
+    } else {
+      itemsSummary = `${toPersianNum(totalUnits)} دانه`;
+    }
+    ctaContent = (
+      <>
+        <span>ادامه به مرحله تسویه و پرداخت ({itemsSummary})</span>
+        <span className="material-symbols-outlined" style={{ fontSize: "20px", transform: "scaleX(-1)" }}>
+          arrow_forward
+        </span>
+      </>
+    );
+  }
+  const ctaDisabled = !cust || chosen.length === 0 || subtotal <= 0;
 
   return (
     <>
@@ -165,10 +175,12 @@ export default function NewOrder({ go }) {
             <div className="cust-details">
               <span className="cust-name">{cust ? cust.name : "انتخاب مشتری / فروشگاه"}</span>
               <span
-                className={`cust-debt-badge ${cust && cust.currentDebt > 0 ? "debt" : ""}`.trim()}>
-                {cust ?
-                  `مانده: ${formatPrice(cust.currentDebt || 0)} ت`
-                : "برای شروع، فروشگاه را انتخاب کنید"}
+                className={`cust-debt-badge ${cust && custDebt === 0 ? "cleared" : ""}`.trim()}>
+                {cust
+                  ? custDebt > 0
+                    ? `بدهی قبلی: ${formatPrice(custDebt)} تومان`
+                    : "حساب تسویه (بدون بدهی)"
+                  : "برای شروع، فروشگاه را انتخاب کنید"}
               </span>
             </div>
           </div>
@@ -216,7 +228,6 @@ export default function NewOrder({ go }) {
             <h3>بار خودرو خالی است</h3>
             <p>ابتدا موجودی خودرو را در بخش بارگیری ثبت کنید تا امکان صدور فاکتور فراهم شود.</p>
             <button type="button" className="goto-loading-btn" onClick={() => go("van")}>
-              {/* <span className="material-symbols-outlined">inventory_2</span> */}
               <span>رفتن به بارگیری خودرو</span>
             </button>
           </div>
@@ -308,75 +319,32 @@ export default function NewOrder({ go }) {
             ))}
           </div>
         }
-
-        {/* تخفیفات پلکانی */}
-        {chosen.length > 0 && (
-          <div className="order-calc-breakdown">
-            <div className="calc-row-left">
-              <span className="calc-label">جمع ناخالص:</span>
-              <span className="calc-amount calc-subtotal">{formatPrice(totals.subtotal)} ت</span>
-            </div>
-            {totals.discountSteps.map((s, i) => (
-              <div className="calc-row-right" key={i}>
-                <span className="calc-label">
-                  پله {toPersianNum(i + 1)} ({toPersianNum(s.value)}٪):
-                </span>
-                <span className="calc-amount">-{formatPrice(s.stepDiscount)} ت</span>
-              </div>
-            ))}
-            <div className="calc-row-left">
-              <span className="calc-label">مجموع تخفیف:</span>
-              <span className="calc-amount">-{formatPrice(totals.totalDiscount)} ت</span>
-            </div>
-            <div className="calc-final-amount">
-              <span className="calc-final-label">مبلغ نهایی فاکتور:</span>
-              <strong>{formatPrice(totals.finalAmount)} تومان</strong>
-            </div>
-            <div className="confirm-actions-row">
-              <input
-                className="step-input"
-                type="text"
-                inputMode="numeric"
-                placeholder="٪"
-                value={newPct}
-                onChange={(e) => setNewPct(onlyDigits(e.target.value))}
-              />
-              <button
-                type="button"
-                className="step-btn"
-                onClick={() => {
-                  const v = parseFaNumber(newPct, 0);
-                  if (v && v >= 1 && v <= 100) {
-                    setDiscounts([...discounts, v]);
-                    setNewPct("");
-                  } else {
-                    showToast("درصد تخفیف معتبر نیست (بین ۱ تا ۱۰۰).", "error");
-                  }
-                }}>
-                + پله تخفیف
-              </button>
-              {discounts.map((v, i) => (
-                <span className="cat-pill active" key={`${v}_${i}`}>
-                  پله {toPersianNum(i + 1)}: {toPersianNum(v)}٪
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
       </main>
 
-      {/* نوار پایینی chckout */}
-      {chosen.length > 0 && (
-        <div className="order-bottom-bar">
+      {/* نوار پایین صفحه — عین new-order.php */}
+      {bar.length > 0 && (
+        <footer className="order-bottom-bar">
+          <div className="order-calc-breakdown">
+            <div className="calc-row-left">
+              <span className="calc-subtotal">جمع کل اقلام انتخابی:</span>
+              <strong className="calc-final-amount" id="calcFinalVal">
+                {formatPrice(subtotal)} تومان
+              </strong>
+            </div>
+            <div className="calc-row-right">
+              <span className="calc-final-label">تخفیف در مرحله پرداخت اعمال می‌شود</span>
+            </div>
+          </div>
+
           <button
             type="button"
             className="checkout-cta-btn"
-            onClick={() => setConfirm(true)}
-            disabled={!cust}>
-            <span className="material-symbols-outlined">receipt_long</span>
-            <span>بررسی و ثبت نهایی فاکتور</span>
+            id="checkoutCtaBtn"
+            disabled={ctaDisabled}
+            onClick={() => setConfirm(true)}>
+            {ctaContent}
           </button>
-        </div>
+        </footer>
       )}
 
       {/* شیت انتخاب مشتری */}
@@ -412,60 +380,59 @@ export default function NewOrder({ go }) {
         </div>
       </div>
 
-      {/* شیت تأیید نهایی */}
+      {/* مدال تایید اقلام سفارش قبل از رفتن به پرداخت — عین new-order.php */}
       <div
         className="modal-overlay"
+        id="orderConfirmModal"
         style={{ display: confirm ? "flex" : "none" }}
         onClick={(e) => {
           if (e.target === e.currentTarget) setConfirm(false);
         }}>
         <div className="confirm-order-sheet">
-          <h3 style={{ fontSize: "14px", fontWeight: 800, marginBottom: "10px" }}>
-            تأیید و صدور فاکتور
-          </h3>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)", paddingBottom: "10px" }}>
+            <div>
+              <h3 style={{ fontSize: "15px", fontWeight: 800, margin: 0 }}>تایید اقلام سفارش</h3>
+              <span id="confirmCustTitle" style={{ fontSize: "11px", color: "var(--primary)", fontWeight: 700 }}>
+                {cust ? `فاکتور برای: ${cust.name}` : ""}
+              </span>
+            </div>
+            <button type="button" style={{ background: "none", border: "none", cursor: "pointer" }} onClick={() => setConfirm(false)}>
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>
 
-          <div className="confirm-items-list">
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+            اقلام انتخابی از بار خودرو:
+          </div>
+
+          <div className="confirm-items-list" id="confirmItemsList">
             {chosen.map((l) => (
               <div className="confirm-item-row" key={l.productId}>
-                <span>{l.productName}</span>
+                <span>
+                  {l.productName} ({toPersianNum(l.cartonCount)} کارتن
+                  {l.unitCount > 0 ? ` + ${toPersianNum(l.unitCount)} دانه` : ""})
+                </span>
                 <strong>
-                  {formatPrice(l.cartonCount * l.cartonPrice + l.unitCount * l.unitPrice)}
+                  {formatPrice(l.cartonCount * (l.cartonPrice || 0) + l.unitCount * (l.unitPrice || 0))} ت
                 </strong>
               </div>
             ))}
           </div>
 
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13.5px", fontWeight: 900, color: "var(--primary)", padding: "4px 0" }}>
+            <span>جمع کل ناخالص:</span>
+            <span id="confirmGrandSubtotal">{formatPrice(subtotal)} تومان</span>
+          </div>
+
           <div className="confirm-actions-row">
-            {[
-              ["نقدی", cash, setCash],
-              ["پوز", pos, setPos],
-              ["چک", check, setCheck],
-            ].map(([label, val, set]) => (
-              <div className="confirm-item-row" key={label}>
-                <span>{label} (تومان)</span>
-                <input
-                  className="step-input"
-                  type="text"
-                  inputMode="numeric"
-                  value={val}
-                  onChange={(e) => set(onlyDigits(e.target.value))}
-                />
-              </div>
-            ))}
+            <button type="button" className="confirm-submit-btn" onClick={proceedToPayment}>
+              <span className="material-symbols-outlined">check_circle</span>
+              <span>تایید و ورود به صفحه تسویه و پرداخت</span>
+            </button>
+            <button type="button" className="confirm-cancel-btn" onClick={() => setConfirm(false)}>
+              ویرایش مجدد سفارش
+            </button>
           </div>
-
-          <div className="calc-row-left">
-            <span>مانده نسیه (دفتر حساب):</span>
-            <strong>{formatPrice(credit)} تومان</strong>
-          </div>
-
-          <button type="button" className="confirm-submit-btn" onClick={submit}>
-            <span className="material-symbols-outlined">check_circle</span>
-            <span>{navigator.onLine ? "ثبت فاکتور و کسر از بار" : "ثبت در صف آفلاین"}</span>
-          </button>
-          <button type="button" className="confirm-cancel-btn" onClick={() => setConfirm(false)}>
-            انصراف
-          </button>
         </div>
       </div>
     </>
