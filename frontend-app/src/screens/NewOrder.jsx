@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
-import { apiSilent } from '../lib/api.js';
-import { useLocalData } from '../lib/data.js';
-import { enqueue } from '../lib/sync.js';
-import { computeOrderTotals, generateLocalUuid } from '../lib/pricing.js';
-import { formatPrice, toPersianNum } from '../lib/format.js';
-import { usePhpPage } from '../lib/usePhpPage.js';
-import { showToast } from '../components/AppToast.jsx';
+import { useEffect, useMemo, useState } from "react";
+import { apiSilent } from "../lib/api.js";
+import { useLocalData } from "../lib/data.js";
+import { enqueue } from "../lib/sync.js";
+import { computeOrderTotals, generateLocalUuid } from "../lib/pricing.js";
+import { formatPrice, toPersianNum } from "../lib/format.js";
+import { usePhpPage } from "../lib/usePhpPage.js";
+import { showToast } from "../components/AppToast.jsx";
 
-const CUST_KEY = 'vizitik_current_order';
+const CUST_KEY = "vizitik_current_order";
 
 /**
  * ثبت سفارش و صدور فاکتور — پورت ساختاری از frontend/new-order.php
@@ -15,22 +15,25 @@ const CUST_KEY = 'vizitik_current_order';
  *  خلاصه محاسبات و شیت تأیید نهایی) — همان کلاس‌های new-order.css
  */
 export default function NewOrder({ go }) {
-  const page = usePhpPage('order');
+  const page = usePhpPage("order");
   const { customers, inventory, online, reload } = useLocalData();
-  const [custId, setCustId] = useState(() => sessionStorage.getItem(CUST_KEY) || '');
+  const [custId, setCustId] = useState(() => sessionStorage.getItem(CUST_KEY) || "");
   const [picker, setPicker] = useState(false);
-  const [search, setSearch] = useState('');
-  const [cat, setCat] = useState('ALL');
+  const [search, setSearch] = useState("");
+  const [cat, setCat] = useState("ALL");
   const [qty, setQty] = useState({});
   const [confirm, setConfirm] = useState(false);
-  const [cash, setCash] = useState('');
-  const [pos, setPos] = useState('');
-  const [check, setCheck] = useState('');
+  const [cash, setCash] = useState("");
+  const [pos, setPos] = useState("");
+  const [check, setCheck] = useState("");
   const [discounts, setDiscounts] = useState([]);
-  const [newPct, setNewPct] = useState('');
+  const [newPct, setNewPct] = useState("");
 
-  const bar = useMemo(() => inventory.filter((i) => (i.quantityCartons || 0) > 0 || (i.quantityUnits || 0) > 0), [inventory]);
-  const cats = useMemo(() => Array.from(new Set(bar.map((b) => b.category || 'سایر'))), [bar]);
+  const bar = useMemo(
+    () => inventory.filter((i) => (i.quantityCartons || 0) > 0 || (i.quantityUnits || 0) > 0),
+    [inventory],
+  );
+  const cats = useMemo(() => Array.from(new Set(bar.map((b) => b.category || "سایر"))), [bar]);
   const cust = (customers || []).find((c) => c.id === custId) || null;
 
   useEffect(() => {
@@ -42,16 +45,16 @@ export default function NewOrder({ go }) {
     () =>
       bar
         .filter((p) => {
-          const q = (search || '').trim().toLowerCase();
-          const okQ = !q || (p.productName || '').toLowerCase().includes(q);
-          const okC = cat === 'ALL' || (p.category || 'سایر') === cat;
+          const q = (search || "").trim().toLowerCase();
+          const okQ = !q || (p.productName || "").toLowerCase().includes(q);
+          const okC = cat === "ALL" || (p.category || "سایر") === cat;
           return okQ && okC;
         })
         .map((p) => {
           const k = qty[p.productId] || { c: 0, u: 0 };
           return { ...p, cartonCount: k.c, unitCount: k.u };
         }),
-    [bar, search, cat, qty]
+    [bar, search, cat, qty],
   );
 
   const chosen = lines.filter((l) => l.cartonCount > 0 || l.unitCount > 0);
@@ -62,7 +65,7 @@ export default function NewOrder({ go }) {
   function step(id, key, delta, max) {
     setQty((prev) => {
       const cur = { c: 0, u: 0, ...(prev[id] || {}) };
-      const k = key === 'cartonCount' ? 'c' : 'u';
+      const k = key === "cartonCount" ? "c" : "u";
       const val = Math.max(0, Math.min(max ?? Infinity, (cur[k] || 0) + delta));
       return { ...prev, [id]: { ...cur, [k]: val } };
     });
@@ -72,27 +75,48 @@ export default function NewOrder({ go }) {
     const payload = {
       customerId: custId,
       localUuid: generateLocalUuid(),
-      items: chosen.map((l) => ({ productId: l.productId, cartonCount: l.cartonCount, unitCount: l.unitCount })),
-      discountSteps: discounts.map((v) => ({ type: 'percent', value: Number(v) })),
+      items: chosen.map((l) => ({
+        productId: l.productId,
+        cartonCount: l.cartonCount,
+        unitCount: l.unitCount,
+      })),
+      discountSteps: discounts.map((v) => ({ type: "percent", value: Number(v) })),
       payments: [
-        ...(Number(cash) > 0 ? [{ method: 'CASH', amount: Number(cash) }] : []),
-        ...(Number(pos) > 0 ? [{ method: 'CARD', amount: Number(pos) }] : []),
-        ...(Number(check) > 0 ? [{ method: 'CHECK', amount: Number(check), checkDetails: { checkNumber: '---', bankName: 'بانک', dueDate: new Date().toISOString() } }] : [])
-      ]
+        ...(Number(cash) > 0 ? [{ method: "CASH", amount: Number(cash) }] : []),
+        ...(Number(pos) > 0 ? [{ method: "CARD", amount: Number(pos) }] : []),
+        ...(Number(check) > 0 ?
+          [
+            {
+              method: "CHECK",
+              amount: Number(check),
+              checkDetails: {
+                checkNumber: "---",
+                bankName: "بانک",
+                dueDate: new Date().toISOString(),
+              },
+            },
+          ]
+        : []),
+      ],
     };
     try {
-      if (!navigator.onLine) throw new Error('offline');
-      await (await import('../lib/api.js')).api('/orders', { method: 'POST', body: payload, timeout: 20000 });
-      showToast('فاکتور صادر و بار خودرو به‌روزرسانی شد.', 'success');
+      if (!navigator.onLine) throw new Error("offline");
+      await (
+        await import("../lib/api.js")
+      ).api("/orders", { method: "POST", body: payload, timeout: 20000 });
+      showToast("فاکتور صادر و بار خودرو به‌روزرسانی شد.", "success");
     } catch (e) {
-      await enqueue('ORDER', payload);
-      showToast('آفلاین — فاکتور در صف همگام‌سازی ثبت شد.', 'warning');
+      await enqueue("ORDER", payload);
+      showToast("آفلاین — فاکتور در صف همگام‌سازی ثبت شد.", "warning");
     }
     setQty({});
-    setCash(''); setPos(''); setCheck(''); setDiscounts([]);
+    setCash("");
+    setPos("");
+    setCheck("");
+    setDiscounts([]);
     setConfirm(false);
     await reload({ sync: true });
-    go('orders');
+    go("orders");
   }
 
   return (
@@ -100,7 +124,15 @@ export default function NewOrder({ go }) {
       <header className="order-header">
         <div className="header-top-row">
           <div className="header-right-group">
-            <a href="#/van" className="header-van-btn" title="مشاهده و بارگیری کالاهای خودرو" aria-label="بارگیری خودرو" onClick={(e) => { e.preventDefault(); go('van'); }}>
+            <a
+              href="#/van"
+              className="header-van-btn"
+              title="مشاهده و بارگیری کالاهای خودرو"
+              aria-label="بارگیری خودرو"
+              onClick={(e) => {
+                e.preventDefault();
+                go("van");
+              }}>
               <span className="material-symbols-outlined">local_shipping</span>
             </a>
             <div className="header-title-box">
@@ -109,7 +141,14 @@ export default function NewOrder({ go }) {
             </div>
           </div>
 
-          <a href="#/dash" className="back-btn" aria-label="بازگشت به داشبورد" onClick={(e) => { e.preventDefault(); go('dash'); }}>
+          <a
+            href="#/dash"
+            className="back-btn"
+            aria-label="بازگشت به داشبورد"
+            onClick={(e) => {
+              e.preventDefault();
+              go("dash");
+            }}>
             <span className="material-symbols-outlined">arrow_forward</span>
           </a>
         </div>
@@ -121,9 +160,12 @@ export default function NewOrder({ go }) {
               <span className="material-symbols-outlined">storefront</span>
             </div>
             <div className="cust-details">
-              <span className="cust-name">{cust ? cust.name : 'انتخاب مشتری / فروشگاه'}</span>
-              <span className={`cust-debt-badge ${cust && cust.currentDebt > 0 ? 'debt' : ''}`.trim()}>
-                {cust ? `مانده: ${formatPrice(cust.currentDebt || 0)} ت` : 'برای شروع، فروشگاه را انتخاب کنید'}
+              <span className="cust-name">{cust ? cust.name : "انتخاب مشتری / فروشگاه"}</span>
+              <span
+                className={`cust-debt-badge ${cust && cust.currentDebt > 0 ? "debt" : ""}`.trim()}>
+                {cust ?
+                  `مانده: ${formatPrice(cust.currentDebt || 0)} ت`
+                : "برای شروع، فروشگاه را انتخاب کنید"}
               </span>
             </div>
           </div>
@@ -137,72 +179,132 @@ export default function NewOrder({ go }) {
         <div className="search-filter-box">
           <div className="search-input-wrap">
             <span className="material-symbols-outlined">search</span>
-            <input type="text" placeholder="جستجو در بار خودرو..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input
+              type="text"
+              placeholder="جستجو در بار خودرو..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
           <div className="category-pills-row">
-            <button type="button" className={`cat-pill ${cat === 'ALL' ? 'active' : ''}`} onClick={() => setCat('ALL')}>همه</button>
+            <button
+              type="button"
+              className={`cat-pill ${cat === "ALL" ? "active" : ""}`}
+              onClick={() => setCat("ALL")}>
+              همه
+            </button>
             {cats.map((c) => (
-              <button key={c} type="button" className={`cat-pill ${cat === c ? 'active' : ''}`} onClick={() => setCat(c)}>{c}</button>
+              <button
+                key={c}
+                type="button"
+                className={`cat-pill ${cat === c ? "active" : ""}`}
+                onClick={() => setCat(c)}>
+                {c}
+              </button>
             ))}
           </div>
         </div>
       </header>
 
       <main className="order-content">
-        {bar.length === 0 ? (
+        {bar.length === 0 ?
           <div className="empty-van-box">
-            <span className="material-symbols-outlined">inventory_2</span>
-            <h3>هیچ کالایی در خودرو بارگیری نشده است</h3>
-            <p>برای ثبت سفارش مشتری در پخش گرم، ابتدا اقلام موجود را در خودرو بارگیری نمایید.</p>
-            <a className="goto-loading-btn" href="#/van">
-              <span>ورود به بخش بارگیری خودرو</span>
-            </a>
+            <span className="material-symbols-outlined">local_shipping</span>
+            <h3>بار خودرو خالی است</h3>
+            <p>ابتدا موجودی خودرو را در بخش بارگیری ثبت کنید تا امکان صدور فاکتور فراهم شود.</p>
+            <button type="button" className="goto-loading-btn" onClick={() => go("van")}>
+              {/* <span className="material-symbols-outlined">inventory_2</span> */}
+              <span>رفتن به بارگیری خودرو</span>
+            </button>
           </div>
-        ) : (
-          <div className="order-product-list">
+        : <div className="order-product-list">
             {lines.map((p) => (
               <div className="product-order-card" key={p.productId}>
                 <div className="prod-card-top">
                   <div className="prod-main-meta">
                     <div className="prod-title-line">
                       <span className="prod-title">{p.productName}</span>
-                      <span className="prod-brand-tag">{p.brand || 'متفرقه'}</span>
+                      <span className="prod-brand-tag">{p.brand || "متفرقه"}</span>
                     </div>
                     <div className="prod-prices-line">
-                      کارتن: <strong>{formatPrice(p.cartonPrice)}</strong> · دانه: <strong>{formatPrice(p.unitPrice)}</strong>
+                      کارتن: <strong>{formatPrice(p.cartonPrice)}</strong> · دانه:{" "}
+                      <strong>{formatPrice(p.unitPrice)}</strong>
                     </div>
                   </div>
                   <div className="line-total-badge-row">
-                    <span className={`van-stock-badge ${p.cartonCount + p.unitCount > 0 ? 'has-quantity' : ''}`}>
-                      {p.cartonCount + p.unitCount > 0 ? `${toPersianNum(p.cartonCount)} کارتن / ${toPersianNum(p.unitCount)} دانه` : 'بدون انتخاب'}
+                    <span
+                      className={`van-stock-badge ${p.cartonCount + p.unitCount > 0 ? "has-quantity" : ""}`}>
+                      {p.cartonCount + p.unitCount > 0 ?
+                        `${toPersianNum(p.cartonCount)} کارتن / ${toPersianNum(p.unitCount)} دانه`
+                      : "بدون انتخاب"}
                     </span>
                   </div>
                 </div>
 
                 <div className="prod-steppers-container">
                   <div className="steppers-row">
-                  <div className="stepper-item">
-                    <div className="stepper-title"><span>کارتن</span><span>{toPersianNum(p.quantityCartons || 0)} در بار</span></div>
-                    <div className="stepper-control">
-                      <button type="button" className="step-btn" onClick={() => step(p.productId, 'cartonCount', -1)}>-</button>
-                      <input className="step-input" type="number" min="0" value={p.cartonCount} readOnly />
-                      <button type="button" className="step-btn" onClick={() => step(p.productId, 'cartonCount', 1, p.quantityCartons || 0)}>+</button>
+                    <div className="stepper-item">
+                      <div className="stepper-title">
+                        <span>کارتن</span>
+                        <span>{toPersianNum(p.quantityCartons || 0)} در بار</span>
+                      </div>
+                      <div className="stepper-control">
+                        <button
+                          type="button"
+                          className="step-btn"
+                          onClick={() => step(p.productId, "cartonCount", -1)}>
+                          -
+                        </button>
+                        <input
+                          className="step-input"
+                          type="number"
+                          min="0"
+                          value={p.cartonCount}
+                          readOnly
+                        />
+                        <button
+                          type="button"
+                          className="step-btn"
+                          onClick={() =>
+                            step(p.productId, "cartonCount", 1, p.quantityCartons || 0)
+                          }>
+                          +
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="stepper-item">
-                    <div className="stepper-title"><span>دانه</span><span>{toPersianNum(p.quantityUnits || 0)} در بار</span></div>
-                    <div className="stepper-control">
-                      <button type="button" className="step-btn" onClick={() => step(p.productId, 'unitCount', -1)}>-</button>
-                      <input className="step-input" type="number" min="0" value={p.unitCount} readOnly />
-                      <button type="button" className="step-btn" onClick={() => step(p.productId, 'unitCount', 1, p.quantityUnits || 0)}>+</button>
+                    <div className="stepper-item">
+                      <div className="stepper-title">
+                        <span>دانه</span>
+                        <span>{toPersianNum(p.quantityUnits || 0)} در بار</span>
+                      </div>
+                      <div className="stepper-control">
+                        <button
+                          type="button"
+                          className="step-btn"
+                          onClick={() => step(p.productId, "unitCount", -1)}>
+                          -
+                        </button>
+                        <input
+                          className="step-input"
+                          type="number"
+                          min="0"
+                          value={p.unitCount}
+                          readOnly
+                        />
+                        <button
+                          type="button"
+                          className="step-btn"
+                          onClick={() => step(p.productId, "unitCount", 1, p.quantityUnits || 0)}>
+                          +
+                        </button>
+                      </div>
                     </div>
-                  </div>
                   </div>
                 </div>
               </div>
             ))}
           </div>
-        )}
+        }
 
         {/* تخفیفات پلکانی */}
         {chosen.length > 0 && (
@@ -213,7 +315,9 @@ export default function NewOrder({ go }) {
             </div>
             {totals.discountSteps.map((s, i) => (
               <div className="calc-row-right" key={i}>
-                <span className="calc-label">پله {toPersianNum(i + 1)} ({toPersianNum(s.value)}٪):</span>
+                <span className="calc-label">
+                  پله {toPersianNum(i + 1)} ({toPersianNum(s.value)}٪):
+                </span>
                 <span className="calc-amount">-{formatPrice(s.stepDiscount)} ت</span>
               </div>
             ))}
@@ -226,8 +330,25 @@ export default function NewOrder({ go }) {
               <strong>{formatPrice(totals.finalAmount)} تومان</strong>
             </div>
             <div className="confirm-actions-row">
-              <input className="step-input" type="number" min="1" max="100" placeholder="٪" value={newPct} onChange={(e) => setNewPct(e.target.value)} />
-              <button type="button" className="step-btn" onClick={() => { const v = Number(newPct); if (v) { setDiscounts([...discounts, v]); setNewPct(''); } }}>
+              <input
+                className="step-input"
+                type="number"
+                min="1"
+                max="100"
+                placeholder="٪"
+                value={newPct}
+                onChange={(e) => setNewPct(e.target.value)}
+              />
+              <button
+                type="button"
+                className="step-btn"
+                onClick={() => {
+                  const v = Number(newPct);
+                  if (v) {
+                    setDiscounts([...discounts, v]);
+                    setNewPct("");
+                  }
+                }}>
                 + پله تخفیف
               </button>
               {discounts.map((v, i) => (
@@ -243,7 +364,11 @@ export default function NewOrder({ go }) {
       {/* نوار پایینی chckout */}
       {chosen.length > 0 && (
         <div className="order-bottom-bar">
-          <button type="button" className="checkout-cta-btn" onClick={() => setConfirm(true)} disabled={!cust}>
+          <button
+            type="button"
+            className="checkout-cta-btn"
+            onClick={() => setConfirm(true)}
+            disabled={!cust}>
             <span className="material-symbols-outlined">receipt_long</span>
             <span>بررسی و ثبت نهایی فاکتور</span>
           </button>
@@ -251,21 +376,32 @@ export default function NewOrder({ go }) {
       )}
 
       {/* شیت انتخاب مشتری */}
-      <div className="modal-overlay" style={{ display: picker ? 'flex' : 'none' }} onClick={(e) => { if (e.target === e.currentTarget) setPicker(false); }}>
+      <div
+        className="modal-overlay"
+        style={{ display: picker ? "flex" : "none" }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setPicker(false);
+        }}>
         <div className="customer-picker-sheet">
-          <h3 style={{ fontSize: '14px', fontWeight: 800, marginBottom: '10px' }}>انتخاب فروشگاه</h3>
+          <h3 style={{ fontSize: "14px", fontWeight: 800, marginBottom: "10px" }}>
+            انتخاب فروشگاه
+          </h3>
           <div className="picker-cust-list">
             {(customers || []).map((c) => (
               <div
                 key={c.id}
                 className="picker-cust-item"
-                onClick={() => { setCustId(c.id); setPicker(false); }}
-              >
+                onClick={() => {
+                  setCustId(c.id);
+                  setPicker(false);
+                }}>
                 <div>
                   <div className="cust-name">{c.name}</div>
-                  <span style={{ color: 'var(--text-muted)' }}>{c.address || ''}</span>
+                  <span style={{ color: "var(--text-muted)" }}>{c.address || ""}</span>
                 </div>
-                <span className={`badge ${c.currentDebt > 0 ? 'danger' : 'success'}`}>{formatPrice(c.currentDebt || 0)} ت</span>
+                <span className={`badge ${c.currentDebt > 0 ? "danger" : "success"}`}>
+                  {formatPrice(c.currentDebt || 0)} ت
+                </span>
               </div>
             ))}
           </div>
@@ -273,24 +409,43 @@ export default function NewOrder({ go }) {
       </div>
 
       {/* شیت تأیید نهایی */}
-      <div className="modal-overlay" style={{ display: confirm ? 'flex' : 'none' }} onClick={(e) => { if (e.target === e.currentTarget) setConfirm(false); }}>
+      <div
+        className="modal-overlay"
+        style={{ display: confirm ? "flex" : "none" }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setConfirm(false);
+        }}>
         <div className="confirm-order-sheet">
-          <h3 style={{ fontSize: '14px', fontWeight: 800, marginBottom: '10px' }}>تأیید و صدور فاکتور</h3>
+          <h3 style={{ fontSize: "14px", fontWeight: 800, marginBottom: "10px" }}>
+            تأیید و صدور فاکتور
+          </h3>
 
           <div className="confirm-items-list">
             {chosen.map((l) => (
               <div className="confirm-item-row" key={l.productId}>
                 <span>{l.productName}</span>
-                <strong>{formatPrice(l.cartonCount * l.cartonPrice + l.unitCount * l.unitPrice)}</strong>
+                <strong>
+                  {formatPrice(l.cartonCount * l.cartonPrice + l.unitCount * l.unitPrice)}
+                </strong>
               </div>
             ))}
           </div>
 
           <div className="confirm-actions-row">
-            {[['نقدی', cash, setCash], ['پوز', pos, setPos], ['چک', check, setCheck]].map(([label, val, set]) => (
+            {[
+              ["نقدی", cash, setCash],
+              ["پوز", pos, setPos],
+              ["چک", check, setCheck],
+            ].map(([label, val, set]) => (
               <div className="confirm-item-row" key={label}>
                 <span>{label} (تومان)</span>
-                <input className="step-input" type="number" min="0" value={val} onChange={(e) => set(e.target.value.replace(/[^0-9]/g, ''))} />
+                <input
+                  className="step-input"
+                  type="number"
+                  min="0"
+                  value={val}
+                  onChange={(e) => set(e.target.value.replace(/[^0-9]/g, ""))}
+                />
               </div>
             ))}
           </div>
@@ -302,9 +457,11 @@ export default function NewOrder({ go }) {
 
           <button type="button" className="confirm-submit-btn" onClick={submit}>
             <span className="material-symbols-outlined">check_circle</span>
-            <span>{navigator.onLine ? 'ثبت فاکتور و کسر از بار' : 'ثبت در صف آفلاین'}</span>
+            <span>{navigator.onLine ? "ثبت فاکتور و کسر از بار" : "ثبت در صف آفلاین"}</span>
           </button>
-          <button type="button" className="confirm-cancel-btn" onClick={() => setConfirm(false)}>انصراف</button>
+          <button type="button" className="confirm-cancel-btn" onClick={() => setConfirm(false)}>
+            انصراف
+          </button>
         </div>
       </div>
     </>
