@@ -330,6 +330,47 @@ function selectCategory(elem, category) {
     filterProducts();
 }
 
+// باز کردن مدال تایید اقلام سفارش قبل از رفتن به پرداخت
+function openOrderConfirmModal() {
+    if (!orderState.customerId || Object.keys(orderState.items).length === 0) {
+        showNotification('لطفاً مشتری و حداقل یک کالا را انتخاب نمایید.', 'error');
+        return;
+    }
+
+    const title = document.getElementById('confirmCustTitle');
+    if (title) title.textContent = `فاکتور برای: ${orderState.customerName || 'مشتری'}`;
+
+    const list = document.getElementById('confirmItemsList');
+    if (list) {
+        list.innerHTML = '';
+        Object.values(orderState.items).forEach((item) => {
+            let qtyText = '';
+            if (item.cartonCount > 0 && item.unitCount > 0) {
+                qtyText = `${toPersianNum(item.cartonCount)} کارتن + ${toPersianNum(item.unitCount)} دانه`;
+            } else if (item.cartonCount > 0) {
+                qtyText = `${toPersianNum(item.cartonCount)} کارتن`;
+            } else {
+                qtyText = `${toPersianNum(item.unitCount)} دانه`;
+            }
+            const row = document.createElement('div');
+            row.className = 'confirm-item-row';
+            row.innerHTML = `<span>${item.name} (${qtyText})</span><strong>${toPersianNum(Math.round(item.lineTotal || 0).toLocaleString('en-US'))} ت</strong>`;
+            list.appendChild(row);
+        });
+    }
+
+    const grand = document.getElementById('confirmGrandSubtotal');
+    if (grand) grand.textContent = formatPrice(orderState.subtotal);
+
+    const modal = document.getElementById('orderConfirmModal');
+    if (modal) modal.style.display = 'flex';
+}
+
+function closeOrderConfirmModal() {
+    const modal = document.getElementById('orderConfirmModal');
+    if (modal) modal.style.display = 'none';
+}
+
 // هدایت به صفحه پرداخت
 function proceedToPayment() {
     if (!orderState.customerId || Object.keys(orderState.items).length === 0) {

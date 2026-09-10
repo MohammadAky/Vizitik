@@ -80,7 +80,7 @@ requireLogin();
                     <span>چگونه ربات پیام‌رسان بله را متصل کنم؟</span>
                 </div>
                 <p class="faq-desc">
-                    به بخش تنظیمات بروید و روی دکمه «استارت ربات بله» کلیک کنید. با ارسال دستور /start در ربات @VizitikBot، شناسه شما ثبت شده و کدهای ورود و پیام‌های سرور برای شما ارسال می‌گردد.
+                    به بخش تنظیمات بروید و روی دکمه «استارت ربات بله» کلیک کنید. با ارسال دستور /start در ربات <a href="https://ble.ir/Vizitik_bot" target="_blank">@Vizitik_bot</a>، شناسه شما ثبت شده و کدهای ورود و پیام‌های سرور برای شما ارسال می‌گردد.
                 </p>
             </div>
 
@@ -109,6 +109,10 @@ requireLogin();
                 <span style="font-size: 11.5px; color: #15803d;">تیم پشتیبانی فنی ویزیتیک پاسخگوی سوالات شماست.</span>
                 <a href="tel:09120000000" style="background:#16a34a; color:#fff; text-decoration:none; padding:8px 18px; border-radius:10px; font-size:12px; font-weight:800;">
                     تماس با پشتیبانی فنی
+                </a>
+                <a href="https://ble.ir/Vizitik_bot" target="_blank" style="display:inline-flex; align-items:center; gap:6px; background:var(--primary); color:#fff; text-decoration:none; padding:8px 18px; border-radius:10px; font-size:12px; font-weight:800;">
+                    <span class="material-symbols-outlined" style="font-size:18px;">smart_toy</span>
+                    <span>استارت ربات بله (@Vizitik_bot)</span>
                 </a>
             </div>
         </main>

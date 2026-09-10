@@ -359,3 +359,16 @@
   color: var(--text-muted);
   opacity: 0.6;
 }
+
+/* کارت‌های بخش بله — این کلاس در bale-bot.php استفاده شده اما هیچ قانونی نداشت
+   و سکشن‌ها بدون کادر/پس‌زمینه دیده می‌شدند؛ ظاهر یکسان با settings-section-card */
+.settings-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+}

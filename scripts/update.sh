@@ -11,6 +11,10 @@
 # runs "prisma generate" (and db push), a lockfile change reinstalls dependencies.
 # The previous build is kept, so a build that fails or a service that does not come
 # back up is rolled back automatically.
+# Before the restart it stops whatever else still holds the API port (a
+# hand-started "node dist/main.js", a pm2 copy, ...), and after the restart it
+# verifies the port is served by the fresh service process - the old build can
+# never keep answering silently, so an update never needs a reboot to take effect.
 #
 # options:
 #   --check            print what would be done, change nothing (no root needed)
@@ -181,6 +185,30 @@ update_checkout() {
   fi
 }
 
+hint_remote_ahead() {
+  # the classic "i pushed but update.sh says nothing changed": the commits went
+  # to another branch than the one this server deploys. read-only, never changes
+  # the checkout; it only names the branch that is ahead.
+  [[ -d "$SRC_DIR/.git" ]] || return 0
+  local branch; branch="$(git_at rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  [[ -z "$branch" || "$branch" == "HEAD" ]] && return 0
+  if [[ "$CHECK" != "1" ]]; then
+    git_at fetch --quiet "$GIT_REMOTE" 2>/dev/null || return 0
+  fi
+  local head ref short count
+  head="$(git_at rev-parse HEAD 2>/dev/null)" || return 0
+  while read -r ref; do
+    [[ -n "$ref" ]] || continue
+    short="${ref#refs/remotes/$GIT_REMOTE/}"
+    [[ "$short" == "HEAD" || "$short" == "$branch" ]] && continue
+    count="$(git_at rev-list --count "$head..$ref" 2>/dev/null || echo 0)"
+    if [[ "$count" =~ ^[0-9]+$ ]] && (( count > 0 )); then
+      warn "$GIT_REMOTE/$short holds $count commit(s) this server does not have (it deploys branch '$branch' @ $(git_at rev-parse --short HEAD 2>/dev/null))"
+      info "merge $short into $branch and rerun, or deploy it directly: sudo bash scripts/update.sh --revision $GIT_REMOTE/$short"
+    fi
+  done < <(git_at for-each-ref --format='%(refname)' "refs/remotes/$GIT_REMOTE/" 2>/dev/null)
+}
+
 classify_changes() {
   CHANGED=""
   local files=""
@@ -200,6 +228,7 @@ classify_changes() {
     if [[ "$DO_PULL" == "1" && "$PREV" == "$NOW" ]]; then
       CHANGED="none"
       info "the server already runs $(git_at rev-parse --short HEAD 2>/dev/null) and the pull brought nothing new"
+      hint_remote_ahead
       return 0
     fi
   fi
@@ -221,6 +250,7 @@ classify_changes() {
       else
         CHANGED="none"
         info "the checkout did not move (still $(git_at rev-parse --short HEAD 2>/dev/null))"
+        hint_remote_ahead
         return 0
       fi
     else
@@ -390,10 +420,139 @@ update_frontend() {
 # 4) service, nginx, verification
 # ------------------------------------------------------------------
 
+port_listeners() {  # pids with a LISTEN socket on BACKEND_PORT, one per line
+  ss -ltnp 2>/dev/null | awk -v port=":$BACKEND_PORT" '$4 ~ port"$" {print}' \
+    | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | sort -u
+}
+
+service_pid() {  # MainPID of the systemd unit, or 0 when it has none
+  local out="MainPID=0" pid="0"
+  if have systemctl; then
+    out="$(systemctl show -p MainPID "$SETUP_SVC" 2>/dev/null)" || out="MainPID=0"
+    pid="${out#MainPID=}"
+  fi
+  [[ "$pid" =~ ^[0-9]+$ ]] || pid="0"
+  printf '%s' "$pid"
+}
+
+stop_pm2_vizitik() {
+  # a pm2-held copy of the backend restarts itself when killed, so killing the
+  # port listener is not enough: it has to be deleted from pm2. only vizitik
+  # command lines are touched, every other pm2 app is left alone.
+  have pm2 || return 0
+  local list ids=""
+  list="$(pm2 jlist 2>/dev/null || echo '[]')"
+  [[ -z "${list//[[:space:]]/}" || "$list" == "[]" ]] && { skip "pm2 has no processes"; return 0; }
+  if have jq; then
+    ids="$(printf '%s' "$list" | jq -r '.[] | select(((.name // "") | tostring | test("vizitik|dist/main")) or ((((.pm2_env // {}) | (.pm_exec_path // "")) | tostring) | test("vizitik"))) | .pm_id' 2>/dev/null)"
+  elif have python3; then
+    ids="$(printf '%s' "$list" | python3 -c 'import json,sys,re
+try: apps=json.load(sys.stdin)
+except Exception: apps=[]
+for a in (apps if isinstance(apps,list) else []):
+  env=a.get("pm2_env") or {}
+  if re.search(r"vizitik|dist/main",str(a.get("name",""))+" "+str(env.get("pm_exec_path","")),re.I): print(a.get("pm_id"))' 2>/dev/null)"
+  else
+    warn "pm2 holds processes but neither jq nor python3 is here to inspect them; the port listeners are still stopped below"
+    return 0
+  fi
+  if [[ -z "${ids//[[:space:]]/}" ]]; then skip "no vizitik app inside pm2"; return 0; fi
+  info "pm2 holds vizitik processes (ids: $(echo "$ids" | tr '\n' ' '))- they are deleted so they cannot resurrect the old build"
+  if [[ "$CHECK" == "1" ]]; then echo "      would run: pm2 delete <those ids> && pm2 save"; return 0; fi
+  # shellcheck disable=SC2086
+  if pm2 delete $ids >/dev/null 2>&1; then
+    pm2 save >/dev/null 2>&1 || true
+    ok "vizitik apps deleted from pm2"
+  else
+    warn "pm2 delete failed; the port listeners are still stopped below"
+  fi
+}
+
+free_backend_port() {
+  # Whatever listens on the API port that is NOT the systemd service is a
+  # leftover from a manual run and would keep serving the OLD build after the
+  # restart - update.sh used to report success in that state (the probe got an
+  # answer from the old process), and only a reboot cleared it.
+  have ss || { warn "ss not found; leftover listeners on port $BACKEND_PORT cannot be detected"; return 0; }
+  stop_pm2_vizitik
+  local main pids p strays=""
+  main="$(service_pid)"
+  pids="$(port_listeners)"
+  if [[ -z "$pids" ]]; then skip "nothing listens on port $BACKEND_PORT yet"; return 0; fi
+  for p in $pids; do
+    [[ "$p" == "$main" ]] || strays+="$p "
+  done
+  if [[ -z "${strays// /}" ]]; then skip "port $BACKEND_PORT is held by the service only"; return 0; fi
+  warn "port $BACKEND_PORT is also held by leftover processes (NOT $SETUP_SVC) - they serve the old build and are stopped:"
+  for p in $strays; do
+    ps -o pid=,args= -p "$p" 2>/dev/null | sed 's/^/        /' || echo "        $p (already gone)"
+  done
+  if [[ "$CHECK" == "1" ]]; then echo "      would run: kill ${strays% } (then SIGKILL if needed)"; return 0; fi
+  # shellcheck disable=SC2086
+  kill $strays 2>/dev/null || true
+  sleep 2
+  local left=""
+  for p in $strays; do kill -0 "$p" 2>/dev/null && left+="$p "; done
+  if [[ -n "${left// /}" ]]; then
+    warn "still alive after SIGTERM: ${left% } - sending SIGKILL"
+    # shellcheck disable=SC2086
+    kill -9 $left 2>/dev/null || true
+    sleep 1
+  fi
+  ok "leftover listeners on port $BACKEND_PORT stopped"
+}
+
+wait_for_port() {  # $1 = seconds; 0 once something listens on BACKEND_PORT
+  have ss || return 0
+  local tries="${1:-30}" i
+  for (( i=0; i<tries; i++ )); do
+    if port_listeners | grep -q .; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
+
+check_port_owner() {
+  # the promise update.sh makes: after the restart, the ONLY answer on the API
+  # port comes from the fresh service process. anything else means the old build
+  # is still live, and the revision must NOT be recorded as deployed.
+  [[ "$CHECK" == "1" ]] && { skip "no port-owner check in check mode"; return 0; }
+  have systemctl || return 0
+  have ss || { warn "ss not found; cannot confirm which process serves port $BACKEND_PORT"; return 0; }
+  local main pids p foreign=""
+  main="$(service_pid)"
+  if [[ -z "$main" || "$main" == "0" ]]; then
+    err "$SETUP_SVC reports active but has no MainPID - last log lines:"
+    journalctl -u "$SETUP_SVC" -n 25 --no-pager 2>/dev/null | sed 's/^/        /'
+    return 1
+  fi
+  pids="$(port_listeners)"
+  if [[ -z "$pids" ]]; then
+    err "nothing listens on port $BACKEND_PORT although $SETUP_SVC (pid $main) looks active - last log lines:"
+    journalctl -u "$SETUP_SVC" -n 25 --no-pager 2>/dev/null | sed 's/^/        /'
+    return 1
+  fi
+  for p in $pids; do
+    [[ "$p" == "$main" ]] || foreign+="$p "
+  done
+  if [[ -n "${foreign// /}" ]]; then
+    err "port $BACKEND_PORT is served by processes that are NOT $SETUP_SVC (pid $main) - the api would keep answering with the OLD build:"
+    for p in $foreign; do
+      ps -o pid=,args= -p "$p" 2>/dev/null | sed 's/^/        /'
+    done
+    err "this is the 'had to reboot' trap: stop them and rerun (kill ${foreign% } / pm2 delete <id> / fuser -k ${BACKEND_PORT}/tcp)"
+    err "if one of them keeps coming back, a pm2 daemon of another user holds it: ps -eo user=,args= | grep -i pm2"
+    return 1
+  fi
+  ok "port $BACKEND_PORT is served by the fresh $SETUP_SVC (pid $main)"
+  return 0
+}
+
 restart_service() {
   [[ "$DO_RESTART" == "1" ]] || { skip "restart skipped (--no-restart)"; return 0; }
   log "service"
   if have systemctl; then
+    free_backend_port
     run "restart" systemctl restart "$SETUP_SVC" || { err "could not restart $SETUP_SVC"; return 1; }
     sleep 3
     local state; state="$(systemctl is-active "$SETUP_SVC" 2>/dev/null)"
@@ -403,6 +562,16 @@ restart_service() {
       [[ "$CHECK" == "1" ]] || journalctl -u "$SETUP_SVC" -n 25 --no-pager 2>/dev/null | sed 's/^/        /'
       return 1
     fi
+    if [[ "$CHECK" == "1" ]]; then
+      skip "no port wait in check mode"
+    elif wait_for_port 30; then
+      ok "the api listens on port $BACKEND_PORT"
+    else
+      err "port $BACKEND_PORT stays silent 30s after the restart - last log lines:"
+      journalctl -u "$SETUP_SVC" -n 25 --no-pager 2>/dev/null | sed 's/^/        /'
+      return 1
+    fi
+    check_port_owner || return 1
   else
     warn "no systemctl here; restart the process yourself (pm2 restart all / node dist/main.js)"
   fi
@@ -423,6 +592,8 @@ verify() {
     code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "http://127.0.0.1:${BACKEND_PORT}/" 2>/dev/null)"
     if [[ "$code" =~ ^[0-9]{3}$ && "$code" != "000" ]]; then
       ok "the api answers on 127.0.0.1:${BACKEND_PORT} (http $code; a 404 here is normal, it has no root route)"
+      local owner; owner="$(port_listeners 2>/dev/null | tr '\n' ' ')"
+      [[ -n "${owner// /}" ]] && info "port $BACKEND_PORT is served by pid ${owner% } (service pid $(service_pid))"
     elif [[ "$CHECK" == "1" ]]; then
       skip "no probe in check mode"
     else
