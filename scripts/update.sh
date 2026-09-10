@@ -29,11 +29,16 @@
 set -uo pipefail
 
 SRC_DIR="${SRC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+ORIGINAL_ARGS=("$@")
 INSTALL_DIR="${INSTALL_DIR:-/opt/vizitik}"
 BACKEND_PORT="${BACKEND_PORT:-3000}"
 SETUP_SVC="${SETUP_SVC:-vizitik-backend}"
 GIT_REMOTE="${GIT_REMOTE:-origin}"
 REVISION=""
+
+REVISION_FILE() { printf '%s' "$INSTALL_DIR/.vizitik-revision"; }
+
+DEPLOYED_REV="$(cat "$(REVISION_FILE)" 2>/dev/null | tr -d ' \n' || true)"
 
 log()  { echo -e "\n\033[1;36m> $*\033[0m"; }
 ok()   { echo -e "\033[1;32m  OK  $*\033[0m"; }
@@ -43,7 +48,7 @@ err()  { echo -e "\033[1;31m  FAIL $*\033[0m" >&2; }
 skip() { echo -e "  --  $*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-CHECK=0; YES=0; DO_BACKEND=1; DO_FRONTEND=1; DO_PULL=1; RESTART_ONLY=0; FORCE_DEPS=0; DO_RESTART=1
+CHECK=0; YES=0; DO_BACKEND=1; DO_FRONTEND=1; DO_PULL=1; RESTART_ONLY=0; FORCE_DEPS=0; DO_RESTART=1; FORCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -52,6 +57,7 @@ while [[ $# -gt 0 ]]; do
     --frontend-only)   DO_BACKEND=0 ;;
     --restart-only)    RESTART_ONLY=1; DO_PULL=0; DO_BACKEND=0; DO_FRONTEND=0 ;;
     --force-deps)      FORCE_DEPS=1 ;;
+    -f|--force)        FORCE=1; FORCE_DEPS=1 ;;
     --no-restart)      DO_RESTART=0 ;;
     --no-pull)         DO_PULL=0 ;;
     --revision)        shift; REVISION="${1:-}" ;;
@@ -68,6 +74,7 @@ usage: sudo bash scripts/update.sh [options]
   --frontend-only   skip the backend build
   --restart-only    no pull, no build: restart the service and reload nginx
   --force-deps      reinstall node packages even when no lockfile changed
+  -f, --force       rebuild both sides from HEAD, ignoring what the diff says
   --no-restart      build into place, leave the running service alone
   --no-pull         use the checkout as it is
   --revision <sha>  check out that commit/tag/branch instead of the newest
@@ -131,6 +138,11 @@ update_checkout() {
   else
     local branch upstream
     branch="$(git_at rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    if [[ "${branch:-}" == "HEAD" ]]; then
+      info "the checkout is detached (a --revision deploy?), there is no branch to pull; building what is here"
+      DO_PULL=0
+      return 0
+    fi
     if git_at rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
       upstream="$(git_at rev-parse --abbrev-ref '@{u}' 2>/dev/null)"
       run "pull" git_at pull --ff-only || {
@@ -153,6 +165,14 @@ update_checkout() {
     fi
   fi
   NOW="$(git_at rev-parse HEAD 2>/dev/null || echo '')"
+  # if the pull brought a new update.sh, hand over to it: the old copy must not run
+  # logic that was already judged wrong by the commit being deployed
+  if [[ "$PREV" != "$NOW" && -n "$PREV" && "${VIZITIK_UPDATE_SELF:-}" != "1" ]] \
+     && git_at diff --name-only "$PREV..$NOW" 2>/dev/null | grep -qx 'scripts/update.sh'; then
+    info "this script was updated by the pull - restarting with the new copy"
+    export VIZITIK_UPDATE_SELF=1
+    exec bash "$SRC_DIR/scripts/update.sh" --no-pull "${ORIGINAL_ARGS[@]}"
+  fi
   if [[ "$NOW" == "$PREV" ]]; then
     info "already at $(git_at rev-parse --short HEAD 2>/dev/null): $(git_at log -1 --format=%s 2>/dev/null)"
   else
@@ -164,6 +184,36 @@ update_checkout() {
 classify_changes() {
   CHANGED=""
   local files=""
+  # the real question is the distance between HEAD and what is deployed, so a
+  # "git pull" done by hand (or the very first update.sh run) still rebuilds
+  if [[ "$FORCE" == "1" ]]; then
+    CHANGED="backend frontend deps schema"
+    info "--force: rebuilding both sides from HEAD ($(git_at rev-parse --short HEAD 2>/dev/null))"
+    return 0
+  fi
+  if [[ -z "$DEPLOYED_REV" ]]; then
+    CHANGED="backend frontend"
+    warn "$(REVISION_FILE) is missing - this install was not produced by update.sh, rebuilding both sides"
+    return 0
+  fi
+  if [[ "$DEPLOYED_REV" == "$(git_at rev-parse HEAD 2>/dev/null)" ]]; then
+    if [[ "$DO_PULL" == "1" && "$PREV" == "$NOW" ]]; then
+      CHANGED="none"
+      info "the server already runs $(git_at rev-parse --short HEAD 2>/dev/null) and the pull brought nothing new"
+      return 0
+    fi
+  fi
+  if ! git_at cat-file -e "$DEPLOYED_REV^{commit}" 2>/dev/null; then
+    CHANGED="backend frontend"
+    warn "$(git_at rev-parse --short "$DEPLOYED_REV" 2>/dev/null || echo "$DEPLOYED_REV") is not in this history (rewritten branch?), rebuilding both sides"
+    return 0
+  fi
+  files="$(git_at diff --name-only "${DEPLOYED_REV}..HEAD" 2>/dev/null)"
+  if [[ -z "$files" ]]; then
+    CHANGED="backend frontend"
+    info "no file diff between the deployed revision and HEAD, rebuilding both sides to be safe"
+    return 0
+  fi
   if [[ "$DO_PULL" == "1" && -n "$PREV" && -n "$NOW" ]]; then
     if [[ "$PREV" == "$NOW" ]]; then
       if [[ "$FORCE_DEPS" == "1" || -n "$REVISION" ]]; then
@@ -390,7 +440,7 @@ verify() {
     skip "curl not found, skipping the probes"
   fi
   if [[ -n "${GIT_REMOTE:-}" ]] && have git; then
-    run "record revision" bash -c "git -C '$SRC_DIR' rev-parse HEAD > '$INSTALL_DIR/.vizitik-revision' 2>/dev/null"
+    run "record revision" bash -c "git -C '$SRC_DIR' rev-parse HEAD > '$(REVISION_FILE)' 2>/dev/null"
   fi
 }
 

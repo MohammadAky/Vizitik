@@ -4,6 +4,7 @@ import { useLocalData } from '../lib/data.js';
 import { enqueue } from '../lib/sync.js';
 import { toPersianNum } from '../lib/format.js';
 import { usePhpPage } from '../lib/usePhpPage.js';
+import { DEFAULT_CATEGORIES } from '../lib/catalog.js';
 import { showToast } from '../components/AppToast.jsx';
 
 const faMoney = (n) => toPersianNum(Number(n || 0).toLocaleString('en-US'));
@@ -88,7 +89,12 @@ export default function VanLoading({ go }) {
   );
 
   const brands = useMemo(() => Array.from(new Set(items.map((i) => i.brand))).sort(), [items]);
-  const categories = useMemo(() => Array.from(new Set(items.map((i) => i.category))).sort(), [items]);
+  // van-loading.php: the chip list is the product data, and falls back to
+  // $defaultCategories when nothing is loaded yet - otherwise the chips vanish
+  const categories = useMemo(() => {
+    const fromData = Array.from(new Set(items.map((i) => i.category))).sort();
+    return fromData.length ? fromData : DEFAULT_CATEGORIES;
+  }, [items]);
 
   const myIds = useMemo(() => downloadedIds(), []);
 

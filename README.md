@@ -172,6 +172,7 @@ php -S localhost:8000
 | `scripts/setup-server.sh` | همه‌چیزِ سرور: پیش‌نیازها، MariaDB و ایمپورت `documents/hesabchin.sql`، کپی به `/opt/vizitik`، بیلد بک‌اند و PWA، سرویس systemd، vhost نگینکس، گواهی Let's Encrypt، UFW، کرون بکاپ؛ swap لازم را می‌سازد و خطای certbot را طبقه‌بندی می‌کند | فقط از داخل `deploy.sh` (یا مستقیم اگر می‌دانی چه می‌کنی) |
 | `scripts/update.sh` | **اپدیت بعد از هر تغییر کد**: `git pull`، تشخیص اینکه diff به کدام سمت خوردہ، بیلد همان سمت، تعویض atomic نسخهٔ PWA، ری‌استارت سرویس، تست سلامت، و در شکست بازگشت به بیلد قبلی | هر بار که چیزی را push می‌کنی |
 | `scripts/dev-preview.mjs` | بدون بک‌اند و دیتابیس، `frontend-app/dist` را با یک API ساختگی روی `http://localhost:8090` بالا می‌آورد (هر شماره/رمزی وارد می‌شود) | روی لپ‌تاپ، برای دیدن ظاهر و آفلاین‌بودن PWA |
+| `scripts/pwa-php-audit.py` | نقاط شکستِ عملکردی را می‌گیرد: متن‌های فارسیِ هر صفحهٔ PHP که در اسکرین React وجود ندارند، مقدارهای option/chip که فقط در PHP‌اند (فیلتری که هیچ‌وقت مچ نمی‌شود)، و مقایسهٔ endpointها + کلیدهای payload دو نسخه | هر وقت چیزی در `frontend-app/src` یا `frontend/` عوض کردی (خروجی نام صفر است؛ به‌عنوان گیت قابل استفاده) |
 | `scripts/pwa-parity-check.py` | نسخهٔ PWA را با نسخهٔ PHP مقایسه می‌کند: ۱۰ فایل CSS باید بایت‌به‌بایت یکسان باشند، کلاس‌های هر صفحه و آیکون‌های Material Symbols تطبیق داده می‌شوند | بعد از هر تغییر در `frontend/` یا `frontend-app/src` |
 
 ```bash

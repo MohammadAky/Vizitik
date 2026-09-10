@@ -14,16 +14,28 @@ export default function BaleBot({ go }) {
   const [stats, setStats] = useState(null);
   const [status, setStatus] = useState(null);
   const [text, setText] = useState('');
-  const [target, setTarget] = useState('ALL');
+  // /api/bale/broadcast takes targetType 'all' | 'debtors' | 'single' (see BaleController);
+  // the option order and labels are the ones of bale-bot.php, debtors first
+  const [target, setTarget] = useState('debtors');
+  const [singleId, setSingleId] = useState('');
+  const [customers, setCustomers] = useState([]);
   const [history, setHistory] = useState([]);
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const [s, st] = await Promise.all([apiSilent('/bale/stats'), apiSilent('/bale/status')]);
+    const [s, st, cs] = await Promise.all([
+      apiSilent('/bale/stats'), apiSilent('/bale/status'), apiSilent('/customers')
+    ]);
     if (s) setStats(s);
     if (st) setStatus(st);
+    if (Array.isArray(cs)) {
+      setCustomers(cs);
+      if (cs[0]) setSingleId((prev) => prev || cs[0].id);
+    }
   }
   useEffect(() => { load(); }, []);
+
+  const debtorList = customers.filter((c) => Number(c.currentDebt) > 0);
 
   async function copyLink() {
     try {
@@ -38,8 +50,18 @@ export default function BaleBot({ go }) {
     if (!text.trim()) { showToast('متن پیام خالی است.', 'error'); return; }
     setBusy(true);
     try {
-      const res = await api('/bale/broadcast', { method: 'POST', body: { message: text.trim(), audience: target } });
-      setHistory((h) => [{ id: Date.now(), text: text.trim(), sent: (res && res.sent) || 0 }, ...h]);
+      const sentTo = target === 'single' ? (singleId ? 1 : 0) : target === 'debtors' ? debtorList.length : customers.length;
+      const res = await api('/bale/broadcast', {
+        method: 'POST',
+        body: {
+          templateText: text.trim(),
+          targetType: target,
+          singleCustomerId: target === 'single' ? singleId : undefined
+        }
+      });
+      const sentCount = (res && res.sentCount) || sentTo;
+      setHistory((h) => [{ id: Date.now(), text: text.trim(), sent: sentCount }, ...h]);
+      showToast(`پیام اطلاع‌رسانی با موفقیت به ${toPersianNum(sentCount)} مشتری از طریق بله ارسال شد.`, 'success');
       setText('');
       showToast((res && res.message) || 'پیام از طریق ربات بله ارسال شد.', 'success');
     } catch (err) {
@@ -131,12 +153,25 @@ export default function BaleBot({ go }) {
           </div>
 
           <div className="bale-templates-row">
-            <select className="bale-select-input" value={target} onChange={(e) => setTarget(e.target.value)}>
-              <option value="ALL">همه فروشگاه‌های متصل</option>
-              <option value="DEBTORS">فقط بدهکاران</option>
-              <option value="VISITOR">فقط ویزیتور</option>
+            <select className="bale-select-input" id="broadcastAudience" value={target} onChange={(e) => setTarget(e.target.value)}>
+              <option value="debtors">مشتریان دارای بدهی ({toPersianNum(debtorList.length)} فروشگاه)</option>
+              <option value="all">همه مشتریان تحت پوشش ({toPersianNum(customers.length)} فروشگاه)</option>
+              <option value="single">انتخاب یک مشتری مشخص...</option>
             </select>
           </div>
+
+          {target === 'single' ? (
+            <div className="input-group" id="singleCustomerWrap">
+              <label>انتخاب فروشگاه:</label>
+              <select id="singleCustomerSelect" className="bale-select-input" value={singleId} onChange={(e) => setSingleId(e.target.value)}>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}{Number(c.currentDebt) > 0 ? ` (بدهی: ${toPersianNum(Number(c.currentDebt).toLocaleString('en-US'))} ت)` : ' (تسویه)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
           <textarea
             className="bale-textarea"
