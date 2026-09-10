@@ -35,6 +35,7 @@ export default function BaleBot({ go }) {
   const [message, setMessage] = useState(TEMPLATES.debt);
   const [history, setHistory] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     apiSilent('/customers').then((cs) => {
@@ -128,6 +129,7 @@ export default function BaleBot({ go }) {
 
     if (!window.confirm(`آیا از ارسال این پیام اطلاع‌رسانی به ${toPersianNum(targets.length)} مشتری اطمینان دارید؟`)) return;
 
+    setPendingCount(targets.length);
     setBusy(true);
     try {
       const data = await api('/bale/broadcast', {
@@ -214,10 +216,6 @@ export default function BaleBot({ go }) {
                 <span>کپی لینک</span>
               </button>
             </div>
-            <a href={BALE_BOT_LINK} target="_blank" rel="noreferrer" className="bale-action-btn">
-              <span className="material-symbols-outlined">open_in_new</span>
-              <span>استارت ربات بله ({BALE_BOT_MENTION})</span>
-            </a>
           </div>
         </section>
 
@@ -279,7 +277,7 @@ export default function BaleBot({ go }) {
           {/* دکمه ارسال */}
           <button type="button" className="login-btn" id="sendBroadcastBtn" style={{ marginTop: '10px', height: '44px', fontSize: '13.5px' }} disabled={busy} onClick={executeBroadcast}>
             {busy ? (
-              <span>در حال ارسال پیام به مشتریان در بله...</span>
+              <span>در حال ارسال پیام به {toPersianNum(pendingCount)} مشتری در بله...</span>
             ) : (
               <>
                 <span className="material-symbols-outlined">send</span>
