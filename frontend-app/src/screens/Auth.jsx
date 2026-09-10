@@ -283,11 +283,12 @@ export default function Auth({ onAuthed }) {
               id="authErrorMsg"
               className="popup error-message"
               style={{
-                display: error ? 'block' : 'none',
+                display: error ? 'flex' : 'none',
                 position: 'relative',
                 marginBottom: '12px',
                 width: '100%',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                flexShrink: 0
               }}
             >
               {error}

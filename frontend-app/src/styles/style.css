@@ -235,6 +235,7 @@ body {
   transition:
     transform 0.7s cubic-bezier(0.77, 0, 0.175, 1),
     opacity 0.5s ease;
+  pointer-events: auto;
 }
 
 .intro.hide {
@@ -313,10 +314,18 @@ body {
   padding: 40px 18px 20px 18px;
   box-sizing: border-box;
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   opacity: 0;
   transform: translateY(16px);
   transition: 0.5s ease;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--app-background);
+  z-index: 50;
 }
 
 .login-page.show {
@@ -331,6 +340,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: fit-content;
+  padding-bottom: 20px;
 }
 
 .login-header {

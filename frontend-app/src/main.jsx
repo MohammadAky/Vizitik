@@ -7,6 +7,8 @@ import { APP_NAME_FA } from './lib/brand.js';
 import './styles/style.css';
 // فقط لایهٔ اتصال SPA (بدون هیچ قانون ظاهری جدید)
 import './styles/pwa.css';
+// استایل‌های صفحه احراز هویت
+import './styles/inline-login.css';
 
 // نسخهٔ PHP در هر صفحه title را «ویزیتیک — …» می‌گذارد؛ پیش‌فرضِ شِل همان نام برنامه است.
 if (!document.title) document.title = APP_NAME_FA;

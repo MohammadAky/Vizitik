@@ -3,6 +3,9 @@ display: none;
 flex-direction: column;
 gap: 14px;
 animation: fadeIn 0.25s ease;
+width: 100%;
+min-height: 0;
+overflow: visible;
 }
 .auth-view.active {
 display: flex;
