@@ -33,6 +33,18 @@ sudo DOMAIN=app.example.com CERT_EMAIL=admin@example.com DB_PASS='رمز_قوی'
 # در کد یا در فایل‌های نمونه وجود ندارد و همه‌چیز فقط در backend/.env می‌نشیند.
 ```
 
+### گواهی SSL و فیلتر پورت ۸۰
+`setup_https` اول با HTTP-01 (پلاگین nginx) تلاش می‌کند و اگر جواب نگیرد، **دقیق همان خطای certbot را در `/var/log/vizitik-certbot.log`** نشان می‌دهد و می‌گوید چرا:
+
+| پیام certbot | معنی | کاری که بکنی |
+|---|---|---|
+| `Timeout during connect` / `Could not connect` | پورت ۸۰ از بیرون باز نیست (بسیاری از هاست‌های ایرانی ترافیک خارج را می‌بندند) یا ابر نارنجی کلودفلر بدون گواهیِ origin پاسخ ۵۲۱ می‌دهد | `CF_API_TOKEN=<token> HTTPS_MODE=dns sudo -E bash scripts/setup-server.sh --yes` (چالش DNS هیچ اتصال ورودی لازم ندارد) |
+| `NXDOMAIN` / `DNS problem` | دامنه هنوز به IP سرور نمی‌رسد | در کلودفلر رکورد `A` را بررسی کن: `dig +short vizitik.ir` |
+| `Problem binding to port 80` | پروسهٔ دیگری ۸۰ را گرفته | `ss -ltnp \| grep ':80'` |
+| `too many certificates` | سقف نرخ Let's Encrypt | یک ساعت صبر یا `--staging` |
+
+توکن کلودفلر: `dash.cloudflare.com → My Account → API Tokens → Create Token → قالب Edit zone DNS → Zone: vizitik.ir`. اسکریپت آن را در `/etc/letsencrypt/cloudflare.credentials` با مجوز `600` می‌گذارد، پس `certbot renew` بعداً بدون باز بودن ۸۰ هم کار می‌کند.
+
 - اگر مقداری را از قبل در محیط export کرده باشی، اسکریپت همان را می‌پرسد ولی در brackets نشان می‌دهد؛ با Enter همان مقدار می‌ماند.
 - رمزها (رمز دیتابیس، توکن ربات، رمز تست) مخفی خوانده و دوباره‌تایید می‌شوند؛ در خلاصه فقط «set» چاپ می‌شود.
 - بدون دامنه: `DOMAIN` را خالی بگذار (یا اصلاً ست نکن) تا از HTTPS رد شود (نصب PWA بعداً — بخش ۱۱).
