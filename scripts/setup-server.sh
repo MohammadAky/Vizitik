@@ -547,37 +547,106 @@ setup_https() {
     warn "HTTPS skipped. (installing the PWA needs valid HTTPS - see docs/DEPLOY-UBUNTU.md section 11)"
     return
   fi
-  log "requesting SSL certificate for $DOMAIN"
+  log "requesting SSL certificate for $DOMAIN (mode: ${HTTPS_MODE:-http})"
+  local logf="/var/log/vizitik-certbot.log"
   local -a cnames=( -d "$DOMAIN" )
   if [[ "$WITH_WWW" == "1" ]]; then cnames+=( -d "www.$DOMAIN" ); fi
 
-  if [[ "$HTTPS_MODE" == "dns" ]]; then
+  report_certbot_failure() {
+    local rc="$1"
+    warn "certbot failed (exit $rc). last lines of $logf:"
+    tail -n 16 "$logf" 2>/dev/null | sed 's/^/      /'
+    if grep -qiE "timeout|could not connect|connection refused|ConnectError|ReadTimeout|FetchError" "$logf" 2>/dev/null; then
+      echo "      -> port 80 was not reachable from the internet. Some Iranian hosters only serve"
+      echo "         traffic from inside Iran, and a Cloudflare origin without a certificate answers"
+      echo "         521. Either open port 80 for all visitors in the hosting firewall, or issue the"
+      echo "         certificate through the Cloudflare DNS API (no inbound connection needed):"
+      echo "           CF_API_TOKEN=<token> HTTPS_MODE=dns sudo -E bash scripts/setup-server.sh --yes"
+    elif grep -qiE "NXDOMAIN|DNS problem|no such domain" "$logf" 2>/dev/null; then
+      echo "      -> $DOMAIN does not resolve to this server yet. Check: dig +short $DOMAIN"
+    elif grep -qiE "Problem binding to port 80|already in use|could not bind" "$logf" 2>/dev/null; then
+      echo "      -> something else holds port 80: ss -ltnp | grep ':80'"
+    elif grep -qiE "rate limit|too many certificates|rateLimited" "$logf" 2>/dev/null; then
+      echo "      -> Let's Encrypt rate limit. Wait an hour, or dry-run with --staging first."
+    elif grep -qiE "invalid contact|malformed|unapproved_account" "$logf" 2>/dev/null; then
+      echo "      -> the e-mail was rejected; fix CERT_EMAIL=$CERT_EMAIL and run again"
+    fi
+    echo "      full log: cat $logf"
+    return 1
+  }
+
+  ensure_dns_plugin() {
     if ! certbot plugins 2>/dev/null | grep -qi cloudflare; then
       log "installing the certbot Cloudflare DNS plugin"
       apt-get install -y python3-certbot-dns-cloudflare >/dev/null 2>&1 \
-        || pip3 install -q certbot-dns-cloudflare \
+        || pip3 install -q certbot-dns-cloudflare >/dev/null 2>&1 \
         || fail "could not install certbot-dns-cloudflare; run: pip3 install certbot-dns-cloudflare"
     fi
+  }
+
+  write_dns_credentials() {
     local creds="/etc/letsencrypt/cloudflare.credentials"
+    [[ -n "$CF_API_TOKEN" ]] || fail "HTTPS_MODE=dns needs CF_API_TOKEN (create one at dash.cloudflare.com -> My Account -> API Tokens -> template 'Edit zone DNS', zone $DOMAIN)"
     mkdir -p "$(dirname "$creds")"
     printf "dns_cloudflare_api_token = %s\n" "$CF_API_TOKEN" > "$creds"
     chmod 600 "$creds"
     ok "Cloudflare API token written to $creds (mode 600)"
-    if ! certbot certonly --nginx -a dns-cloudflare --dns-cloudflare-credentials "$creds" \
-        --dns-cloudflare-propagation-seconds 30 "${cnames[@]}" --agree-tos -m "$CERT_EMAIL" -n; then
-      fail "the DNS challenge failed - the token must have Edit zone DNS on $DOMAIN"
-    fi
-    certbot --nginx --redirect -n "${cnames[@]}" >/dev/null 2>&1 || true
-    ok "HTTPS enabled with a managed certificate (renews without opening port 80)"
+    echo "$creds"
+  }
+
+  if [[ "$HTTPS_MODE" == "dns" ]]; then
+    ensure_dns_plugin
+    local creds
+    creds="$(write_dns_credentials | tail -n 1)"
+    local rc=0
+    certbot certonly -a dns-cloudflare --dns-cloudflare-credentials "$creds" \
+      --dns-cloudflare-propagation-seconds 30 "${cnames[@]}" --agree-tos -m "$CERT_EMAIL" -n \
+      >"$logf" 2>&1 || rc=$?
+    if (( rc != 0 )); then report_certbot_failure "$rc"; fi
+    certbot --nginx --redirect -n "${cnames[@]}" >>"$logf" 2>&1 \
+      || warn "the certificate exists but nginx was not switched to it; run: certbot --nginx --redirect -n ${cnames[*]}"
+    ok "HTTPS enabled with a managed certificate (renew: certbot renew -q)"
     return
   fi
 
-  if ! certbot --nginx "${cnames[@]}" --redirect --agree-tos -m "$CERT_EMAIL" --non-interactive; then
-    echo "  if the domain resolves fine but this failed, your hoster probably blocks foreign"
-    echo "  traffic: rerun with HTTPS_MODE=dns (it uses the Cloudflare API instead of port 80)"
-    fail "certbot failed - check the resolution first: dig +short ${DOMAIN}"
+  # HTTP-01: port 80 has to be reachable from the internet, so probe it first
+  local probe="acme-probe-$$.txt"
+  if [[ -d "$INSTALL_DIR/frontend-app/dist" ]]; then
+    echo ok > "$INSTALL_DIR/frontend-app/dist/$probe"
+    local code
+    code="$(curl -s -o /dev/null -m 25 -w '%{http_code}' "http://$DOMAIN/$probe" 2>/dev/null)"
+    rm -f "$INSTALL_DIR/frontend-app/dist/$probe"
+    if [[ "$code" != "200" ]]; then
+      warn "http://$DOMAIN/$probe returned '${code:-nothing}' from this box - Let's Encrypt needs the same path"
+      if can_ask; then
+        local reply=""
+        read -r -p "  retry with the Cloudflare DNS challenge instead? [Y/n]: " reply || reply=""
+        if [[ ! "$reply" =~ ^[Nn] ]]; then
+          if [[ -z "$CF_API_TOKEN" ]]; then ask_secret CF_API_TOKEN "Cloudflare API token (Edit zone DNS)"; fi
+          HTTPS_MODE="dns"
+          setup_https
+          return
+        fi
+      fi
+    fi
   fi
-  ok "HTTPS enabled"
+
+  local rc=0
+  certbot --nginx "${cnames[@]}" --redirect --agree-tos -m "$CERT_EMAIL" --non-interactive >"$logf" 2>&1 || rc=$?
+  if (( rc != 0 )); then
+    if can_ask && ! grep -qiE "rate limit|too many certificates" "$logf" 2>/dev/null; then
+      local reply=""
+      read -r -p "  try again with the Cloudflare DNS challenge (works without inbound port 80)? [Y/n]: " reply || reply=""
+      if [[ ! "$reply" =~ ^[Nn] ]]; then
+        if [[ -z "$CF_API_TOKEN" ]]; then ask_secret CF_API_TOKEN "Cloudflare API token (Edit zone DNS)"; fi
+        HTTPS_MODE="dns"
+        setup_https
+        return
+      fi
+    fi
+    report_certbot_failure "$rc"
+  fi
+  ok "HTTPS enabled (renew check: certbot renew --dry-run)"
 }
 
 # ------------------------------------------------------------------
