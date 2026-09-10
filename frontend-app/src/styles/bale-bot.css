@@ -116,6 +116,17 @@
   gap: 4px;
 }
 
+/* وضعیت زندهٔ ربات: کارت به‌صورت پیش‌فرض «آنلاین» رندر می‌شود و این کلاس‌ها وقتی
+   /api/bale/status چیز دیگری بگوید جای رنگ‌ها را عوض می‌کنند
+   (bale-bot.php و BaleBot.jsx هر دو همین سه کلاس را می‌زنند) */
+.bale-online-badge.off { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+.bale-online-badge.warn { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+.bale-online-badge.idle { background: #f8fafc; color: #475569; border-color: #e2e8f0; }
+
+.bale-status-sub.off { color: #b91c1c; }
+.bale-status-sub.warn { color: #b45309; }
+.bale-status-sub.idle { color: #475569; }
+
 /* آمار تفکیکی اتصال مشتریان */
 .bale-stats-grid {
   display: grid;

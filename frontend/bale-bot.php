@@ -66,15 +66,15 @@ $debtorCustomers = array_values(array_filter($customers, function ($c) {
                             <span class="material-symbols-outlined icon-fill" style="font-size: 26px;">smart_toy</span>
                         </div>
                         <div class="bale-status-text">
-                            <strong>ارسال خودکار فاکتور در بله فعال است</strong>
-                            <div class="bale-status-sub">
+                            <strong id="baleStatusTitle">در حال بررسی وضعیت ربات...</strong>
+                            <div class="bale-status-sub" id="baleStatusNote">
                                 شناسه ربات: @Vizitik_bot
                             </div>
                         </div>
                     </div>
-                    <span class="bale-online-badge">
-                        <span class="material-symbols-outlined" style="font-size: 14px;">wifi</span>
-                        آنلاین
+                    <span class="bale-online-badge idle" id="baleOnlineBadge">
+                        <span class="material-symbols-outlined" id="baleOnlineIcon" style="font-size: 14px;">wifi</span>
+                        <span id="baleOnlineText">در حال بررسی...</span>
                     </span>
                 </div>
 
@@ -106,7 +106,7 @@ $debtorCustomers = array_values(array_filter($customers, function ($c) {
                         هنگام ثبت هر فاکتور، نسخه کامل و رسمی فاکتور به صورت خودکار به بله فروشگاه و ویزیتور ارسال می‌شود. مشتریان با باز کردن ربات و لمس دکمه <strong>«ارسال شماره موبایل»</strong> متصل می‌شوند.
                     </p>
                     <div class="bale-bot-link-row">
-                        <span class="bale-bot-link-text">https://ble.ir/Vizitik_bot</span>
+                        <span class="bale-bot-link-text" id="baleBotLinkText">https://ble.ir/Vizitik_bot</span>
                         <button type="button" class="bale-copy-btn" onclick="copyBotLink()">
                             <span class="material-symbols-outlined" style="font-size: 15px;">content_copy</span>
                             <span>کپی لینک</span>
@@ -229,8 +229,60 @@ $debtorCustomers = array_values(array_filter($customers, function ($c) {
             return toPersianNum(formatted) + ' تومان';
         }
 
+        // وضعیت واقعی ربات را از خودِ بک‌اند می‌پرسیم: کارت‌های ایستا همیشه
+        // «آنلاین» بودند و هیچ‌وقت آفلاین را نشان نمی‌دادند
+        const BALE_API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://localhost:3000/api' : '/api';
+        const BOT_STATES = {
+            'ONLINE': { cls: '', icon: 'wifi', badge: 'آنلاین', title: 'ارسال خودکار فاکتور در بله فعال است' },
+            'DEGRADED': { cls: 'warn', icon: 'sync', badge: 'محدود', title: 'ربات در دسترس است ولی حلقهٔ دریافت پیام سالم نیست' },
+            'OFFLINE': { cls: 'off', icon: 'priority_high', badge: 'آفلاین', title: 'ارتباط با سرور بله برقرار نیست' },
+            'NOT_CONFIGURED': { cls: 'idle', icon: 'settings', badge: 'پیکربندی نشده', title: 'BALE_BOT_TOKEN روی سرور تنظیم نشده است' }
+        };
+
+        async function refreshBaleStatus() {
+            try {
+                const res = await fetch(BALE_API + '/bale/status', { headers: { 'Accept': 'application/json' } });
+                const st = await res.json();
+                const view = BOT_STATES[st.status] || BOT_STATES['OFFLINE'];
+                const badge = document.getElementById('baleOnlineBadge');
+                badge.className = 'bale-online-badge' + (view.cls ? ' ' + view.cls : '');
+                document.getElementById('baleOnlineText').textContent = view.badge;
+                document.getElementById('baleOnlineIcon').textContent = view.icon;
+                document.getElementById('baleStatusTitle').textContent = view.title;
+
+                const note = document.getElementById('baleStatusNote');
+                const bits = [];
+                if (st.botUsername) bits.push('شناسه ربات: @' + st.botUsername);
+                if (st.status === 'ONLINE' && st.secondsSinceLastOk !== null && st.secondsSinceLastOk !== undefined) {
+                    bits.push('آخرین دریافت پیام: ' + toPersianNum(st.secondsSinceLastOk) + ' ثانیه پیش');
+                }
+                if (st.consecutiveErrors > 0) bits.push('خطاهای پشت‌سرهم: ' + toPersianNum(st.consecutiveErrors));
+                if (st.lastError) bits.push(String(st.lastError));
+                note.textContent = bits.join(' • ') || ('وضعیت: ' + st.status);
+                note.className = 'bale-status-sub' + (view.cls ? ' ' + view.cls : '');
+
+                if (st.botLink) {
+                    document.getElementById('baleBotLinkText').textContent = st.botLink;
+                    BOT_LINK = st.botLink;
+                }
+            } catch (e) {
+                const note = document.getElementById('baleStatusNote');
+                note.className = 'bale-status-sub off';
+                note.textContent = 'پاسخ‌نگاه (API) در دسترس نیست؛ وضعیت ربات قابل بررسی نیست';
+                const badge = document.getElementById('baleOnlineBadge');
+                badge.className = 'bale-online-badge off';
+                document.getElementById('baleOnlineText').textContent = 'آفلاین';
+                document.getElementById('baleOnlineIcon').textContent = 'priority_high';
+                document.getElementById('baleStatusTitle').textContent = 'ارتباط با API برقرار نیست';
+            }
+        }
+        refreshBaleStatus();
+        setInterval(refreshBaleStatus, 30000);
+
+        let BOT_LINK = 'https://ble.ir/Vizitik_bot';
+
         function copyBotLink() {
-            const link = 'https://ble.ir/Vizitik_bot';
+            const link = BOT_LINK;
             if (navigator.clipboard) {
                 navigator.clipboard.writeText(link).then(() => {
                     alert('لینک ربات بله با موفقیت کپی شد:\n' + link);

@@ -67,10 +67,11 @@ export class BaleController {
    * وضعیت اتصال عمومی ربات بله
    */
   @Get('status')
-  getStatus() {
+  async getStatus() {
+    // was a literal { status: 'ONLINE' }: the panel could never show the truth
+    const s = await this.baleService.getBotStatus();
     return {
-      status: 'ONLINE',
-      botUsername: BOT.username,
+      ...s,
       botLink: BOT.link,
     };
   }
