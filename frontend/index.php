@@ -185,6 +185,11 @@ header("Pragma: no-cache");
                         <span>ورود به حساب</span>
                     </button>
 
+                    <div class="bale-banner">
+                        <span class="material-symbols-outlined" style="font-size: 18px;">smart_toy</span>
+                        <span>ربات بله ویزیتیک (@Vizitik_bot): <a href="https://ble.ir/Vizitik_bot" target="_blank">استارت ربات</a></span>
+                    </div>
+
                     <div class="switch-auth-box">
                         حساب کاربری ندارید؟ <a href="#" onclick="switchView('registerForm'); return false;">ثبت‌نام ویزیتور جدید</a>
                     </div>
@@ -236,7 +241,7 @@ header("Pragma: no-cache");
 
                     <div class="bale-banner">
                         <span class="material-symbols-outlined" style="font-size: 18px;">smart_toy</span>
-                        <span>کد به ربات بله ارسال می‌شود: <a href="https://ble.ir/VizitikBot" target="_blank">استارت ربات</a></span>
+                        <span>کد به ربات بله (@Vizitik_bot) ارسال می‌شود: <a href="https://ble.ir/Vizitik_bot" target="_blank">استارت ربات</a></span>
                     </div>
 
                     <div class="switch-auth-box">
@@ -280,6 +285,11 @@ header("Pragma: no-cache");
                         <span class="material-symbols-outlined" style="font-size: 18px; vertical-align: middle;">send</span>
                         <span>ارسال کد بازیابی به بله</span>
                     </button>
+
+                    <div class="bale-banner">
+                        <span class="material-symbols-outlined" style="font-size: 18px;">smart_toy</span>
+                        <span>کد به ربات بله (@Vizitik_bot) ارسال می‌شود: <a href="https://ble.ir/Vizitik_bot" target="_blank">استارت ربات</a></span>
+                    </div>
 
                     <div class="switch-auth-box">
                         رمز را به یاد آوردید؟ <a href="#" onclick="switchView('login'); return false;">ورود به حساب</a>

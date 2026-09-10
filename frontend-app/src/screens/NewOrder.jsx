@@ -3,7 +3,7 @@ import { apiSilent } from "../lib/api.js";
 import { useLocalData } from "../lib/data.js";
 import { enqueue } from "../lib/sync.js";
 import { computeOrderTotals, generateLocalUuid } from "../lib/pricing.js";
-import { formatPrice, toPersianNum } from "../lib/format.js";
+import { formatPrice, toPersianNum, onlyDigits, parseFaNumber } from "../lib/format.js";
 import { usePhpPage } from "../lib/usePhpPage.js";
 import { showToast } from "../components/AppToast.jsx";
 
@@ -59,7 +59,10 @@ export default function NewOrder({ go }) {
 
   const chosen = lines.filter((l) => l.cartonCount > 0 || l.unitCount > 0);
   const totals = computeOrderTotals(chosen, discounts);
-  const paid = (Number(cash) || 0) + (Number(pos) || 0) + (Number(check) || 0);
+  const cashNum = parseFaNumber(cash, 0) || 0;
+  const posNum = parseFaNumber(pos, 0) || 0;
+  const checkNum = parseFaNumber(check, 0) || 0;
+  const paid = cashNum + posNum + checkNum;
   const credit = Math.max(0, totals.finalAmount - paid);
 
   function step(id, key, delta, max) {
@@ -80,15 +83,15 @@ export default function NewOrder({ go }) {
         cartonCount: l.cartonCount,
         unitCount: l.unitCount,
       })),
-      discountSteps: discounts.map((v) => ({ type: "percent", value: Number(v) })),
+      discountSteps: discounts.map((v) => ({ type: "percent", value: parseFaNumber(v, 0) })),
       payments: [
-        ...(Number(cash) > 0 ? [{ method: "CASH", amount: Number(cash) }] : []),
-        ...(Number(pos) > 0 ? [{ method: "CARD", amount: Number(pos) }] : []),
-        ...(Number(check) > 0 ?
+        ...(cashNum > 0 ? [{ method: "CASH", amount: cashNum }] : []),
+        ...(posNum > 0 ? [{ method: "CARD", amount: posNum }] : []),
+        ...(checkNum > 0 ?
           [
             {
               method: "CHECK",
-              amount: Number(check),
+              amount: checkNum,
               checkDetails: {
                 checkNumber: "---",
                 bankName: "بانک",
@@ -332,21 +335,22 @@ export default function NewOrder({ go }) {
             <div className="confirm-actions-row">
               <input
                 className="step-input"
-                type="number"
-                min="1"
-                max="100"
+                type="text"
+                inputMode="numeric"
                 placeholder="٪"
                 value={newPct}
-                onChange={(e) => setNewPct(e.target.value)}
+                onChange={(e) => setNewPct(onlyDigits(e.target.value))}
               />
               <button
                 type="button"
                 className="step-btn"
                 onClick={() => {
-                  const v = Number(newPct);
-                  if (v) {
+                  const v = parseFaNumber(newPct, 0);
+                  if (v && v >= 1 && v <= 100) {
                     setDiscounts([...discounts, v]);
                     setNewPct("");
+                  } else {
+                    showToast("درصد تخفیف معتبر نیست (بین ۱ تا ۱۰۰).", "error");
                   }
                 }}>
                 + پله تخفیف
@@ -441,10 +445,10 @@ export default function NewOrder({ go }) {
                 <span>{label} (تومان)</span>
                 <input
                   className="step-input"
-                  type="number"
-                  min="0"
+                  type="text"
+                  inputMode="numeric"
                   value={val}
-                  onChange={(e) => set(e.target.value.replace(/[^0-9]/g, ""))}
+                  onChange={(e) => set(onlyDigits(e.target.value))}
                 />
               </div>
             ))}

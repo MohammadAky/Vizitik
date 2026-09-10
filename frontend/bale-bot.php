@@ -68,7 +68,7 @@ $debtorCustomers = array_values(array_filter($customers, function ($c) {
                         <div class="bale-status-text">
                             <strong>ارسال خودکار فاکتور در بله فعال است</strong>
                             <div class="bale-status-sub">
-                                شناسه ربات: VizitikBot@
+                                شناسه ربات: @Vizitik_bot
                             </div>
                         </div>
                     </div>
@@ -106,7 +106,7 @@ $debtorCustomers = array_values(array_filter($customers, function ($c) {
                         هنگام ثبت هر فاکتور، نسخه کامل و رسمی فاکتور به صورت خودکار به بله فروشگاه و ویزیتور ارسال می‌شود. مشتریان با باز کردن ربات و لمس دکمه <strong>«ارسال شماره موبایل»</strong> متصل می‌شوند.
                     </p>
                     <div class="bale-bot-link-row">
-                        <span class="bale-bot-link-text">https://ble.ir/VizitikBot</span>
+                        <span class="bale-bot-link-text">https://ble.ir/Vizitik_bot</span>
                         <button type="button" class="bale-copy-btn" onclick="copyBotLink()">
                             <span class="material-symbols-outlined" style="font-size: 15px;">content_copy</span>
                             <span>کپی لینک</span>
@@ -230,7 +230,7 @@ $debtorCustomers = array_values(array_filter($customers, function ($c) {
         }
 
         function copyBotLink() {
-            const link = 'https://ble.ir/VizitikBot';
+            const link = 'https://ble.ir/Vizitik_bot';
             if (navigator.clipboard) {
                 navigator.clipboard.writeText(link).then(() => {
                     alert('لینک ربات بله با موفقیت کپی شد:\n' + link);

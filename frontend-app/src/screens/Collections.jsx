@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, apiSilent } from '../lib/api.js';
 import { kv } from '../lib/db.js';
 import { useLocalData } from '../lib/data.js';
-import { toPersianNum } from '../lib/format.js';
+import { toPersianNum, onlyDigits, parseFaNumber } from '../lib/format.js';
 import { usePhpPage } from '../lib/usePhpPage.js';
 import BottomNav from '../components/BottomNav.jsx';
 
@@ -72,13 +72,14 @@ export default function Collections({ go }) {
   function openSettleModal(c) {
     setSettle(c);
     setMethod('CASH');
-    setAmount('');
+    // collections.php: مبلغ پیش‌فرض همان مانده بدهی است
+    setAmount(c && c.debt > 0 ? String(Math.round(c.debt)) : '');
     setNotes('');
   }
 
   async function submitSettlement() {
     if (!settle) return;
-    const value = parseFloat((amount || '').replace(/[^0-9]/g, '')) || 0;
+    const value = parseFaNumber(amount, 0) || 0;
     if (value <= 0) {
       window.alert('لطفاً مبلغ دریافتی معتبر وارد نمایید.');
       return;
@@ -273,9 +274,10 @@ export default function Collections({ go }) {
             <input
               type="text"
               id="settleAmountInput"
+              inputMode="numeric"
               placeholder="مبلغ وصولی..."
               value={amount}
-              onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ''))}
+              onChange={(e) => setAmount(onlyDigits(e.target.value))}
               style={{
                 height: '44px',
                 borderRadius: '12px',
