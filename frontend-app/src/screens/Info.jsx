@@ -1,4 +1,5 @@
 import { usePhpPage } from '../lib/usePhpPage.js';
+import { BALE_BOT_LINK, BALE_BOT_MENTION } from '../lib/brand.js';
 import BottomNav from '../components/BottomNav.jsx';
 
 /**
@@ -9,7 +10,7 @@ const FAQ = [
   {
     icon: 'help',
     q: 'چگونه ربات پیام‌رسان بله را متصل کنم؟',
-    a: 'به بخش تنظیمات بروید و روی دکمه «استارت ربات بله» کلیک کنید. با ارسال دستور /start در ربات @VizitikBot، شناسه شما ثبت شده و کدهای ورود و پیام‌های سرور برای شما ارسال می‌گردد.'
+    a: `به بخش تنظیمات بروید و روی دکمه «استارت ربات بله» کلیک کنید. با ارسال دستور /start در ربات ${BALE_BOT_MENTION}، شناسه شما ثبت شده و کدهای ورود و پیام‌های سرور برای شما ارسال می‌گردد.`
   },
   {
     icon: 'percent',
@@ -108,6 +109,26 @@ export default function Info({ kind, go }) {
               }}
             >
               تماس با پشتیبانی فنی
+            </a>
+            <a
+              href={BALE_BOT_LINK}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'var(--primary)',
+                color: '#fff',
+                textDecoration: 'none',
+                padding: '8px 18px',
+                borderRadius: '10px',
+                fontSize: '12px',
+                fontWeight: 800
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>smart_toy</span>
+              <span>استارت ربات بله ({BALE_BOT_MENTION})</span>
             </a>
           </div>
         </main>

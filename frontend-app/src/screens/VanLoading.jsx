@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useLocalData } from '../lib/data.js';
 import { enqueue } from '../lib/sync.js';
-import { toPersianNum } from '../lib/format.js';
+import { toPersianNum, onlyDigits, parseFaInt } from '../lib/format.js';
 import { usePhpPage } from '../lib/usePhpPage.js';
 import { DEFAULT_CATEGORIES } from '../lib/catalog.js';
 import { showToast } from '../components/AppToast.jsx';
@@ -135,7 +135,7 @@ export default function VanLoading({ go }) {
   function setQty(id, type, val) {
     setRows((prev) => {
       const cur = { cartons: 0, units: 0, ...(prev[id] || {}) };
-      const n = Math.max(0, parseInt(val, 10) || 0);
+      const n = Math.max(0, parseFaInt(val, 0));
       return { ...prev, [id]: { ...cur, [type]: n } };
     });
   }
@@ -357,12 +357,12 @@ export default function VanLoading({ go }) {
                         <span className="material-symbols-outlined">remove</span>
                       </button>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
                         className="step-input carton-input"
                         id={`carton_${item.id}`}
-                        min="0"
                         value={item.cartons}
-                        onChange={(e) => setQty(item.id, 'cartons', e.target.value)}
+                        onChange={(e) => setQty(item.id, 'cartons', onlyDigits(e.target.value))}
                       />
                       <button type="button" className="step-btn step-up" aria-label="افزایش کارتن" onClick={() => changeQty(item.id, 'cartons', 1)}>
                         <span className="material-symbols-outlined">add</span>
@@ -380,12 +380,12 @@ export default function VanLoading({ go }) {
                         <span className="material-symbols-outlined">remove</span>
                       </button>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
                         className="step-input unit-input"
                         id={`unit_${item.id}`}
-                        min="0"
                         value={item.units}
-                        onChange={(e) => setQty(item.id, 'units', e.target.value)}
+                        onChange={(e) => setQty(item.id, 'units', onlyDigits(e.target.value))}
                       />
                       <button type="button" className="step-btn step-up" aria-label="افزایش دانه" onClick={() => changeQty(item.id, 'units', 1)}>
                         <span className="material-symbols-outlined">add</span>

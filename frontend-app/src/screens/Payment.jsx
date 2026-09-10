@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, apiSilent } from '../lib/api.js';
-import { formatPrice, toPersianNum } from '../lib/format.js';
+import { formatPrice, toPersianNum, onlyDigits, parseFaNumber } from '../lib/format.js';
 import { usePhpPage } from '../lib/usePhpPage.js';
 import { showToast } from '../components/AppToast.jsx';
 
@@ -24,9 +24,6 @@ export default function Payment({ go, params = {} }) {
   const [checkNo, setCheckNo] = useState('');
   const [bank, setBank] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [pct, setPct] = useState('');
-  const [fixed, setFixed] = useState('');
-  const [discounts, setDiscounts] = useState([]);
   const [confirm, setConfirm] = useState(false);
   const [receipt, setReceipt] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -35,35 +32,48 @@ export default function Payment({ go, params = {} }) {
     if (!orderId) return;
     (async () => {
       const inv = await apiSilent(`/orders/${orderId}/invoice`);
-      if (inv) {
-        setOrder(inv);
-        setValues({ CASH: String(inv.cashAmount || ''), CARD: String(inv.posAmount || ''), CHECK: String(inv.checkAmount || '') });
-        setDiscounts((inv.discountSteps || []).map((d) => d.value ?? d));
+      if (!inv) return;
+      setOrder(inv);
+      // این‌اندپوینت cashAmount/posAmount/checkAmount ندارد؛ پرداخت‌ها در inv.payments است
+      const byMethod = {};
+      for (const p of inv.payments || []) byMethod[p.method] = p.amount;
+      setValues({
+        CASH: byMethod.CASH ? String(byMethod.CASH) : '',
+        CARD: byMethod.CARD ? String(byMethod.CARD) : '',
+        CHECK: byMethod.CHECK ? String(byMethod.CHECK) : ''
+      });
+      const chk = (inv.payments || []).find((p) => p.method === 'CHECK' && p.check);
+      if (chk && chk.check) {
+        setCheckNo(chk.check.checkNumber && chk.check.checkNumber !== '---' ? chk.check.checkNumber : '');
+        setBank(chk.check.bankName && chk.check.bankName !== 'بانک' ? chk.check.bankName : '');
       }
     })();
   }, [orderId]);
 
-  const gross = Number((order && order.totalAmount) || (order && order.finalAmount) || 0);
-  const paid = useMemo(() => Object.values(values).reduce((s, v) => s + (Number(v) || 0), 0), [values]);
-  const discountSum = useMemo(() => Math.round((gross * discounts.reduce((s, v) => s + (1 - Number(v) / 100), 1)) - gross), [gross, discounts]);
-  const finalAmount = Math.max(0, gross + discountSum);
+  // شکل واقعی پاسخ GET /orders/:id/invoice:
+  // { pricing: { subtotal, discountSteps:[{step,percent,before,after}], totalDiscount, finalAmount }, payments:[...], ... }
+  const pricing = (order && order.pricing) || {};
+  const gross = Number(pricing.subtotal ?? (order && (order.subtotalAmount ?? order.totalAmount)) ?? 0) || 0;
+  const finalAmount = Number(pricing.finalAmount ?? (order && order.finalAmount) ?? gross) || 0;
+  const discountSum = Number(pricing.totalDiscount ?? Math.max(0, gross - finalAmount)) || 0;
+  const steps = useMemo(() => {
+    const raw = pricing.discountSteps || (order && order.discountSteps) || [];
+    return (raw || []).map((s, i) => {
+      const percent = Number(s.percent ?? (s.type === 'percent' ? s.value : 0) ?? 0) || 0;
+      const before = Number(s.before ?? s.amountBeforeStep ?? 0) || 0;
+      const after = Number(s.after ?? s.amountAfterStep ?? 0) || 0;
+      const amount = Number(s.stepDiscount ?? (before > 0 ? before - after : 0)) || 0;
+      return { step: s.step ?? s.stepOrder ?? i + 1, percent, before, after, amount };
+    });
+  }, [order]);
+  const paid = useMemo(() => Object.values(values).reduce((s, v) => s + (parseFaNumber(v, 0) || 0), 0), [values]);
   const credit = Math.max(0, finalAmount - paid);
-
-  function addDiscount() {
-    const v = Number(pct || 0);
-    if (!v || v < 1 || v > 90) {
-      showToast('درصد تخفیف معتبر نیست (بین ۱ تا ۹۰).', 'error');
-      return;
-    }
-    setDiscounts([...discounts, v]);
-    setPct('');
-  }
 
   async function submitPayment() {
     setBusy(true);
     const payments = [];
     for (const [method] of METHODS) {
-      const amount = Number(values[method]) || 0;
+      const amount = parseFaNumber(values[method], 0) || 0;
       if (amount <= 0) continue;
       payments.push(
         method === 'CHECK'
@@ -72,7 +82,9 @@ export default function Payment({ go, params = {} }) {
       );
     }
     try {
-      await api(`/orders/${orderId}/payments`, { method: 'PUT', body: { payments, discountSteps: discounts.map((v) => ({ type: 'percent', value: Number(v) })) } });
+      // PUT /orders/:id/payments فقط payments می‌پذیرد؛ تخفیف‌ها از قبل روی فاکتور اعمال شده‌اند
+      // و تغییرشان از صفحه «مدیریت فاکتورها» (ویرایش کامل) انجام می‌شود.
+      await api(`/orders/${orderId}/payments`, { method: 'PUT', body: { payments } });
       setConfirm(false);
       showToast('تسویه با موفقیت ثبت و دفتر حساب به‌روزرسانی شد.', 'success');
       go('orders');
@@ -145,13 +157,13 @@ export default function Payment({ go, params = {} }) {
                   inputMode="numeric"
                   placeholder="۰"
                   value={values[key]}
-                  onChange={(e) => setValues({ ...values, [key]: e.target.value.replace(/[^0-9]/g, '') })}
+                  onChange={(e) => setValues({ ...values, [key]: onlyDigits(e.target.value) })}
                 />
               </div>
             ))}
           </div>
 
-          {Number(values.CHECK) > 0 && (
+          {parseFaNumber(values.CHECK, 0) > 0 && (
             <div className="check-fields-box">
               <input className="pay-amount-input" placeholder="شناسه صیادی ۱۶ رقمی..." value={checkNo} onChange={(e) => setCheckNo(e.target.value)} />
               <input className="pay-amount-input" placeholder="نام بانک صادرکننده..." value={bank} onChange={(e) => setBank(e.target.value)} />
@@ -169,59 +181,35 @@ export default function Payment({ go, params = {} }) {
           </div>
         </section>
 
-        {/* ۳. تخفیفات پلکانی */}
+        {/* ۳. تخفیفات پلکانی — روی فاکتورِ موجود فقط نمایش داده می‌شوند (قبلاً در مبلغ نهایی لحاظ شده‌اند) */}
         <section className="discounts-container-card">
           <div className="pay-card-header">
             <span className="material-symbols-outlined">local_offer</span>
-            <h3 className="pay-card-title">تخفیفات پلکانی</h3>
+            <h3 className="pay-card-title">تخفیفات پلکانی فاکتور</h3>
           </div>
 
-          <div className="discounts-inputs-row">
-            <div className="discount-field percent-field">
-              <input
-                className="discount-input-box"
-                type="number"
-                min="1"
-                max="90"
-                placeholder="٪"
-                value={pct}
-                onChange={(e) => setPct(e.target.value.replace(/[^0-9]/g, ''))}
-              />
-              <span className="discount-unit-tag">درصد</span>
-            </div>
-            <div className="discount-field fixed-field">
-              <input className="discount-input-box" type="number" min="0" placeholder="مبلغ ثابت" value={fixed} onChange={(e) => setFixed(e.target.value.replace(/[^0-9]/g, ''))} />
-              <span className="discount-unit-tag">تومان</span>
-            </div>
-            <button type="button" className="apply-discount-btn" onClick={addDiscount}>
-              <span className="material-symbols-outlined">add</span>
-              <span>اعمال پله تخفیف</span>
-            </button>
-          </div>
-
-          {discounts.length > 0 && (
+          {steps.length > 0 ? (
             <div className="applied-discounts-wrapper">
               <div className="applied-discounts-list">
-                {discounts.map((v, i) => (
-                  <div className="confirm-recap-row" key={`${v}_${i}`}>
-                    <span className="discount-step-num">{toPersianNum(i + 1)}</span>
-                    <span className="applied-discount-text">پله تخفیف {toPersianNum(v)}٪</span>
+                {steps.map((s) => (
+                  <div className="confirm-recap-row" key={`step_${s.step}`}>
+                    <span className="discount-step-num">{toPersianNum(s.step)}</span>
+                    <span className="applied-discount-text">پله تخفیف {toPersianNum(s.percent)}٪</span>
                     <span className="discount-tag-icon">
                       <span className="material-symbols-outlined">percent</span>
                     </span>
-                    <span className="applied-discount-info">
-                      {formatPrice(Math.round((gross - discounts.slice(0, i).reduce((s, x) => s + Math.round((gross - s) * (x / 100)), 0)) * (v / 100)))} ت
-                    </span>
-                    <button type="button" className="remove-discount-btn" onClick={() => setDiscounts(discounts.filter((_, n) => n !== i))}>
-                      <span className="material-symbols-outlined">delete</span>
-                    </button>
+                    <span className="applied-discount-info">-{formatPrice(s.amount)} ت</span>
                   </div>
                 ))}
               </div>
               <div className="applied-discounts-total">
                 <span>مجموع تخفیفات اعمال‌شده:</span>
-                <strong>{formatPrice(Math.abs(discountSum))} تومان</strong>
+                <strong>{formatPrice(discountSum)} تومان</strong>
               </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', padding: '4px 2px' }}>
+              برای این فاکتور تخفیفی ثبت نشده است.
             </div>
           )}
         </section>
@@ -264,7 +252,7 @@ export default function Payment({ go, params = {} }) {
           <h3 style={{ fontSize: '14px', fontWeight: 800, marginBottom: '10px' }}>تأیید ثبت تسویه</h3>
           <div className="confirm-recap-box">
             {METHODS.map(([key, label]) =>
-              Number(values[key]) > 0 ? (
+              parseFaNumber(values[key], 0) > 0 ? (
                 <div className="confirm-recap-row" key={key}>
                   <span>{label}:</span>
                   <strong>{formatPrice(values[key])} تومان</strong>
@@ -273,7 +261,7 @@ export default function Payment({ go, params = {} }) {
             )}
             <div className="confirm-recap-row">
               <span>تعداد پله‌های تخفیف:</span>
-              <strong>{toPersianNum(discounts.length)}</strong>
+              <strong>{toPersianNum(steps.length)}</strong>
             </div>
             <div className="confirm-recap-row">
               <span>مانده نسیه:</span>
@@ -311,7 +299,7 @@ export default function Payment({ go, params = {} }) {
             <div className="receipt-divider"></div>
             <div className="receipt-row">
               <span>تخفیفات:</span>
-              <span>{formatPrice(Math.abs(discountSum))}</span>
+              <span>{formatPrice(discountSum)}</span>
             </div>
             <div className="receipt-row">
               <span>خالص قابل پرداخت:</span>

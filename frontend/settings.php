@@ -159,9 +159,9 @@ $initials = mb_substr($firstName, 0, 1, 'UTF-8');
                     </p>
                 </div>
 
-                <a href="https://ble.ir/VizitikBot" target="_blank" class="bale-action-btn">
+                <a href="https://ble.ir/Vizitik_bot" target="_blank" class="bale-action-btn">
                     <span class="material-symbols-outlined">open_in_new</span>
-                    <span>ورود و استارت ربات بله (@VizitikBot)</span>
+                    <span>ورود و استارت ربات بله (@Vizitik_bot)</span>
                 </a>
             </section>
 

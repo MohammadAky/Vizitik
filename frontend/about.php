@@ -114,6 +114,10 @@ requireLogin();
                         <span>قابلیت کاربری آفلاین</span>
                     </div>
                 </div>
+                <a href="https://ble.ir/Vizitik_bot" target="_blank" style="display:inline-flex; align-items:center; gap:6px; margin-top:10px; background:var(--primary); color:#fff; text-decoration:none; padding:8px 18px; border-radius:10px; font-size:12px; font-weight:800;">
+                    <span class="material-symbols-outlined" style="font-size:18px;">smart_toy</span>
+                    <span>استارت ربات بله (@Vizitik_bot)</span>
+                </a>
             </div>
 
             <div style="font-size: 11px; color: var(--text-muted); margin-top: auto;">

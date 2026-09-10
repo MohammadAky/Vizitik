@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, apiSilent } from '../lib/api.js';
 import { kv } from '../lib/db.js';
 import { useLocalData } from '../lib/data.js';
-import { formatPrice, toPersianNum } from '../lib/format.js';
+import { formatPrice, toPersianNum, onlyDigits, parseFaNumber, parseFaInt } from '../lib/format.js';
 import { computeOrderTotals } from '../lib/pricing.js';
 import { usePhpPage } from '../lib/usePhpPage.js';
 import { showToast } from '../components/AppToast.jsx';
 import BottomNav from '../components/BottomNav.jsx';
 
 const fa = (n) => toPersianNum(Number(n || 0).toLocaleString('en-US'));
-const digits = (s) => String(s || '').replace(/\D/g, '');
+// ارقام فارسی را هم نگه می‌دارد (برخلاف /\D/ که «۱۲۳» را پاک می‌کرد)
+const digits = (s) => onlyDigits(s);
 
 /**
  * مدیریت و اصلاح فاکتورها — پورت ۱:۱ از frontend/orders.php + js/orders.js
@@ -108,7 +109,8 @@ export default function Orders({ go }) {
         cartonCount: Number(i.cartonCount || 0),
         unitCount: Number(i.unitCount || 0)
       })),
-      discountPercentages: (inv.discountSteps || []).map((s) => Number(s.value)),
+      // GET /orders/:id/invoice → pricing.discountSteps: [{step, percent, before, after}]
+      discountPercentages: ((inv.pricing && inv.pricing.discountSteps) || inv.discountSteps || []).map((s) => Number(s.percent ?? s.value ?? 0) || 0).filter((v) => v > 0),
       cash: String(((ord.payments || []).find((p) => p.method === 'CASH') || {}).amount || ''),
       pos: String(((ord.payments || []).find((p) => p.method === 'CARD') || {}).amount || ''),
       check: String(((ord.payments || []).find((p) => p.method === 'CHECK') || {}).amount || ''),
@@ -133,7 +135,7 @@ export default function Orders({ go }) {
   function setEditItem(idx, key, val) {
     setEdit((e) => {
       const items = e.items.slice();
-      items[idx] = { ...items[idx], [key]: Math.max(0, parseInt(val, 10) || 0) };
+      items[idx] = { ...items[idx], [key]: Math.max(0, parseFaInt(val, 0)) };
       return { ...e, items };
     });
   }
@@ -142,6 +144,10 @@ export default function Orders({ go }) {
     if (!selectValue) return;
     const p = catalog.find((x) => x.id === selectValue);
     if (!p) return;
+    // orders.js → addSelectedProductToOrder: اول قیمت موثر (custom) وگرنه واحد×تعداد
+    const unitsPerCarton = Number(p.unitsPerCarton ?? p.unitsPerCartonDefault ?? 24) || 24;
+    const unitPrice = Number(p.baseUnitPrice ?? p.unitPrice ?? 0) || 0;
+    const cartonPrice = Number(p.cartonPrice ?? unitPrice * unitsPerCarton ?? 0) || 0;
     setEdit((e) => ({
       ...e,
       items: [
@@ -150,9 +156,9 @@ export default function Orders({ go }) {
           productId: p.id,
           productName: p.name,
           brand: p.brand || 'میهن',
-          unitsPerCarton: Number(p.unitsPerCartonDefault || 24),
-          cartonPrice: Number(p.baseUnitPrice || 0) * Number(p.unitsPerCartonDefault || 1),
-          unitPrice: Number(p.baseUnitPrice || 0),
+          unitsPerCarton,
+          cartonPrice,
+          unitPrice,
           cartonCount: 1,
           unitCount: 0
         }
@@ -431,9 +437,9 @@ export default function Orders({ go }) {
                             <div className="stepper-controls">
                               <button type="button" className="stepper-btn" onClick={() => changeEditItem(idx, 'cartonCount', -1)}>-</button>
                               <input
-                                type="number"
+                                type="text"
+                                inputMode="numeric"
                                 className="stepper-input"
-                                min="0"
                                 value={item.cartonCount}
                                 onChange={(e) => setEditItem(idx, 'cartonCount', e.target.value)}
                               />
@@ -449,10 +455,9 @@ export default function Orders({ go }) {
                             <div className="stepper-controls">
                               <button type="button" className="stepper-btn" onClick={() => changeEditItem(idx, 'unitCount', -1)}>-</button>
                               <input
-                                type="number"
+                                type="text"
+                                inputMode="numeric"
                                 className="stepper-input"
-                                min="0"
-                                max={item.unitsPerCarton - 1}
                                 value={item.unitCount}
                                 onChange={(e) => setEditItem(idx, 'unitCount', e.target.value)}
                               />
@@ -530,13 +535,12 @@ export default function Orders({ go }) {
 
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   id="editNewDiscountPercent"
                   placeholder="درصد تخفیف جدید (مثلاً ۳)"
-                  min="1"
-                  max="100"
                   value={edit.newPercent}
-                  onChange={(e) => patchEdit({ newPercent: e.target.value })}
+                  onChange={(e) => patchEdit({ newPercent: onlyDigits(e.target.value) })}
                   style={{
                     flex: 1,
                     height: '36px',
@@ -552,8 +556,11 @@ export default function Orders({ go }) {
                   className="login-btn"
                   style={{ width: 'auto', height: '36px', padding: '0 12px', fontSize: '11.5px', background: '#ea580c' }}
                   onClick={() => {
-                    const v = Number(edit.newPercent);
-                    if (!v) return;
+                    const v = parseFaNumber(edit.newPercent, 0);
+                    if (!v || v < 1 || v > 100) {
+                      showToast('درصد تخفیف معتبر نیست (بین ۱ تا ۱۰۰).', 'error');
+                      return;
+                    }
                     patchEdit({ discountPercentages: [...edit.discountPercentages, v], newPercent: '' });
                   }}
                 >
