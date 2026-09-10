@@ -150,9 +150,9 @@ $initials = mb_substr($firstName, 0, 1, 'UTF-8');
                 </div>
 
                 <div class="bale-info-box">
-                    <div class="bale-status-row">
-                        <span class="material-symbols-outlined">verified</span>
-                        <span>سامانه پیام‌رسان بله آماده ارسال کد تایید است</span>
+                    <div class="bale-status-row idle" id="baleStatusRow">
+                        <span class="material-symbols-outlined" id="baleStatusIcon">hourglass_empty</span>
+                        <span id="baleStatusText">در حال بررسی وضعیت ربات...</span>
                     </div>
                     <p class="bale-info-text">
                         کدهای یکبار مصرف ورود، تاییدیه صدور فاکتور و هشدارهای سررسید چک‌های ویزیتوری به ربات بله ارسال می‌گردد.
@@ -394,6 +394,30 @@ $initials = mb_substr($firstName, 0, 1, 'UTF-8');
                 } catch (e) {}
             }
         });
+
+        // وضعیت واقعی ربات از خودِ API (ادعای ثابت «آماده ارسال» گمراه‌کننده بود)
+        const BROWS = {
+            'ONLINE': { cls: '', icon: 'verified', text: 'سامانه پیام‌رسان بله آماده ارسال کد تایید است' },
+            'DEGRADED': { cls: 'warn', icon: 'sync', text: 'ربات در دسترس است ولی حلقهٔ دریافت پیام سالم نیست' },
+            'OFFLINE': { cls: 'off', icon: 'priority_high', text: 'ارتباط با سرور بله برقرار نیست؛ کد تایید ارسال نمی‌شود' },
+            'NOT_CONFIGURED': { cls: 'idle', icon: 'settings', text: 'BALE_BOT_TOKEN روی سرور تنظیم نشده است' }
+        };
+        const BALE_API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://localhost:3000/api' : '/api';
+        fetch(BALE_API + '/bale/status', { headers: { 'Accept': 'application/json' } })
+            .then((r) => r.json())
+            .then((st) => {
+                const v = BROWS[st && st.status] || BROWS['OFFLINE'];
+                const row = document.getElementById('baleStatusRow');
+                row.className = 'bale-status-row' + (v.cls ? ' ' + v.cls : '');
+                document.getElementById('baleStatusIcon').textContent = v.icon;
+                document.getElementById('baleStatusText').textContent = v.text;
+            })
+            .catch(() => {
+                const row = document.getElementById('baleStatusRow');
+                row.className = 'bale-status-row off';
+                document.getElementById('baleStatusIcon').textContent = 'priority_high';
+                document.getElementById('baleStatusText').textContent = 'ارتباط با API برقرار نیست؛ وضعیت ربات نامشخص است';
+            });
     </script>
 </body>
 

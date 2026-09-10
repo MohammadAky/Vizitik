@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, authStorage } from '../lib/api.js';
+import { api, apiSilent, authStorage } from '../lib/api.js';
 import { toPersianNum } from '../lib/format.js';
 import { BALE_BOT_LINK, BALE_BOT_MENTION } from '../lib/brand.js';
 import { usePhpPage } from '../lib/usePhpPage.js';
@@ -59,6 +59,16 @@ function PasswordField({ id, labelHtml, hint, placeholder, value, onChange, onIn
  * (توست اختصاصی settings-toast، کارت پروفایل، تغییر رمز، بخش بله، سه سوئیچ تنظیمات چاپ
  *  که در localStorage با کلید vizitik_invoice_prefs ذخیره می‌شوند، اطلاعات سامانه و دکمه خروج)
  */
+// همان جدولِ کارتِ صفحهٔ ربات: ادعای ثابت «آماده ارسال کد است» جای خود را به پاسخ
+// واقعی /api/bale/status می‌دهد (settings.php هم دقیقاً همین را می‌زند)
+const BROWS = {
+  CHECKING: { cls: 'idle', icon: 'hourglass_empty', text: 'در حال بررسی وضعیت ربات...' },
+  ONLINE: { cls: '', icon: 'verified', text: 'سامانه پیام‌رسان بله آماده ارسال کد تایید است' },
+  DEGRADED: { cls: 'warn', icon: 'sync', text: 'ربات در دسترس است ولی حلقهٔ دریافت پیام سالم نیست' },
+  OFFLINE: { cls: 'off', icon: 'priority_high', text: 'ارتباط با سرور بله برقرار نیست؛ کد تایید ارسال نمی‌شود' },
+  NOT_CONFIGURED: { cls: 'idle', icon: 'settings', text: 'BALE_BOT_TOKEN روی سرور تنظیم نشده است' }
+};
+
 export default function Settings({ go, logout }) {
   const page = usePhpPage('settings');
   const user = authStorage.user || {};
@@ -74,8 +84,17 @@ export default function Settings({ go, logout }) {
   const [matchHint, setMatchHint] = useState(false);
   const [busy, setBusy] = useState(false);
   const [prefs, setPrefs] = useState({ discountBreakdown: true, prevDebt: true, vanStockAlert: true });
+  const [baleState, setBaleState] = useState('CHECKING');
+  const rowView = BROWS[baleState] || BROWS.ONLINE;
+  const rowCls = rowView.cls ? ' ' + rowView.cls : '';
 
   // بازیابی تنظیمات هنگام لود صفحه (DOMContentLoaded در PHP)
+  useEffect(() => {
+    apiSilent('/bale/status')
+      .then((st) => { if (st && st.status) setBaleState(st.status); })
+      .catch(() => setBaleState('OFFLINE'));
+  }, []);
+
   useEffect(() => {
     try {
       const saved = localStorage.getItem(PREFS_KEY);
@@ -226,9 +245,9 @@ export default function Settings({ go, logout }) {
         {/* بخش ۲: اتصال به ربات پیام‌رسان بله */}
         <Section icon="smart_toy" iconCls="bot" title="پیام‌رسان بله (ورود با کد OTP)" sub="کدهای تایید سریع ۲ مرحله‌ای">
           <div className="bale-info-box">
-            <div className="bale-status-row">
-              <span className="material-symbols-outlined">verified</span>
-              <span>سامانه پیام‌رسان بله آماده ارسال کد تایید است</span>
+            <div className={`bale-status-row${rowCls}`} id="baleStatusRow">
+              <span className="material-symbols-outlined" id="baleStatusIcon">{rowView.icon}</span>
+              <span id="baleStatusText">{rowView.text}</span>
             </div>
             <p className="bale-info-text">
               کدهای یکبار مصرف ورود، تاییدیه صدور فاکتور و هشدارهای سررسید چک‌های ویزیتوری به ربات بله ارسال می‌گردد.
