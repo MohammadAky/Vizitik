@@ -33,6 +33,20 @@ sudo DOMAIN=app.example.com CERT_EMAIL=admin@example.com DB_PASS='رمز_قوی'
 # در کد یا در فایل‌های نمونه وجود ندارد و همه‌چیز فقط در backend/.env می‌نشیند.
 ```
 
+### «Killed» وسط build = کمبود RAM
+اگر خروجی نصب خطی مثل `setup-server.sh: line 396: 49858 Killed  npm install` داد،
+کشندهٔ حافظه (OOM killer) سیستم‌عامل پروسه را کشته — نه باگ کد. نشانه‌اش: `free -h`
+مقدار swap را `0B` نشان می‌دهد. اسکریپت خودش این را تشخیص می‌دهد (exit 137) و اگر
+RAM+swap از `MIN_TOTAL_MB` (پیش‌فرض ۲۰۴۸ مگ) کمتر باشد یک `/swapfile` می‌سازد،
+`NODE_OPTIONS=--max-old-space-size` را هم بر اساس حافظهٔ دستگاه تنظیم می‌کند.
+دستی:
+```bash
+fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+echo "/swapfile none swap sw 0 0" >> /etc/fstab && free -h
+```
+بعد دوباره همان دستور اجرا را تکرار کن؛ همهٔ مرحله‌ها idempotent هستند و `npm ci`
+قبل از نصب، `node_modules` نیمه‌کارهٔ قبلی را پاک می‌کند.
+
 ### گواهی SSL و فیلتر پورت ۸۰
 `setup_https` اول با HTTP-01 (پلاگین nginx) تلاش می‌کند و اگر جواب نگیرد، **دقیق همان خطای certbot را در `/var/log/vizitik-certbot.log`** نشان می‌دهد و می‌گوید چرا:
 
