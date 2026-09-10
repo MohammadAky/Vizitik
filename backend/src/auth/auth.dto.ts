@@ -13,6 +13,11 @@ export class SendRegisterOtpDto {
   @IsNotEmpty({ message: 'شماره تلفن الزامی است' })
   @IsString()
   phone: string;
+
+  /** اختیاری: شناسه چت بله؛ اگر نیاید از چتی که شماره را در ربات تأیید کرده استفاده می‌شود */
+  @IsOptional()
+  @IsString()
+  baleChatId?: string;
 }
 
 export class RegisterWithOtpDto {

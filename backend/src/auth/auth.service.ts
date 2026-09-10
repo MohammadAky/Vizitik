@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { APP } from '../app.config';
+import { OtpStore } from './otp.store';
 import {
   LoginDto,
   SendRegisterOtpDto,
@@ -14,12 +15,10 @@ import {
 
 @Injectable()
 export class AuthService {
-  // حافظه موقت کدهای تایید OTP (شماره تلفن -> { کد، زمان انقضا })
-  private otpStore = new Map<string, { code: string; expiresAt: number }>();
-
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(JwtService) private readonly jwtService: JwtService,
+    @Inject(OtpStore) private readonly otp: OtpStore,
   ) {}
 
   /**
@@ -82,17 +81,19 @@ export class AuthService {
     }
 
     // تولید کد ۵ رقمی
-    const otpCode = String(Math.floor(10000 + Math.random() * 90000));
-    const expiresAt = Date.now() + 2 * 60 * 1000; // ۲ دقیقه
+    const issued = this.otp.issue(phone, 'register');
+    const otpCode = issued.code;
 
-    this.otpStore.set(phone, { code: otpCode, expiresAt });
-
-    // ارسال به ربات پیام‌رسان بله در صورت وجود chatId
-    await this.dispatchBaleMessage(phone, otpCode, 'ثبت‌نام ویزیتور جدید');
+    // مقصد کد: گفتگوی بله‌ای که این شماره را تأیید کرده است (یا chatId که کلاینت فرستاده)
+    const chatId = dto.baleChatId || this.otp.chatFor(phone);
+    const delivered = await this.dispatchBaleMessage(phone, otpCode, 'ثبت‌نام ویزیتور جدید', chatId);
 
     return {
       success: true,
-      message: 'کد تایید ۵ رقمی صادر و به ربات بله ارسال گردید.',
+      delivery: delivered ? 'bale' : 'waiting-in-bot',
+      message: delivered
+        ? 'کد تایید ۵ رقمی در گفتگوی بله برای شما ارسال شد.'
+        : 'برای دریافت کد، در ربات بله /start بزن و دکمهٔ «ارسال و تایید شماره موبایل» را لمس کن؛ کد ۵ رقمی همان‌جا در گفتگو ظاهر می‌شود. اگر شماره را قبلاً فرستاده‌ای، کافی است دوباره «دریافت کد» را بزنی.',
       ...(process.env.NODE_ENV !== 'production' ? { debugCode: otpCode } : {}),
     };
   }
@@ -166,16 +167,18 @@ export class AuthService {
       throw new NotFoundException('کاربری با این شماره تلفن در سامانه یافت نشد.');
     }
 
-    const otpCode = String(Math.floor(10000 + Math.random() * 90000));
-    const expiresAt = Date.now() + 2 * 60 * 1000;
+    const issued = this.otp.issue(phone, 'reset');
+    const otpCode = issued.code;
 
-    this.otpStore.set(phone, { code: otpCode, expiresAt });
-
-    await this.dispatchBaleMessage(phone, otpCode, 'بازیابی رمز عبور', (user as any)?.baleChatId);
+    const chatId = (user as any)?.baleChatId || this.otp.chatFor(phone);
+    const delivered = await this.dispatchBaleMessage(phone, otpCode, 'بازیابی رمز عبور', chatId);
 
     return {
       success: true,
-      message: 'کد تایید بازیابی رمز عبور به پیام‌رسان بله ارسال شد.',
+      delivery: delivered ? 'bale' : 'waiting-in-bot',
+      message: delivered
+        ? 'کد تایید بازیابی رمز عبور در گفتگوی بله شما ارسال شد.'
+        : 'این شماره به گفتگوی بله متصل نیست. در ربات بله /start بزن و دکمهٔ «ارسال و تایید شماره موبایل» را لمس کن، سپس دوباره «دریافت کد» را بزن تا کد همان‌جا ارسال شود.',
       ...(process.env.NODE_ENV !== 'production' ? { debugCode: otpCode } : {}),
     };
   }
@@ -326,6 +329,22 @@ export class AuthService {
       let matchedRole = '';
       let matchedName = '';
 
+      // ثبت جفت شماره/چت و تحویل کدی که این شماره در برنامه درخواست کرده است
+      this.otp.rememberChat(phone, chatId);
+      const claimed = this.otp.claimForChat(phone, chatId);
+      if (claimed) {
+        const purpose = claimed.purpose === 'register' ? 'ثبت‌نام ویزیتور' : 'بازیابی رمز عبور';
+        await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: `🔑 *کد تایید ${purpose}*\n\n\`${claimed.code}\`\n\n⏱ فقط ۲ دقیقه اعتبار دارد؛ در برنامه واردش کن.`,
+            parse_mode: 'Markdown',
+          }),
+        }).catch(() => {});
+      }
+
       // بررسی در جدول مشتریان (فروشگاه‌ها)
       const customer = await this.prisma.customer.findFirst({
         where: {
@@ -406,21 +425,19 @@ export class AuthService {
   // ============================================================
 
   private validateStoredOtp(phone: string, code: string) {
-    const stored = this.otpStore.get(phone);
+    const expired = this.otp.isExpired(phone);
+    const stored = this.otp.peek(phone);
     if (!stored) {
-      throw new BadRequestException('کد تایید منقضی شده یا درخواستی ثبت نشده است. لطفاً مجدداً درخواست کد دهید.');
-    }
-
-    if (Date.now() > stored.expiresAt) {
-      this.otpStore.delete(phone);
-      throw new BadRequestException('کد تایید منقضی شده است.');
+      throw new BadRequestException(expired
+        ? 'کد تایید منقضی شده است.'
+        : 'کد تایید منقضی شده یا درخواستی ثبت نشده است. لطفاً مجدداً درخواست کد دهید.');
     }
 
     if (stored.code !== code) {
       throw new BadRequestException('کد تایید وارد شده نادرست است.');
     }
 
-    this.otpStore.delete(phone);
+    this.otp.consume(phone);
   }
 
   /**
@@ -479,9 +496,19 @@ export class AuthService {
     }
   }
 
-  private async dispatchBaleMessage(phone: string, code: string, actionTitle: string, chatId?: string | null) {
+  /**
+   * Sends a code into one chat. Returns false when nothing could be delivered, so the
+   * caller can tell the applicant what to do instead of pretending it arrived.
+   * BALE_ADMIN_CHAT_ID is NOT a fallback any more: an OTP that is not addressed to its
+   * owner is either useless (nobody can finish registration) or a leak.
+   * Set OTP_CC_ADMIN=1 only if you really want a copy of every code in your own chat.
+   */
+  private async dispatchBaleMessage(phone: string, code: string, actionTitle: string, chatId?: string | null): Promise<boolean> {
     const baleToken = process.env.BALE_BOT_TOKEN ?? '';
-    const targetChat = chatId || process.env.BALE_ADMIN_CHAT_ID;
+    const targetChat = chatId || '';
+    if (process.env.OTP_CC_ADMIN === '1' && !targetChat && process.env.BALE_ADMIN_CHAT_ID) {
+      await this.sendBaleText(process.env.BALE_ADMIN_CHAT_ID, code, `${actionTitle} (کپی مدیر - شماره ${phone})`);
+    }
 
     if (targetChat && baleToken) {
       try {
@@ -502,7 +529,21 @@ export class AuthService {
         });
       } catch (err) {
         console.error('Bale message delivery failed:', err);
+        return false;
       }
+      return true;
     }
+    return false;
+  }
+
+  /** small helper for the optional admin copy */
+  private async sendBaleText(chatId: string, code: string, label: string) {
+    const baleToken = process.env.BALE_BOT_TOKEN ?? '';
+    if (!baleToken || !chatId) return;
+    await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: `${label}\nکد: ${code}`, disable_web_page_preview: true }),
+    }).catch(() => {});
   }
 }
