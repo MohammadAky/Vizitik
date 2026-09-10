@@ -2,6 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, apiSilent, authStorage } from '../lib/api.js';
 import { formatPrice, toPersianNum } from '../lib/format.js';
 import { BALE_BOT_LINK, BALE_BOT_MENTION } from '../lib/brand.js';
+
+/**
+ * The four answers /api/bale/status can give, and how the card shows each one.
+ * Same table as BOT_STATES in frontend/bale-bot.php, and only icon names this build
+ * already ships, so no glyph can be missing.
+ */
+const BOT_STATES = {
+  ONLINE: { cls: '', icon: 'wifi', badge: 'آنلاین', title: 'ارسال خودکار فاکتور در بله فعال است' },
+  DEGRADED: { cls: 'warn', icon: 'sync', badge: 'محدود', title: 'ربات در دسترس است ولی حلقهٔ دریافت پیام سالم نیست' },
+  OFFLINE: { cls: 'off', icon: 'priority_high', badge: 'آفلاین', title: 'ارتباط با سرور بله برقرار نیست' },
+  NOT_CONFIGURED: { cls: 'idle', icon: 'settings', badge: 'پیکربندی نشده', title: 'BALE_BOT_TOKEN روی سرور تنظیم نشده است' }
+};
 import { usePhpPage } from '../lib/usePhpPage.js';
 import { showToast } from '../components/AppToast.jsx';
 
@@ -36,6 +48,7 @@ export default function BaleBot({ go }) {
   const [history, setHistory] = useState([]);
   const [busy, setBusy] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [botStatus, setBotStatus] = useState(null);
 
   useEffect(() => {
     apiSilent('/customers').then((cs) => {
@@ -44,6 +57,15 @@ export default function BaleBot({ go }) {
         if (cs[0]) setSingleId(cs[0].id);
       }
     });
+  }, []);
+
+  // the badge has to follow the running process: ask the api, then again every 30s
+  useEffect(() => {
+    let alive = true;
+    const load = () => apiSilent('/bale/status').then((st) => { if (alive && st) setBotStatus(st); });
+    load();
+    const t = setInterval(load, 30000);
+    return () => { alive = false; clearInterval(t); };
   }, []);
 
   const debtors = useMemo(() => customers.filter((c) => Number(c.currentDebt) > 0), [customers]);
@@ -58,6 +80,18 @@ export default function BaleBot({ go }) {
   }, [user.firstName, user.lastName]);
 
   const singleCustomer = customers.find((c) => String(c.id) === String(singleId)) || null;
+
+  const botState = (botStatus && botStatus.status) || 'CHECKING';
+  const view = BOT_STATES[botState] || { cls: 'off', icon: 'priority_high', badge: 'نامشخص', title: 'وضعیت ربات مشخص نیست' };
+  const botLink = (botStatus && botStatus.botLink) || BALE_BOT_LINK;
+  const botMention = botStatus && botStatus.botUsername ? `@${botStatus.botUsername}` : BALE_BOT_MENTION;
+  const statusNote = (() => {
+    const bits = [botStatus && botStatus.botUsername ? `شناسه ربات: @${botStatus.botUsername}` : `شناسه ربات: ${BALE_BOT_MENTION}`];
+    if (botState === 'ONLINE' && botStatus.secondsSinceLastOk != null) bits.push(`آخرین دریافت پیام: ${toPersianNum(botStatus.secondsSinceLastOk)} ثانیه پیش`);
+    if (botStatus && botStatus.consecutiveErrors > 0) bits.push(`خطاهای پشت‌سرهم: ${toPersianNum(botStatus.consecutiveErrors)}`);
+    if (botStatus && botStatus.lastError) bits.push(String(botStatus.lastError));
+    return bits.join(' • ');
+  })();
 
   // پیش‌نمایش پیام با جایگذاری اطلاعات نمونه — عین updatePreviewMessage در bale-bot.php
   const preview = useMemo(() => {
@@ -87,10 +121,10 @@ export default function BaleBot({ go }) {
 
   async function copyBotLink() {
     try {
-      await navigator.clipboard.writeText(BALE_BOT_LINK);
+      await navigator.clipboard.writeText(botLink);
       showToast('لینک ربات بله با موفقیت کپی شد.', 'success');
     } catch {
-      window.prompt('لینک ربات بله را کپی کنید:', BALE_BOT_LINK);
+      window.prompt('لینک ربات بله را کپی کنید:', botLink);
     }
   }
 
@@ -172,13 +206,13 @@ export default function BaleBot({ go }) {
                 <span className="material-symbols-outlined icon-fill" style={{ fontSize: '26px' }}>smart_toy</span>
               </div>
               <div className="bale-status-text">
-                <strong>ارسال خودکار فاکتور در بله فعال است</strong>
-                <div className="bale-status-sub">شناسه ربات: {BALE_BOT_MENTION}</div>
+                <strong id="baleStatusTitle">{botStatus ? view.title : 'در حال بررسی وضعیت ربات...'}</strong>
+                <div className={`bale-status-sub${view.cls ? ' ' + view.cls : ''}`} id="baleStatusNote">{statusNote}</div>
               </div>
             </div>
-            <span className="bale-online-badge">
-              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>wifi</span>
-              آنلاین
+            <span className={`bale-online-badge${view.cls ? ' ' + view.cls : ''}`} id="baleOnlineBadge">
+              <span className="material-symbols-outlined" id="baleOnlineIcon" style={{ fontSize: '14px' }}>{view.icon}</span>
+              <span id="baleOnlineText">{botStatus ? view.badge : 'در حال بررسی...'}</span>
             </span>
           </div>
 
@@ -210,7 +244,7 @@ export default function BaleBot({ go }) {
               هنگام ثبت هر فاکتور، نسخه کامل و رسمی فاکتور به صورت خودکار به بله فروشگاه و ویزیتور ارسال می‌شود. مشتریان با باز کردن ربات و لمس دکمه <strong>«ارسال شماره موبایل»</strong> متصل می‌شوند.
             </p>
             <div className="bale-bot-link-row">
-              <span className="bale-bot-link-text">{BALE_BOT_LINK}</span>
+              <span className="bale-bot-link-text" id="baleBotLinkText">{botLink}</span>
               <button type="button" className="bale-copy-btn" onClick={copyBotLink}>
                 <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>content_copy</span>
                 <span>کپی لینک</span>
