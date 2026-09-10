@@ -140,6 +140,14 @@ export default function Auth({ onAuthed }) {
     }
   }
 
+  const [otpNote, setOtpNote] = useState('');
+
+  // the api tells us whether the code went to a Bale chat or is still waiting
+  function rememberOtpDelivery(data) {
+    if (data && data.delivery && data.delivery !== 'bale') setOtpNote(data.message || '');
+    else setOtpNote('');
+  }
+
   function showError(msg) {
     setError(msg);
   }
@@ -180,7 +188,8 @@ export default function Auth({ onAuthed }) {
     setError('');
     regData.current = { firstName: reg.firstName.trim(), lastName: reg.lastName.trim(), phone: reg.phone.trim(), password: reg.password };
     try {
-      await api('/auth/send-register-otp', { method: 'POST', body: { phone: regData.current.phone } });
+      const data = await api('/auth/send-register-otp', { method: 'POST', body: { phone: regData.current.phone } });
+      rememberOtpDelivery(data);
       switchView('registerOtp');
     } catch (err) {
       showError(err.message || 'خطا در ارسال کد ثبت‌نام.');
@@ -218,7 +227,8 @@ export default function Auth({ onAuthed }) {
     setError('');
     resetPhoneRef.current = forgotPhone.trim();
     try {
-      await api('/auth/send-reset-otp', { method: 'POST', body: { phone: resetPhoneRef.current } });
+      const data = await api('/auth/send-reset-otp', { method: 'POST', body: { phone: resetPhoneRef.current } });
+      rememberOtpDelivery(data);
       switchView('forgotOtp');
     } catch (err) {
       showError(err.message || 'کاربری با این شماره یافت نشد.');
@@ -462,6 +472,13 @@ export default function Auth({ onAuthed }) {
               <label style={{ fontSize: '11.5px', fontWeight: 700 }}>کد ۵ رقمی ارسال شده به پیام‌رسان بله:</label>
               <OtpBoxes kind="reg" value={regOtp} onChange={setRegOtp} />
 
+              {otpNote ? (
+                <div className="bale-banner">
+                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>notifications_active</span>
+                  <span>{otpNote}</span>
+                </div>
+              ) : null}
+
               <button type="submit" className="login-btn" id="verifyRegBtn" disabled={busy === 'verifyReg'}>
                 <span>{busy === 'verifyReg' ? 'در حال تکمیل ثبت‌نام...' : 'تکمیل ثبت‌نام و ورود'}</span>
               </button>
@@ -524,6 +541,13 @@ export default function Auth({ onAuthed }) {
             >
               <label style={{ fontSize: '11.5px', fontWeight: 700 }}>کد ۵ رقمی ارسال شده به بله:</label>
               <OtpBoxes kind="reset" value={resetOtp} onChange={setResetOtp} />
+
+              {otpNote ? (
+                <div className="bale-banner">
+                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>notifications_active</span>
+                  <span>{otpNote}</span>
+                </div>
+              ) : null}
 
               <EyeInput
                 id="newResetPassword"
