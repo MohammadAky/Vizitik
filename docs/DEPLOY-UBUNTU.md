@@ -33,6 +33,17 @@ sudo DOMAIN=app.example.com CERT_EMAIL=admin@example.com DB_PASS='رمز_قوی'
 # در کد یا در فایل‌های نمونه وجود ندارد و همه‌چیز فقط در backend/.env می‌نشیند.
 ```
 
+### اسکریپت یک‌خطی (توصیه می‌شود)
+`deploy.sh` اول همه‌چیزِ جا‌مانده از اجراهای قبلی را می‌بندد (سرویس، پروسه‌های node/php،
+pm2، آپاچیِ پورت ۸۰)، `git pull` می‌کند و بعد `setup-server.sh` را اجرا می‌کند:
+```bash
+sudo bash scripts/deploy.sh                 # سوال‌ها همان‌هاست
+sudo bash scripts/deploy.sh --dry-run       # فقط نشان بده چه می‌بندد، چیزی را عوض نکن
+sudo bash scripts/deploy.sh --only-clean    # ببند و تمام (بدون deploy)
+sudo bash scripts/deploy.sh --yes --full-reset   # + پاک‌کردن /opt/vizitik و vhost (دیتابیس و گواهی می‌مانند)
+```
+قدم‌به‌قدمِ کلودفلر و SSL: `docs/CLOUDFLARE-SSL.md`.
+
 ### «Killed» وسط build = کمبود RAM
 اگر خروجی نصب خطی مثل `setup-server.sh: line 396: 49858 Killed  npm install` داد،
 کشندهٔ حافظه (OOM killer) سیستم‌عامل پروسه را کشته — نه باگ کد. نشانه‌اش: `free -h`
