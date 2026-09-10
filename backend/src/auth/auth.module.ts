@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { AuthService } from './auth.service';
+import { OtpStore } from './otp.store';
 import { AuthController } from './auth.controller';
 import { PrismaService } from '../prisma.service';
 import { JwtStrategy } from './jwt.strategy';
@@ -23,7 +24,7 @@ if (!jwtSecret) {
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PrismaService, JwtStrategy],
-  exports: [AuthService, PassportModule, JwtModule],
+  providers: [AuthService, OtpStore, PrismaService, JwtStrategy],
+  exports: [AuthService, OtpStore, PassportModule, JwtModule],
 })
 export class AuthModule {}

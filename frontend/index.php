@@ -255,6 +255,11 @@ header("Pragma: no-cache");
                         <input type="text" class="otp-box reg-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
                     </div>
 
+                    <div class="bale-banner" id="regOtpNote" style="display: none;">
+                        <span class="material-symbols-outlined" style="font-size: 16px;">notifications_active</span>
+                        <span id="regOtpNoteText"></span>
+                    </div>
+
                     <button type="submit" class="login-btn" id="verifyRegBtn">
                         <span>تکمیل ثبت‌نام و ورود</span>
                     </button>
@@ -290,6 +295,11 @@ header("Pragma: no-cache");
                         <input type="text" class="otp-box reset-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
                         <input type="text" class="otp-box reset-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
                         <input type="text" class="otp-box reset-otp" maxlength="1" inputmode="numeric" autocomplete="one-time-code" required>
+                    </div>
+
+                    <div class="bale-banner" id="resetOtpNote" style="display: none;">
+                        <span class="material-symbols-outlined" style="font-size: 16px;">notifications_active</span>
+                        <span id="resetOtpNoteText"></span>
                     </div>
 
                     <div class="input-group">
@@ -547,6 +557,7 @@ header("Pragma: no-cache");
                 const data = await res.json().catch(() => ({}));
 
                 if (res.ok) {
+                    setOtpNote('regOtpNote', data);
                     switchView('registerOtp');
                     document.querySelector('.reg-otp').focus();
                 } else {
@@ -557,6 +568,20 @@ header("Pragma: no-cache");
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 18px; vertical-align: middle;">send</span><span>ارسال کد تایید به بله</span>';
+            }
+        }
+
+        // یادآوری مسیر تحویل کد: اگر چت بله شماره را تأیید نکرده باشد، سرپنجه توضیح می‌دهد
+        function setOtpNote(boxId, data) {
+            const box = document.getElementById(boxId);
+            const text = document.getElementById(boxId + 'Text');
+            if (!box || !text) return;
+            if (data && data.delivery && data.delivery !== 'bale') {
+                text.textContent = data.message || '';
+                box.style.display = 'flex';
+            } else {
+                box.style.display = 'none';
+                text.textContent = '';
             }
         }
 
@@ -626,6 +651,7 @@ header("Pragma: no-cache");
                 const data = await res.json().catch(() => ({}));
 
                 if (res.ok) {
+                    setOtpNote('resetOtpNote', data);
                     switchView('forgotOtp');
                     document.querySelector('.reset-otp').focus();
                 } else {

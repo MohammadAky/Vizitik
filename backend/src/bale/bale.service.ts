@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Inject, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
+import { OtpStore } from "../auth/otp.store";
 import { APP, BOT } from "../app.config";
 
 @Injectable()
@@ -10,7 +11,10 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
   private isPolling = false;
   private lastUpdateId = 0;
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(OtpStore) private readonly otp: OtpStore,
+  ) {}
 
   onModuleInit() {
     if (!this.baleToken) {
@@ -388,6 +392,19 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
       this.logger.log(`📱 شماره تماس دریافت شد: ${normalizedPhone} (چت‌آیدی: ${chatId})`);
 
+      // هر کد تاییدی که این شماره در برنامه درخواست کرده و هنوز تحویل نگرفته،
+      // همین‌جا و فقط به همین چت تحویل داده می‌شود (به چت مدیر هرگز فرستاده نمی‌شود)
+      this.otp.rememberChat(normalizedPhone, chatId);
+      const claimed = this.otp.claimForChat(normalizedPhone, chatId);
+      if (claimed) {
+        const purpose = claimed.purpose === "register" ? "ثبت‌نام ویزیتور" : "بازیابی رمز عبور";
+        await this.sendMessage(
+          chatId,
+          `🔑 *کد تایید ${purpose}*\n\n\`${claimed.code}\`\n\n⏱ فقط ۲ دقیقه اعتبار دارد؛ در برنامه واردش کن.`,
+        );
+        this.logger.log(`✅ کد ${purpose} به چت ${chatId} تحویل داده شد.`);
+      }
+
       let matchedRole = "";
       let matchedName = "";
 
@@ -449,9 +466,11 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
           `اکانت بله شما با موفقیت متصل شد.\n` +
           `تمامی فاکتورهای صادره، گزارش‌های فروش و کدهای ورود به این چت ارسال خواهند شد. 🚀`;
       } else {
-        confirmationText =
-          `✅ شماره موبایل شما (*${normalizedPhone}*) با موفقیت در سیستم تایید شد.\n\n` +
-          `به محض صدور فاکتور یا تعریف فروشگاه شما توسط ویزیتور، اعلان‌ها در این چت فعال خواهند شد. ✨`;
+        confirmationText = claimed
+          ? `✅ شماره *${normalizedPhone}* به این گفتگو متصل شد.\nکد تایید در پیام بالا ارسال شده است؛ آن را در برنامه وارد کن.`
+          : `✅ شماره موبایل شما (*${normalizedPhone}*) با موفقیت در سیستم تایید شد.\n\n` +
+            `به محض صدور فاکتور یا تعریف فروشگاه شما توسط ویزیتور، اعلان‌ها در این چت فعال خواهند شد.\n` +
+            `اگر در حال ساخت حساب جدیدی: حالا در برنامه «دریافت کد» را بزن تا کد ۵ رقمی همین‌جا بیاید. ✨`;
       }
 
       const removeKeyboard = { remove_keyboard: true };
