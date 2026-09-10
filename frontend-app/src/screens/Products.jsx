@@ -126,7 +126,7 @@ export default function Products({ go }) {
     setModal({
       open: true,
       mode: 'edit',
-      data: { id: p.id, name: p.name, brand: p.brand, category: p.category, unitsPerCarton: p.packSize, baseUnitPrice: p.unitPrice, imageUrl: p.imageUrl || '' }
+      data: { id: p.id, name: p.name, brand: p.brand, category: p.category, unitsPerCarton: p.packSize, baseUnitPrice: p.unitPrice, imageUrl: p.imageUrl || '', isCustom: p.isCustom }
     });
   }
 
@@ -136,17 +136,34 @@ export default function Products({ go }) {
   async function handleSaveProduct(e) {
     e.preventDefault();
     setBusy(true);
+    // names must match CreateProductDto: the quantity is unitsPerCartonDefault,
+    // sending "unitsPerCarton" makes the api answer "تعداد در کارتن الزامی است"
+    const packSize = Number(m.unitsPerCarton) || 24;
+    const unitPrice = Number(m.baseUnitPrice) || 0;
     const payload = {
       name: (m.name || '').trim(),
       brand: m.brand,
       category: m.category,
-      unitsPerCarton: Number(m.unitsPerCarton) || 24,
-      baseUnitPrice: Number(m.baseUnitPrice) || 0,
+      unitsPerCartonDefault: packSize,
+      cartonPrice: unitPrice * packSize,
+      baseUnitPrice: unitPrice,
       imageUrl: (m.imageUrl || '').trim() || null
     };
     try {
-      if (modal.mode === 'edit' && m.id) await api(`/products/${m.id}`, { method: 'PUT', body: payload });
-      else await api('/products', { method: 'POST', body: payload });
+      if (modal.mode === 'edit' && m.id) {
+        if (m.isCustom) await api(`/products/${m.id}`, { method: 'PUT', body: payload });
+        else {
+          // a global product: only the visitor's own price may change (PUT /custom-settings)
+          await api(`/products/${m.id}/custom-settings`, {
+            method: 'PUT',
+            body: {
+              customCartonPrice: unitPrice * packSize,
+              customUnitPrice: unitPrice,
+              customUnitsPerCarton: packSize
+            }
+          });
+        }
+      } else await api('/products', { method: 'POST', body: payload });
       setModal({ open: false, mode: 'add', data: {} });
       showToast('اطلاعات کالا با موفقیت ذخیره شد.', 'success');
       await refresh();

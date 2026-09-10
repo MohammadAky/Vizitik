@@ -151,13 +151,12 @@ export default function NewOrder({ go }) {
       <main className="order-content">
         {bar.length === 0 ? (
           <div className="empty-van-box">
-            <span className="material-symbols-outlined">local_shipping</span>
-            <h3>بار خودرو خالی است</h3>
-            <p>ابتدا موجودی خودرو را در بخش بارگیری ثبت کنید تا امکان صدور فاکتور فراهم شود.</p>
-            <button type="button" className="goto-loading-btn" onClick={() => go('van')}>
-              <span className="material-symbols-outlined">inventory_2</span>
-              <span>رفتن به بارگیری خودرو</span>
-            </button>
+            <span className="material-symbols-outlined">inventory_2</span>
+            <h3>هیچ کالایی در خودرو بارگیری نشده است</h3>
+            <p>برای ثبت سفارش مشتری در پخش گرم، ابتدا اقلام موجود را در خودرو بارگیری نمایید.</p>
+            <a className="goto-loading-btn" href="#/van">
+              <span>ورود به بخش بارگیری خودرو</span>
+            </a>
           </div>
         ) : (
           <div className="order-product-list">
