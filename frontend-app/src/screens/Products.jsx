@@ -3,9 +3,16 @@ import { api, apiSilent } from '../lib/api.js';
 import { useLocalData } from '../lib/data.js';
 import { toPersianNum } from '../lib/format.js';
 import { usePhpPage } from '../lib/usePhpPage.js';
+import { DEFAULT_CATEGORIES, CATEGORY_OPTIONS, PRESET_BRANDS } from '../lib/catalog.js';
 import { showToast } from '../components/AppToast.jsx';
 
 const fa = (n) => toPersianNum(Number(n || 0).toLocaleString('en-US'));
+// products.js: unitPrice = packSize > 0 ? Math.round(cartonPrice / packSize) : 0
+const unitPriceOf = (m) => {
+  const pack = Number(m.unitsPerCarton) || 0;
+  const carton = Number(m.cartonPrice) || 0;
+  return pack > 0 ? Math.round(carton / pack) : 0;
+};
 const CATALOGS_KEY = 'vizitik_downloaded_catalogs';
 
 function getBrandClass(brand) {
@@ -84,10 +91,8 @@ export default function Products({ go }) {
   );
 
   const brands = useMemo(() => Array.from(new Set(items.map((i) => i.brand))).filter((b) => b !== 'میهن' && b !== 'پاندا'), [items]);
-  const categories = useMemo(
-    () => ['مغزدار', 'میوه‌ای', 'سنتی و بسته‌ای', 'خانوادگی', 'تنوع و کوچک', 'یخی و شربتی'].filter((c) => items.some((i) => i.category === c)),
-    [items]
-  );
+  // products.php: the chip row is the fixed $defaultCategories list, never a derived one
+  const categories = DEFAULT_CATEGORIES;
   const myCount = items.filter((i) => i.isCustom).length;
 
   const visible = useMemo(() => {
@@ -119,14 +124,14 @@ export default function Products({ go }) {
   }
 
   function openAddProductModal() {
-    setModal({ open: true, mode: 'add', data: { name: '', brand: 'میهن', category: categories[0] || 'سایر', unitsPerCarton: 24, baseUnitPrice: '', imageUrl: '' } });
+    setModal({ open: true, mode: 'add', data: { name: '', brand: 'میهن', category: categories[0] || 'سایر', unitsPerCarton: 24, cartonPrice: '', brand: '' } });
   }
 
   function openEditProductModal(p) {
     setModal({
       open: true,
       mode: 'edit',
-      data: { id: p.id, name: p.name, brand: p.brand, category: p.category, unitsPerCarton: p.packSize, baseUnitPrice: p.unitPrice, imageUrl: p.imageUrl || '', isCustom: p.isCustom }
+      data: { id: p.id, name: p.name, brand: p.brand || '', category: p.category, unitsPerCarton: p.packSize, cartonPrice: p.cartonPrice, isCustom: p.isCustom }
     });
   }
 
@@ -138,16 +143,16 @@ export default function Products({ go }) {
     setBusy(true);
     // names must match CreateProductDto: the quantity is unitsPerCartonDefault,
     // sending "unitsPerCarton" makes the api answer "تعداد در کارتن الزامی است"
-    const packSize = Number(m.unitsPerCarton) || 24;
-    const unitPrice = Number(m.baseUnitPrice) || 0;
+    const packSize = parseInt(m.unitsPerCarton, 10) || 24;
+    const cartonPrice = parseFloat(m.cartonPrice) || 0;
+    const unitPrice = packSize > 0 ? Math.round(cartonPrice / packSize) : 0;
     const payload = {
       name: (m.name || '').trim(),
-      brand: m.brand,
-      category: m.category,
+      brand: (m.brand || '').trim() || 'شخصی',
+      category: (m.category || '').trim() || 'متفرقه',
       unitsPerCartonDefault: packSize,
-      cartonPrice: unitPrice * packSize,
-      baseUnitPrice: unitPrice,
-      imageUrl: (m.imageUrl || '').trim() || null
+      cartonPrice,
+      baseUnitPrice: unitPrice
     };
     try {
       if (modal.mode === 'edit' && m.id) {
@@ -157,7 +162,7 @@ export default function Products({ go }) {
           await api(`/products/${m.id}/custom-settings`, {
             method: 'PUT',
             body: {
-              customCartonPrice: unitPrice * packSize,
+              customCartonPrice: cartonPrice,
               customUnitPrice: unitPrice,
               customUnitsPerCarton: packSize
             }
@@ -175,9 +180,24 @@ export default function Products({ go }) {
     }
   }
 
+  // handleResetCurrentProductPrice in products.js: drops this visitor's custom price
+  async function handleResetCurrentProductPrice() {
+    if (!m.id) return;
+    if (!window.confirm(`آیا می‌خواهید قیمت «${m.name}» به قیمت پایه رسمی کارخانه بازنشانی شود؟`)) return;
+    try {
+      await api(`/products/${m.id}/custom-settings`, { method: 'DELETE' });
+      setModal({ open: false, mode: 'add', data: {} });
+      showToast('قیمت به پایه کارخانه بازنشانی شد.', 'success');
+      await refresh();
+      await reload({ sync: true });
+    } catch (err) {
+      showToast(err.message || 'خطا در بازنشانی قیمت.', 'error');
+    }
+  }
+
   async function handleDeleteProduct() {
     if (!m.id) return;
-    if (!window.confirm('حذف این کالا از لیست؟')) return;
+    if (!window.confirm(`آیا از حذف محصول اختصاصی «${m.name}» اطمینان دارید؟`)) return;
     try {
       await api(`/products/${m.id}`, { method: 'DELETE' });
       setModal({ open: false, mode: 'add', data: {} });
@@ -461,25 +481,19 @@ export default function Products({ go }) {
 
           <form className="modal-form" id="productForm" onSubmit={handleSaveProduct}>
             <div className="modal-input-group">
-              <label className="req">نام کالا / بستنی</label>
-              <input type="text" id="prodNameInput" placeholder="مثلاً: مگنوم کلاسیک" required value={m.name || ''} onChange={(e) => setM({ name: e.target.value })} />
+              <label>نام بستنی <span className="req">*</span></label>
+              <input type="text" id="prodName" placeholder="مثال: مگنوم فندقی دست‌ساز" required value={m.name || ''} onChange={(e) => setM({ name: e.target.value })} />
             </div>
 
             <div className="modal-input-row">
               <div className="modal-input-group">
-                <label>برند</label>
-                <select className="modal-select" id="prodBrandInput" value={m.brand || 'میهن'} onChange={(e) => setM({ brand: e.target.value })}>
-                  {['میهن', 'پاندا', 'دومینو', 'کاله', 'حاج حسن', 'پاک', 'متفرقه'].map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
+                <label>برند / شرکت</label>
+                <input type="text" id="prodBrand" placeholder="مثال: کارگاه من" value={m.brand ?? ''} onChange={(e) => setM({ brand: e.target.value })} />
               </div>
               <div className="modal-input-group">
                 <label>دسته‌بندی</label>
-                <select className="modal-select" id="prodCategoryInput" value={m.category || 'سایر'} onChange={(e) => setM({ category: e.target.value })}>
-                  {[...new Set([...categories, 'سایر'])].map((c) => (
+                <select id="prodCategory" className="modal-select" value={m.category || 'چوبی'} onChange={(e) => setM({ category: e.target.value })}>
+                  {CATEGORY_OPTIONS.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
@@ -490,30 +504,34 @@ export default function Products({ go }) {
 
             <div className="modal-input-row">
               <div className="modal-input-group">
-                <label>تعداد در کارتن</label>
-                <input type="number" id="prodUnitsInput" min="1" value={m.unitsPerCarton ?? 24} onChange={(e) => setM({ unitsPerCarton: e.target.value })} />
+                <label>تعداد در کارتن <span className="req">*</span></label>
+                <input type="number" id="prodPackSize" min="1" required value={m.unitsPerCarton ?? 24} onChange={(e) => setM({ unitsPerCarton: e.target.value })} />
               </div>
               <div className="modal-input-group">
-                <label>قیمت تکی (تومان)</label>
-                <input type="number" id="prodUnitPriceInput" min="0" value={m.baseUnitPrice ?? ''} onChange={(e) => setM({ baseUnitPrice: e.target.value })} />
+                <label>قیمت کارتن (تومان) <span className="req">*</span></label>
+                <input type="number" id="prodCartonPrice" placeholder="مثال: 720000" min="0" required value={m.cartonPrice ?? ''} onChange={(e) => setM({ cartonPrice: e.target.value })} />
               </div>
             </div>
 
-            <div className="modal-unit-calc">
-              قیمت کارتن محاسبه‌شده: <strong>{fa((Number(m.baseUnitPrice) || 0) * (Number(m.unitsPerCarton) || 0))} تومان</strong>
+            <div className="modal-unit-calc" id="modalUnitCalc">
+              قیمت محاسبه‌شده هر عدد: <strong id="calcUnitPrice">{fa(unitPriceOf(m))} تومان</strong>
             </div>
 
-            <button type="button" className="modal-reset-btn" onClick={() => setM({})}>
-              بازنشانی فیلدها
-            </button>
-            <button type="submit" className="modal-submit-btn" id="productSubmitBtn" disabled={busy}>
-              {busy ? 'در حال ذخیره...' : 'ثبت و ذخیره کالا'}
+            <button type="submit" className="modal-submit-btn" id="modalSubmitBtn" disabled={busy}>
+              {busy ? 'در حال ذخیره...' : 'ثبت کالا'}
             </button>
 
             {modal.mode === 'edit' && (
-              <button type="button" className="modal-delete-btn" onClick={handleDeleteProduct}>
+              <button type="button" className="modal-reset-btn" id="modalResetBtn" onClick={handleResetCurrentProductPrice}>
+                <span className="material-symbols-outlined">restart_alt</span>
+                <span>بازنشانی به قیمت پایه کارخانه</span>
+              </button>
+            )}
+
+            {modal.mode === 'edit' && (
+              <button type="button" className="modal-delete-btn" id="modalDeleteBtn" onClick={handleDeleteProduct}>
                 <span className="material-symbols-outlined">delete</span>
-                <span>حذف این کالا</span>
+                <span>حذف این محصول از لیست من</span>
               </button>
             )}
           </form>
