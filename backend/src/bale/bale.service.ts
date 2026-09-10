@@ -11,6 +11,20 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
   private isPolling = false;
   private lastUpdateId = 0;
 
+  /**
+   * What the polling loop actually saw - this is the only honest source for the
+   * "online / offline" badge of the bot panel.
+   */
+  private lastPollOkAt = 0;
+  private lastPollAt = 0;
+  private consecutiveErrors = 0;
+  private lastPollError = "";
+  private meProbe: { at: number; ok: boolean; username?: string; id?: number; error?: string } | null = null;
+  /** a getMe call is cheap but pointless more often than this */
+  private static readonly ME_CACHE_MS = 20_000;
+  /** the poll is a 10s long-poll, so anything older than this is not a live loop */
+  private static readonly POLL_STALE_MS = 60_000;
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(OtpStore) private readonly otp: OtpStore,
@@ -260,7 +274,8 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       botInfo: {
         username: BOT.username,
         link: BOT.link,
-        status: "ONLINE",
+        // the same live answer the status card uses, never a literal
+        status: (await this.getBotStatus()).status,
       },
       visitorStatus: {
         isLinked: !!visitor?.baleChatId,
@@ -486,22 +501,89 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
     setTimeout(async () => {
       while (this.isPolling) {
+        this.lastPollAt = Date.now();
         try {
           const url = `${this.apiUrl}/getUpdates?offset=${this.lastUpdateId + 1}&timeout=10`;
           const res = await fetch(url);
           const data: any = await res.json().catch(() => ({}));
 
           if (data && data.ok && Array.isArray(data.result)) {
+            this.lastPollOkAt = Date.now();
+            this.consecutiveErrors = 0;
+            this.lastPollError = "";
             for (const update of data.result) {
               this.lastUpdateId = Math.max(this.lastUpdateId, update.update_id);
               await this.processUpdate(update);
             }
+          } else {
+            // a wrong token answers 401/403 with ok:false; before this the loop spun on
+            // it at full speed and the panel still reported "ONLINE"
+            this.notePollError(`${res.status} ${data?.description || ""}`.trim());
+            await new Promise((r) => setTimeout(r, Math.min(30_000, 3000 * (this.consecutiveErrors + 1))));
           }
-        } catch (err) {
+        } catch (err: any) {
+          this.notePollError(err?.message || "network error");
           await new Promise((r) => setTimeout(r, 4000));
         }
       }
     }, 1000);
+  }
+
+  private notePollError(message: string) {
+    this.consecutiveErrors += 1;
+    // never let the token leak into a status endpoint
+    this.lastPollError = String(message || "unknown error").replace(/bot\d+:[^\s"]+/g, "bot:<redacted>").slice(0, 180);
+    if (this.consecutiveErrors === 1 || this.consecutiveErrors % 20 === 0) {
+      this.logger.warn(`Bale polling failed (${this.consecutiveErrors}x): ${this.lastPollError}`);
+    }
+  }
+
+  /**
+   * The truth about the bot, asked of Bale itself (cached for a few seconds).
+   * ONLINE   - token set, getMe answers, the poll loop is fresh
+   * DEGRADED - the api answers but the loop is not healthy (or has just started)
+   * OFFLINE  - token set but Bale does not answer
+   * NOT_CONFIGURED - BALE_BOT_TOKEN is empty, the bot is not running at all
+   */
+  async getBotStatus() {
+    const tokenConfigured = !!this.baleToken;
+    if (tokenConfigured && (!this.meProbe || Date.now() - this.meProbe.at > BaleService.ME_CACHE_MS)) {
+      try {
+        const res = await fetch(`${this.apiUrl}/getMe`);
+        const data: any = await res.json().catch(() => ({}));
+        if (data && data.ok && data.result) {
+          this.meProbe = { at: Date.now(), ok: true, username: data.result.username, id: data.result.id };
+        } else {
+          this.meProbe = { at: Date.now(), ok: false, error: `${res.status} ${data?.description || ""}`.trim().replace(/bot\d+:[^\s"]+/g, "bot:<redacted>") };
+        }
+      } catch (err: any) {
+        this.meProbe = { at: Date.now(), ok: false, error: String(err?.message || "network error").replace(/bot\d+:[^\s"]+/g, "bot:<redacted>") };
+      }
+    }
+
+    const apiOk = !!this.meProbe?.ok;
+    const pollAgeMs = this.lastPollOkAt ? Date.now() - this.lastPollOkAt : null;
+    const pollFresh = pollAgeMs !== null && pollAgeMs < BaleService.POLL_STALE_MS;
+    let status = "NOT_CONFIGURED";
+    if (tokenConfigured) status = apiOk ? (this.isPolling && pollFresh ? "ONLINE" : "DEGRADED") : "OFFLINE";
+
+    return {
+      status,
+      // kept for the api contract: a boolean the panels can trust
+      online: status === "ONLINE",
+      apiReachable: apiOk,
+      tokenConfigured,
+      polling: this.isPolling,
+      lastPollOkAt: this.lastPollOkAt || null,
+      lastPollAt: this.lastPollAt || null,
+      secondsSinceLastOk: pollAgeMs === null ? null : Math.round(pollAgeMs / 1000),
+      consecutiveErrors: this.consecutiveErrors,
+      lastError: this.lastPollError || this.meProbe?.error || null,
+      botId: this.meProbe?.id ?? null,
+      botUsername: this.meProbe?.username || BOT.username,
+      botLink: BOT.link,
+      checkedAt: Date.now(),
+    };
   }
 
   /**

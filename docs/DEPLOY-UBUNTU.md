@@ -21,7 +21,7 @@ sudo bash scripts/setup-server.sh
 
 # ۳) حالت غیرتعاملی (همهٔ مقدارها از محیط) — برای CI یا وقتی می‌خواهی یک‌بار و سریع بگذری
 sudo DOMAIN=app.example.com CERT_EMAIL=admin@example.com DB_PASS='رمز_قوی' \
-  BALE_BOT_USERNAME='VizitikBot' BALE_BOT_TOKEN='توکن_ربات' BALE_ADMIN_CHAT_ID='123456789' \
+  BALE_BOT_USERNAME='Vizitik_bot' BALE_BOT_TOKEN='توکن_ربات' BALE_ADMIN_CHAT_ID='123456789' \
   bash scripts/setup-server.sh --non-interactive --yes
 
 # پرچم‌ها:  --check (فقط پرسش و خلاصه) · -y/--yes (بدون تأیید آخر) ·
@@ -209,7 +209,7 @@ PORT=3000
 # نام نرم‌افزار — دلخواه؛ هر وقت خواستی عوض کن (در پیام‌های بله و خوش‌آمد اعمال می‌شود)
 APP_NAME_FA="ویزیتیک"
 APP_NAME_EN="Vizitik"
-BALE_BOT_USERNAME="<نام‌کاربریِ ربات>"
+BALE_BOT_USERNAME="Vizitik_bot"   # نام‌کاربری عمومی ربات، بدون @
 BALE_BOT_TOKEN="<توکنِ ربات خودت>"
 BALE_ADMIN_CHAT_ID="<آی‌دیِ چت ادمین>"
 EOF

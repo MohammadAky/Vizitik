@@ -165,11 +165,26 @@ def api_calls(text: str, kind: str):
     """endpoint + method pairs and the payload keys of every call"""
     calls = defaultdict(set)
     if kind == "php":
-        pattern = re.compile(r"fetch\(\s*[`'\"]([^`'\"]*?/api/(?P<path>[^`'\"?]+))", re.S)
-        for m in pattern.finditer(text):
-            path = m.group("path").split("?")[0]
-            tail = text[max(0, m.start() - 1500):m.end() + 900]
-            meth = re.search(r"method:\s*['\"](\w+)['\"]", tail)
+        pattern = re.compile(r"fetch\([^)]*?/api/(?P<path>[\w/\-.${}:]*)", re.S)
+        # a page may keep the origin in a const: fetch(API_BASE + '/bale/status')
+        base_is_api = re.compile(r"const\s+([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*?/api[^;\n]*;", re.S)
+        concat = re.compile(r"fetch\(\s*([A-Za-z_$][\w$]*)\s*\+\s*[\x60\x27\x22]([\w/\-.:]*)[\x60\x27\x22]", re.S)
+        api_bases = set(base_is_api.findall(text))
+        found = [(mm.group("path"), mm.end()) for mm in pattern.finditer(text)]
+        found += [(mm.group(2), mm.end()) for mm in concat.finditer(text) if mm.group(1) in api_bases]
+        for path, pos in found:
+            path = path.split("?")[0]
+            # the window looks back for a `payload = { ... }` and forward for `method:`,
+            # but stops at the end of this fetch call so the next call cannot lend it a method
+            back = text[max(0, pos - 1800):pos]
+            fwd = text[pos:pos + 900]
+            cut = fwd.find(chr(41) + chr(125) + chr(59))
+            if cut > 0:
+                fwd = fwd[:cut]
+            tail = back + fwd
+            # the method lives right after the url, the payload may be built above it
+            window_for_method = fwd if chr(109) + "ethod:" in fwd else tail
+            meth = re.search(r"method:\s*['\"](\w+)['\"]", window_for_method)
             method = meth.group(1).upper() if meth else "GET"
             keys = set()
             for blk in re.findall(r"(?:payload|body)\s*=\s*({[^{}]*(?:{[^{}]*}[^{}]*)*})", tail, re.S) + \
@@ -246,8 +261,12 @@ def main():
               "\n".join(read(p) for p in PHP_JS)
     app_src = "\n".join(read(p) for p in sorted(APP_DIR.rglob("*.js*")))
     pa, ja = api_calls(php_src, "php"), api_calls(app_src, "react")
-    only_php = sorted(set(pa) - set(ja))
-    only_js = sorted(set(ja) - set(pa))
+    # the method is inferred from the source text and can be misread, so presence is
+    # compared by path; the method only matters for the payload check below
+    pa_paths = {k.split(" ", 1)[1] for k in pa}
+    ja_paths = {k.split(" ", 1)[1] for k in ja}
+    only_php = sorted(pa_paths - ja_paths)
+    only_js = sorted(ja_paths - pa_paths)
     key_diffs = []
     for ep in sorted(set(pa) & set(ja)):
         a, b = pa[ep], ja[ep]
@@ -279,10 +298,10 @@ def main():
     print(f"  php endpoints         : {len(pa)}   react endpoints: {len(ja)}")
     print(f"  findings              : {problems}")
     if verbose:
-        print("\n-- endpoints of the php app --")
+        print("\n-- calls of the php app --")
         for k in sorted(pa):
             print(f"   {k}   keys={sorted(pa[k]) if pa[k] else '-'}")
-        print("-- endpoints of the PWA --")
+        print("-- calls of the PWA --")
         for k in sorted(ja):
             print(f"   {k}   keys={sorted(ja[k]) if ja[k] else '-'}")
     return 1 if problems else 0
