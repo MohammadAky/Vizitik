@@ -41,7 +41,8 @@ const CSS_ASSETS = {
 /** صفحه‌های احراز هویت در PAGES نیستند (در PHP فایل جدا و بدون nav/دراور دارند) */
 const AUTH_PAGES = {
   login: { title: 'ورود به حساب کاربری', css: ['inline-login'] },
-  register: { title: 'ثبت‌نام ویزیتور', css: [] }
+  // همان inline-login.css در index.php هر سه نما (ورود/ثبت‌نام/بازیابی) را استایل می‌دهد
+  register: { title: 'ثبت‌نام ویزیتور', css: ['inline-login'] }
 };
 
 export function usePhpPage(view) {
