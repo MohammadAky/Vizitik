@@ -390,6 +390,11 @@
   color: #15803d;
 }
 
+/* وضعیت واقعی ربات، از /api/bale/status (همان سه حالتِ کارتِ صفحهٔ ربات) */
+.bale-status-row.off { color: #b91c1c; }
+.bale-status-row.warn { color: #b45309; }
+.bale-status-row.idle { color: #475569; }
+
 .bale-action-btn {
   height: 44px;
   border-radius: 12px;
