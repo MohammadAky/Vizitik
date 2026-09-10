@@ -33,6 +33,24 @@ sudo DOMAIN=app.example.com CERT_EMAIL=admin@example.com DB_PASS='رمز_قوی'
 # در کد یا در فایل‌های نمونه وجود ندارد و همه‌چیز فقط در backend/.env می‌نشیند.
 ```
 
+### بعد از هر تغییر کد: `scripts/update.sh`
+روی لپ‌تاپ commit/push کن، بعد روی سرور:
+```bash
+cd ~/Vizitik
+sudo bash scripts/update.sh
+```
+چه می‌کند: `git pull --ff-only` (اگر upstream نداشته باشی `origin/<branch>` را می‌زند)، diff را
+دسته‌بندی می‌کند (`backend/`، `frontend-app/`، `package-lock.json`، `prisma/schema.prisma`) و
+فقط همان سمت‌ها را می‌سازد؛ `node_modules` دست‌نخورده می‌ماند مگر lock تغییر کرده باشد؛ بیلدِ
+PWA در یک پوشهٔ موقت انجام می‌شود و `dist` فقط وقتی جایش می‌رود که بیلد موفق بوده باشد؛ از
+`dist` بک‌اند آرشیو `backend.dist.<زمان>.tgz` نگه می‌دارد (سه تای آخر) و اگر `npm run build`
+بک‌اند بشکند، همان را برمی‌گرداند و سرویس را ری‌استارت می‌کند؛ بعد `systemctl restart`،
+`nginx -t && systemctl reload`، و دو پرچم سلامت (`127.0.0.1:3000` و `127.0.0.1/` با
+Host دامنه) را چک می‌کند؛ شمارهٔ کامیتِ اعمال‌شده در `/opt/vizitik/.vizitik-revision` نوشته
+می‌شود تا اجرای بعدی بداند از کجا شروع کند.
+پرچم‌ها: `--check` (فقط گزارش)، `--backend-only`، `--frontend-only`، `--restart-only`،
+`--force-deps`، `--no-restart`، `--no-pull`، `--revision <sha>` (برگشت به یک کامیت مشخص).
+
 ### اسکریپت یک‌خطی (توصیه می‌شود)
 `deploy.sh` اول همه‌چیزِ جا‌مانده از اجراهای قبلی را می‌بندد (سرویس، پروسه‌های node/php،
 pm2، آپاچیِ پورت ۸۰)، `git pull` می‌کند و بعد `setup-server.sh` را اجرا می‌کند:
