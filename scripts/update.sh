@@ -92,6 +92,11 @@ TXT
   shift
 done
 
+PARTIAL_UPDATE=0
+for arg in "${ORIGINAL_ARGS[@]}"; do
+  [[ "$arg" == "--backend-only" || "$arg" == "--frontend-only" ]] && PARTIAL_UPDATE=1
+done
+
 run() {  # run <label> <command...> - in check mode only print it
   local label="$1"; shift
   if [[ "$CHECK" == "1" ]]; then echo "      would run: $*"; return 0; fi
@@ -217,12 +222,12 @@ classify_changes() {
   # the real question is the distance between HEAD and what is deployed, so a
   # "git pull" done by hand (or the very first update.sh run) still rebuilds
   if [[ "$FORCE" == "1" ]]; then
-    CHANGED="backend frontend deps schema"
+    CHANGED="backend frontend landing admin deps schema"
     info "--force: rebuilding both sides from HEAD ($(git_at rev-parse --short HEAD 2>/dev/null))"
     return 0
   fi
   if [[ -z "$DEPLOYED_REV" ]]; then
-    CHANGED="backend frontend"
+    CHANGED="backend frontend landing admin"
     warn "$(REVISION_FILE) is missing - this install was not produced by update.sh, rebuilding both sides"
     return 0
   fi
@@ -235,33 +240,15 @@ classify_changes() {
     fi
   fi
   if ! git_at cat-file -e "$DEPLOYED_REV^{commit}" 2>/dev/null; then
-    CHANGED="backend frontend"
+    CHANGED="backend frontend landing admin"
     warn "$(git_at rev-parse --short "$DEPLOYED_REV" 2>/dev/null || echo "$DEPLOYED_REV") is not in this history (rewritten branch?), rebuilding both sides"
     return 0
   fi
   files="$(git_at diff --name-only "${DEPLOYED_REV}..HEAD" 2>/dev/null)"
   if [[ -z "$files" ]]; then
-    CHANGED="backend frontend"
+    CHANGED="backend frontend landing admin"
     info "no file diff between the deployed revision and HEAD, rebuilding both sides to be safe"
     return 0
-  fi
-  if [[ "$DO_PULL" == "1" && -n "$PREV" && -n "$NOW" ]]; then
-    if [[ "$PREV" == "$NOW" ]]; then
-      if [[ "$FORCE_DEPS" == "1" || -n "$REVISION" ]]; then
-        files="$(git_at show --name-only --format= HEAD 2>/dev/null)"
-      else
-        CHANGED="none"
-        info "the checkout did not move (still $(git_at rev-parse --short HEAD 2>/dev/null))"
-        hint_remote_ahead
-        return 0
-      fi
-    else
-      files="$(git_at diff --name-only "$PREV..$NOW" 2>/dev/null)"
-    fi
-  else
-    # nothing was fetched: use the last commit as the reference
-    files="$(git_at diff --name-only HEAD~1..HEAD 2>/dev/null || true)"
-    [[ -z "$files" ]] && files="$(git_at show --name-only --format= HEAD 2>/dev/null || true)"
   fi
   [[ "$FORCE_DEPS" == "1" ]] && files="$files
 package-lock.json"
@@ -329,6 +316,10 @@ sync_source() {  # refresh the sources in the install; node_modules and dist sta
   log "syncing the sources into $INSTALL_DIR"
   [[ -d "$INSTALL_DIR" ]] || { err "$INSTALL_DIR does not exist - run scripts/setup-server.sh first"; exit 1; }
   [[ -d "$INSTALL_DIR/backend" || -d "$INSTALL_DIR/frontend-app" ]] || { err "no backend/ or frontend-app/ in $INSTALL_DIR"; exit 1; }
+  if [[ "$(realpath "$SRC_DIR")" == "$(realpath "$INSTALL_DIR")" ]]; then
+    skip "source and install are the same directory; no source copy needed"
+    return 0
+  fi
   local src="$SRC_DIR/backend" be="$INSTALL_DIR/backend" f
   if [[ "$DO_BACKEND" == "1" ]]; then
     if [[ "$CHECK" == "1" ]]; then
@@ -337,7 +328,7 @@ sync_source() {  # refresh the sources in the install; node_modules and dist sta
       # src/prisma are replaced completely, so a file deleted in the repo cannot linger
       # and break the next tsc run; the rest is copied over
       rm -rf "$be/src" "$be/prisma"
-      cp -a "$src/src" "$be/src"
+      cp -a "$src/src" "$be/src" || exit 1
       [[ -d "$src/prisma" ]] && cp -a "$src/prisma" "$be/prisma"
       for f in package.json package-lock.json tsconfig.json tsconfig.build.json nest-cli.json .env.example documents; do
         [[ -e "$src/$f" ]] && cp -a "$src/$f" "$be/"
@@ -369,15 +360,15 @@ update_backend() {
   [[ "$DO_BACKEND" == "1" ]] || return 0
   log "backend"
   local be="$INSTALL_DIR/backend"
-  npm_install_in "$be"
+  npm_install_in "$be" || exit 1
   if [[ " $CHANGED " == *" schema "* ]] || [[ ! -d "$be/node_modules/.prisma" ]]; then
-    run "prisma generate" bash -c "cd '$be' && npx prisma generate"
+    run "prisma generate" bash -c "cd '$be' && npx prisma generate" || exit 1
   else
     skip "prisma schema unchanged"
   fi
   if [[ " $CHANGED " == *" schema "* ]]; then
     run "prisma db push" bash -c "cd '$be' && npx prisma db push --skip-generate" \
-      || warn "prisma db push failed - check the tables by hand before trusting the new build"
+      || { err "prisma db push failed; update aborted"; exit 1; }
   fi
   local backup="$INSTALL_DIR/backend.dist.$(stamp).tgz"
   if [[ -d "$be/dist" ]]; then
@@ -407,14 +398,14 @@ update_frontend() {
   [[ "$DO_FRONTEND" == "1" ]] || return 0
   log "PWA frontend"
   local fe="$INSTALL_DIR/frontend-app"
-  npm_install_in "$fe"
   local tmp="$INSTALL_DIR/.frontend-app.new"
   run "clean tmp" rm -rf "$tmp"
   run "make tmp" mkdir -p "$tmp"
   # tar instead of cp so node_modules and the live dist are left out of the copy,
   # then the installed node_modules is reused through a symlink
-  run "copy sources" bash -c "tar -C '$SRC_DIR/frontend-app' --exclude=./node_modules --exclude=./dist -cf - . | tar -C '$tmp' -xf - && ln -s '$fe/node_modules' '$tmp/node_modules'"
+  run "copy sources" bash -c "tar -C '$SRC_DIR/frontend-app' --exclude=./node_modules --exclude=./dist -cf - . | tar -C '$tmp' -xf -"
   run "env file" bash -c "[[ -f '$fe/.env' ]] && cp '$fe/.env' '$tmp/.env' || printf 'VITE_API_URL=\"/api\"\n' > '$tmp/.env'"
+  npm_install_in "$tmp" || exit 1
   if ! run "vite build" bash -c "cd '$tmp' && npm run build"; then
     err "PWA build failed - the served site is untouched"
     run "clean tmp" rm -rf "$tmp"
@@ -423,7 +414,7 @@ update_frontend() {
   if [[ "$CHECK" == "1" ]]; then skip "dist would be swapped in and the old one kept for a moment"; return 0; fi
   local prev="$INSTALL_DIR/frontend-app/dist.prev.$(stamp)"
   mv "$fe/dist" "$prev" 2>/dev/null && info "previous dist kept at $(basename "$prev")"
-  mv "$tmp/dist" "$fe/dist"
+  mv "$tmp/dist" "$fe/dist" || { mv "$prev" "$fe/dist"; exit 1; }
   rm -rf "$tmp" "$prev"
   ok "PWA rebuilt and swapped in ($(find "$fe/dist" -maxdepth 1 -type f | wc -l) files at the root of dist)"
 }
@@ -439,9 +430,17 @@ update_landing() {
   if [[ "$CHECK" == "1" ]]; then skip "landing would be swapped in"; return 0; fi
   local prev="$INSTALL_DIR/landing.prev.$(stamp)"
   mv "$dst" "$prev" 2>/dev/null || true
-  mv "$tmp" "$dst"
+  mv "$tmp" "$dst" || { [[ ! -d "$prev" ]] || mv "$prev" "$dst"; exit 1; }
   rm -rf "$prev"
   ok "landing page updated ($(find "$dst" -maxdepth 1 -type f | wc -l) files at the root)"
+}
+
+repair_admin_environment() {
+  # Node does not load .env automatically; supply it through systemd.
+  local dropin="/etc/systemd/system/$ADMIN_SVC.service.d"
+  run "admin environment directory" mkdir -p "$dropin" || return 1
+  run "admin environment" bash -c 'printf "[Service]\nEnvironmentFile=%s/backend/.env\n" "$1" > "$2/environment.conf"' _ "$INSTALL_DIR" "$dropin" || return 1
+  run "reload units" systemctl daemon-reload
 }
 
 update_admin() {
@@ -456,13 +455,15 @@ update_admin() {
   if [[ "$CHECK" == "1" ]]; then skip "admin panel would be swapped in and the service restarted"; return 0; fi
   local prev="$INSTALL_DIR/admin.prev.$(stamp)"
   mv "$dst" "$prev" 2>/dev/null || true
-  mv "$tmp" "$dst"
+  mv "$tmp" "$dst" || { [[ ! -d "$prev" ]] || mv "$prev" "$dst"; exit 1; }
   rm -rf "$prev"
   ok "admin panel static files updated"
   # the node script runs from backend/admin so the backend Prisma client is reused
-  if have systemctl && systemctl list-unit-files "$ADMIN_SVC.service" >/dev/null 2>&1; then
+  if have systemctl && [[ "$(systemctl show -p LoadState --value "$ADMIN_SVC" 2>/dev/null)" == "loaded" ]]; then
     run "install script" bash -c "mkdir -p '$INSTALL_DIR/backend/admin' && cp '$dst/server.js' '$INSTALL_DIR/backend/admin/server.js'"
-    run "restart $ADMIN_SVC" systemctl restart "$ADMIN_SVC"
+    repair_admin_environment || exit 1
+    [[ "$DO_RESTART" == "1" ]] || { warn "admin restart deferred"; return 0; }
+    run "restart $ADMIN_SVC" systemctl restart "$ADMIN_SVC" || exit 1
     sleep 1
     if systemctl is-active --quiet "$ADMIN_SVC"; then
       ok "admin service restarted on 127.0.0.1:$ADMIN_PORT"
@@ -472,7 +473,8 @@ update_admin() {
       exit 1
     fi
   else
-    warn "$ADMIN_SVC unit not found - run scripts/setup-server.sh once to install the admin panel"
+    err "$ADMIN_SVC unit not found - provision the admin service before updating it"
+    exit 1
   fi
 }
 
@@ -611,6 +613,10 @@ check_port_owner() {
 restart_service() {
   [[ "$DO_RESTART" == "1" ]] || { skip "restart skipped (--no-restart)"; return 0; }
   log "service"
+  if [[ "$RESTART_ONLY" == "1" && "$(systemctl show -p LoadState --value "$ADMIN_SVC" 2>/dev/null)" == "loaded" ]]; then
+    repair_admin_environment || return 1
+    run "restart admin" systemctl restart "$ADMIN_SVC" || return 1
+  fi
   if have systemctl; then
     free_backend_port
     run "restart" systemctl restart "$SETUP_SVC" || { err "could not restart $SETUP_SVC"; return 1; }
@@ -639,14 +645,16 @@ restart_service() {
     if run "nginx -t" nginx -t >/dev/null 2>&1; then
       run "reload nginx" systemctl reload nginx 2>/dev/null && ok "nginx reloaded"
     else
-      warn "nginx -t failed; the old configuration is still in memory"
+      err "nginx -t failed; the old configuration is still in memory"
       [[ "$CHECK" == "1" ]] || nginx -t 2>&1 | sed 's/^/        /'
+      return 1
     fi
   fi
 }
 
 verify() {
   log "verification"
+  [[ "$CHECK" == "1" ]] && { skip "no live probes or revision writes in check mode"; return 0; }
   local code
   if have curl; then
     code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "http://127.0.0.1:${BACKEND_PORT}/" 2>/dev/null)"
@@ -671,16 +679,16 @@ verify() {
       elif [[ "$CHECK" == "1" ]]; then skip "no probe in check mode"
       else warn "http://127.0.0.1/ answered '$code' for Host: $host"; fi
     done
-    if systemctl list-unit-files "$ADMIN_SVC.service" >/dev/null 2>&1; then
+    if [[ "$(systemctl show -p LoadState --value "$ADMIN_SVC" 2>/dev/null)" == "loaded" ]]; then
       code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "http://127.0.0.1:${ADMIN_PORT}/api/health" 2>/dev/null)"
       if [[ "$code" == "200" ]]; then ok "the admin panel answers on 127.0.0.1:${ADMIN_PORT}"
       elif [[ "$CHECK" == "1" ]]; then skip "no admin probe in check mode"
-      else warn "the admin panel did not answer on 127.0.0.1:${ADMIN_PORT} (journalctl -u $ADMIN_SVC)"; fi
+      else err "the admin panel did not answer on 127.0.0.1:${ADMIN_PORT} (journalctl -u $ADMIN_SVC)"; return 1; fi
     fi
   else
     skip "curl not found, skipping the probes"
   fi
-  if [[ -n "${GIT_REMOTE:-}" ]] && have git; then
+  if [[ "$PARTIAL_UPDATE" == "0" && "$DO_RESTART" == "1" && "$RESTART_ONLY" == "0" ]] && have git; then
     run "record revision" bash -c "git -C '$SRC_DIR' rev-parse HEAD > '$(REVISION_FILE)' 2>/dev/null"
   fi
 }
@@ -696,7 +704,8 @@ main() {
   update_checkout
   classify_changes
   if [[ "$RESTART_ONLY" == "1" ]]; then
-    restart_service; verify; exit $?
+    restart_service || exit 1
+    verify; exit $?
   fi
   if [[ "$CHANGED" == "none" && "$FORCE_DEPS" == "0" && "$REVISION" == "" ]]; then
     log "nothing relevant changed"

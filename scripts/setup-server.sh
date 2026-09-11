@@ -307,7 +307,7 @@ print_config_summary() {
   if [[ -n "$DOMAIN" && "${WITH_WWW:-0}" == "1" ]]; then shown="$DOMAIN www.$DOMAIN"; fi
   echo "  domain      : ${shown:-<none - plain http on the server ip>}"
   echo "  app domain  : ${APP_DOMAIN:-<same as domain - PWA on $DOMAIN>}"
-  echo "  admin panel : ${ADMIN_DOMAIN:-<disabled>} (127.0.0.1:${ADMIN_PORT}, token: ${ADMIN_TOKEN:+set}${ADMIN_TOKEN:-unset})"
+  echo "  admin panel : ${ADMIN_DOMAIN:-<disabled>} (127.0.0.1:${ADMIN_PORT}, token: ${ADMIN_TOKEN:+set})"
   echo "  https       : $ENABLE_HTTPS mode=${HTTPS_MODE:-http} (email: ${CERT_EMAIL:-<none>})"
   echo "  api         : 127.0.0.1:${BACKEND_PORT}, proxied at /api"
   echo "  database    : ${DB_USER}@${DB_HOST}/${DB_NAME} (password: $dbpass_state)"
@@ -679,6 +679,7 @@ After=network.target mariadb.service vizitik-backend.service
 [Service]
 Type=simple
 WorkingDirectory=$INSTALL_DIR/backend
+EnvironmentFile=$INSTALL_DIR/backend/.env
 ExecStart=$(command -v node) admin/server.js
 Restart=always
 RestartSec=3
@@ -882,7 +883,7 @@ setup_https() {
     local creds
     creds="$(write_dns_credentials | tail -n 1)"
     local rc=0
-    certbot certonly -a dns-cloudflare --dns-cloudflare-credentials "$creds" \
+    certbot certonly --expand -a dns-cloudflare --dns-cloudflare-credentials "$creds" \
       --dns-cloudflare-propagation-seconds 30 "${cnames[@]}" --agree-tos "${email_args[@]}" -n \
       >"$logf" 2>&1 || rc=$?
     if (( rc != 0 )); then report_certbot_failure "$rc"; fi
@@ -925,7 +926,7 @@ setup_https() {
   for root in "${probe_roots[@]}"; do rm -f "$root/$probe"; done
 
   local rc=0
-  certbot --nginx "${cnames[@]}" --redirect --agree-tos "${email_args[@]}" --non-interactive >"$logf" 2>&1 || rc=$?
+  certbot --nginx --expand "${cnames[@]}" --redirect --agree-tos "${email_args[@]}" --non-interactive >"$logf" 2>&1 || rc=$?
   if (( rc != 0 )); then
     if can_ask && ! grep -qiE "rate limit|too many certificates" "$logf" 2>/dev/null; then
       local reply=""

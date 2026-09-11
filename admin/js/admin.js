@@ -15,6 +15,7 @@
   let currentTab = 'dashboard';
   let editingProductId = null;
   let currentOrderId = null;
+   let orderCustomerId = '';
   let queryHistory = [];
   let queryBookmarks = [];
   let tablesData = [];
@@ -292,9 +293,9 @@
     api('/api/stats')
       .then(data => {
         const stats = data.stats;
-        const productTable = stats.details.find(t => t.name === 'Product');
-        const orderTable = stats.details.find(t => t.name === 'Order');
-        const customerTable = stats.details.find(t => t.name === 'Customer');
+        const productTable = stats.details.find(t => t.name === 'products');
+        const orderTable = stats.details.find(t => t.name === 'orders');
+        const customerTable = stats.details.find(t => t.name === 'customers');
 
         $('stat-products').textContent = productTable ? formatNumber(productTable.rows) : '-';
         $('stat-orders').textContent = orderTable ? formatNumber(orderTable.rows) : '-';
@@ -938,7 +939,7 @@
     api('/api/users').then(data => {
       usersData = data.users;
       renderOrderVisitorFilter();
-    });
+    }).catch(err => showToast(err.message, 'error'));
 
     const filters = {
       status: $('order-status-filter').value,
@@ -948,6 +949,7 @@
     };
 
     const params = new URLSearchParams();
+    if (orderCustomerId) params.set('customerId', orderCustomerId);
     if (filters.status) params.set('status', filters.status);
     if (filters.visitorId) params.set('visitorId', filters.visitorId);
     if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
@@ -965,10 +967,12 @@
 
   function renderOrderVisitorFilter() {
     const select = $('order-visitor-filter');
+    const selected = select.value;
     select.innerHTML = '<option value="">همه ویزیتورها</option>';
     usersData.filter(u => u.role === 'VISITOR').forEach(u => {
       select.innerHTML += `<option value="${esc(u.id)}">${esc(u.firstName + ' ' + u.lastName)}</option>`;
     });
+    select.value = selected;
   }
 
   function renderOrders() {
@@ -1084,7 +1088,7 @@
     $('order-detail-modal').hidden = true;
   });
 
-  $('order-search').addEventListener('click', loadOrders);
+  $('order-search').addEventListener('click', () => { orderCustomerId = ''; loadOrders(); });
 
   // ============================================================ Customers
 
@@ -1136,20 +1140,24 @@
           <td dir="ltr">${c.ordersCount}</td>
           <td>${last}</td>
           <td class="row-actions">
-            <button type="button" class="btn btn-ghost btn-sm" onclick="window.viewCustomerOrders('${esc(c.id)}')">سفارشات</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-customer-orders="${esc(c.id)}">سفارشات</button>
           </td>
         </tr>
       `;
     }).join('');
   }
 
-  window.viewCustomerOrders = (customerId) => {
-    // Switch to orders tab with customer filter
+  $('customers-body').addEventListener('click', e => {
+    const button = e.target.closest('[data-customer-orders]');
+    if (!button) return;
+    orderCustomerId = button.dataset.customerOrders;
     $('order-visitor-filter').value = '';
+    $('order-status-filter').value = '';
+    $('order-date-from').value = '';
+    $('order-date-to').value = '';
     document.querySelector('[data-tab="orders"]').click();
-    // Note: Would need to add customer filter to orders
-    showToast('برای مشاهده سفارشات مشتری، در تب سفارشات جستجو کنید', 'info');
-  };
+    showToast('سفارشات این مشتری؛ برای حذف فیلتر دکمه جستجو را بزنید', 'info');
+  });
 
   $('customer-search-btn').addEventListener('click', loadCustomers);
   $('customer-search').addEventListener('keydown', (e) => {
@@ -1162,7 +1170,8 @@
   function loadSettings() {
     const saved = localStorage.getItem(SETTINGS_KEY);
     if (saved) {
-      settings = Object.assign(settings, JSON.parse(saved));
+      try { settings = Object.assign(settings, JSON.parse(saved)); }
+      catch { localStorage.removeItem(SETTINGS_KEY); }
     }
     applySettings();
   }
@@ -1231,16 +1240,18 @@
 
   $('clear-all-history').addEventListener('click', () => {
     if (confirm('آیا مطمئن هستید که می‌خواهید تمام تاریخچه را پاک کنید؟')) {
-      queryHistory = [];
-      showToast('تاریخچه پاک شد');
+      api('/api/query-history', { method: 'DELETE' })
+        .then(() => { queryHistory = []; showToast('تاریخچه پاک شد'); })
+        .catch(err => showToast(err.message, 'error'));
     }
   });
 
   $('clear-all-bookmarks').addEventListener('click', () => {
     if (confirm('آیا مطمئن هستید که می‌خواهید تمام کوئری‌های ذخیره‌شده را پاک کنید؟')) {
-      queryBookmarks = [];
-      renderBookmarkList();
-      showToast('کوئری‌های ذخیره‌شده پاک شدند');
+      api('/api/query-bookmarks')
+        .then(data => Promise.all(data.bookmarks.map(b => api(`/api/query-bookmarks/${b.id}`, { method: 'DELETE' }))))
+        .then(() => { queryBookmarks = []; renderBookmarkList(); showToast('کوئری‌های ذخیره‌شده پاک شدند'); })
+        .catch(err => { loadBookmarks(); showToast(err.message, 'error'); });
     }
   });
 

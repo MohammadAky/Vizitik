@@ -50,7 +50,7 @@ function sendJson(res, code, obj) {
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
   });
-  res.end(JSON.stringify(obj));
+  res.end(JSON.stringify(plain(obj)));
 }
 
 function authorized(req) {
@@ -131,6 +131,7 @@ function guardSql(raw, allowWrite = false) {
   // Check for multiple statements
   if (sql.includes(';')) return { ok: false, error: 'فقط یک دستور در هر اجرا مجاز است' };
 
+  if (/--|#|\/\*/.test(sql)) return { ok: false, error: 'کامنت SQL در این ویرایشگر پشتیبانی نمی‌شود' };
   const queryType = classifyQuery(sql);
 
   // Read operations
@@ -139,6 +140,8 @@ function guardSql(raw, allowWrite = false) {
 
     // Apply LIMIT for SELECT queries
     if (queryType === 'SELECT') {
+      const offsetLimit = sql.match(/\blimit\s+(\d+)\s+offset\s+(\d+)\s*$/i);
+      if (offsetLimit) return { ok: true, sql: sql.replace(/\blimit\s+\d+\s+offset\s+\d+\s*$/i, `LIMIT ${Math.min(Number(offsetLimit[1]), MAX_LIMIT)} OFFSET ${offsetLimit[2]}`), type: queryType, requiresConfirmation: false };
       const limit = sql.match(/\blimit\s+(\d+)\s*(,\s*(\d+))?\s*$/i);
       if (limit) {
         if (limit[3] !== undefined) {
@@ -418,13 +421,21 @@ async function listCustomers(q) {
 async function listOrders(filters = {}) {
   const where = {};
 
+  if (filters.status && !['DRAFT', 'CONFIRMED', 'DELIVERED', 'CANCELLED'].includes(filters.status)) throw Object.assign(new Error('وضعیت نامعتبر است'), { status: 400 });
   if (filters.status) where.status = filters.status;
+  for (const key of ['dateFrom', 'dateTo']) {
+    if (filters[key] && !Number.isFinite(Date.parse(filters[key]))) throw Object.assign(new Error('تاریخ نامعتبر است'), { status: 400 });
+  }
   if (filters.visitorId) where.visitorId = filters.visitorId;
   if (filters.customerId) where.customerId = filters.customerId;
   if (filters.dateFrom || filters.dateTo) {
     where.orderDate = {};
     if (filters.dateFrom) where.orderDate.gte = new Date(filters.dateFrom);
-    if (filters.dateTo) where.orderDate.lte = new Date(filters.dateTo);
+    if (filters.dateTo) {
+      const end = new Date(filters.dateTo);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(filters.dateTo)) { end.setUTCDate(end.getUTCDate() + 1); where.orderDate.lt = end; }
+      else where.orderDate.lte = end;
+    }
   }
 
   const rows = await prisma.order.findMany({
@@ -436,7 +447,7 @@ async function listOrders(filters = {}) {
       payments: true,
     },
     orderBy: { createdAt: 'desc' },
-    take: filters.limit || 100,
+    take: Number.isInteger(filters.limit) ? Math.max(1, Math.min(filters.limit, MAX_LIMIT)) : 100,
   });
 
   return rows.map((o) => ({
@@ -501,23 +512,27 @@ function serveFile(res, filePath) {
 function serveStatic(res, urlPath) {
   if (urlPath.startsWith('/fonts/')) {
     const rel = path.normalize(urlPath.replace(/^\/fonts\//, ''));
-    const full = path.join(FONTS_DIR, rel);
-    if (!full.startsWith(FONTS_DIR)) return sendJson(res, 403, { error: 'forbidden' });
+    const full = path.resolve(FONTS_DIR, rel);
+    if (!full.startsWith(path.resolve(FONTS_DIR) + path.sep)) return sendJson(res, 403, { error: 'forbidden' });
     return serveFile(res, full);
   }
   if (urlPath === '/' || urlPath === '/index.html') {
     return serveFile(res, path.join(STATIC_DIR, 'index.html'));
   }
-  const full = path.join(STATIC_DIR, path.normalize(urlPath).replace(/^([/\\])+/, ''));
-  if (!full.startsWith(STATIC_DIR)) return sendJson(res, 403, { error: 'forbidden' });
+  if (!/^\/(css|js)\/[A-Za-z0-9_.\/-]+$/.test(urlPath)) return sendJson(res, 404, { error: 'not found' });
+  const full = path.resolve(STATIC_DIR, '.' + urlPath);
+  if (!full.startsWith(path.resolve(STATIC_DIR) + path.sep)) return sendJson(res, 403, { error: 'forbidden' });
   return serveFile(res, full);
 }
 
 // ============================================================ HTTP Server
 
 const server = http.createServer(async (req, res) => {
-  const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
-  const query = new URL(req.url || '/', 'http://localhost').searchParams;
+  let urlPath, query;
+  try {
+    urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+    query = new URL(req.url || '/', 'http://localhost').searchParams;
+  } catch { return sendJson(res, 400, { error: 'Invalid URL' }); }
 
   try {
     // Health check (no auth)
@@ -804,7 +819,7 @@ const server = http.createServer(async (req, res) => {
 
   } catch (err) {
     console.error('Server error:', err);
-    return sendJson(res, 500, { error: (err && err.message) || 'خطای ناشناخته' });
+    return sendJson(res, err.status || 500, { error: (err && err.message) || 'خطای ناشناخته' });
   }
 });
 

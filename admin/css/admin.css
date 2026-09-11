@@ -1637,3 +1637,6 @@ body {
     print-color-adjust: exact;
   }
 }
+
+/* Author display rules must never override the HTML hidden state. */
+[hidden] { display: none !important; }
