@@ -36,7 +36,9 @@ SRC_DIR="${SRC_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 ORIGINAL_ARGS=("$@")
 INSTALL_DIR="${INSTALL_DIR:-/opt/vizitik}"
 BACKEND_PORT="${BACKEND_PORT:-3000}"
+ADMIN_PORT="${ADMIN_PORT:-3001}"
 SETUP_SVC="${SETUP_SVC:-vizitik-backend}"
+ADMIN_SVC="${ADMIN_SVC:-vizitik-admin}"
 GIT_REMOTE="${GIT_REMOTE:-origin}"
 REVISION=""
 
@@ -52,14 +54,14 @@ err()  { echo -e "\033[1;31m  FAIL $*\033[0m" >&2; }
 skip() { echo -e "  --  $*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-CHECK=0; YES=0; DO_BACKEND=1; DO_FRONTEND=1; DO_PULL=1; RESTART_ONLY=0; FORCE_DEPS=0; DO_RESTART=1; FORCE=0
+CHECK=0; YES=0; DO_BACKEND=1; DO_FRONTEND=1; DO_LANDING=1; DO_ADMIN=1; DO_PULL=1; RESTART_ONLY=0; FORCE_DEPS=0; DO_RESTART=1; FORCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check|--dry-run) CHECK=1 ;;
-    --backend-only)    DO_FRONTEND=0 ;;
+    --backend-only)    DO_FRONTEND=0; DO_LANDING=0; DO_ADMIN=0 ;;
     --frontend-only)   DO_BACKEND=0 ;;
-    --restart-only)    RESTART_ONLY=1; DO_PULL=0; DO_BACKEND=0; DO_FRONTEND=0 ;;
+    --restart-only)    RESTART_ONLY=1; DO_PULL=0; DO_BACKEND=0; DO_FRONTEND=0; DO_LANDING=0; DO_ADMIN=0 ;;
     --force-deps)      FORCE_DEPS=1 ;;
     -f|--force)        FORCE=1; FORCE_DEPS=1 ;;
     --no-restart)      DO_RESTART=0 ;;
@@ -265,10 +267,12 @@ classify_changes() {
 package-lock.json"
   if [[ -n "${CHANGED_OVERRIDE:-}" ]]; then files="$CHANGED_OVERRIDE"; fi
 
-  [[ -z "$files" ]] && { CHANGED="backend frontend"; info "no diff available, rebuilding both sides"; return 0; }
+  [[ -z "$files" ]] && { CHANGED="backend frontend landing admin"; info "no diff available, rebuilding all sides"; return 0; }
   local parts=()
   echo "$files" | grep -q '^backend/'            && parts+=("backend")
   echo "$files" | grep -q '^frontend-app/'       && parts+=("frontend")
+  echo "$files" | grep -q '^landing/'            && parts+=("landing")
+  echo "$files" | grep -q '^admin/'              && parts+=("admin")
   echo "$files" | grep -Eq 'package-lock.json|package.json' && parts+=("deps")
   echo "$files" | grep -q 'prisma/schema.prisma' && parts+=("schema")
   echo "$files" | grep -Eq '^scripts/setup-server.sh|^docs/' && parts+=("docs")
@@ -283,6 +287,14 @@ package-lock.json"
   if [[ "$CHANGED" != *frontend* && "$CHANGED" != *deps* ]]; then
     [[ "$DO_FRONTEND" == "1" ]] && skip "no frontend files in this range - the PWA build is skipped"
     DO_FRONTEND=0
+  fi
+  if [[ "$CHANGED" != *landing* ]]; then
+    [[ "$DO_LANDING" == "1" ]] && skip "no landing files in this range - the landing page stays as it is"
+    DO_LANDING=0
+  fi
+  if [[ "$CHANGED" != *admin* ]]; then
+    [[ "$DO_ADMIN" == "1" ]] && skip "no admin files in this range - the admin panel stays as it is"
+    DO_ADMIN=0
   fi
   if ! ask "apply these to the running server" y; then
     info "cancelled; nothing was rebuilt"
@@ -414,6 +426,54 @@ update_frontend() {
   mv "$tmp/dist" "$fe/dist"
   rm -rf "$tmp" "$prev"
   ok "PWA rebuilt and swapped in ($(find "$fe/dist" -maxdepth 1 -type f | wc -l) files at the root of dist)"
+}
+
+update_landing() {
+  [[ "$DO_LANDING" == "1" ]] || return 0
+  log "landing page"
+  local src="$SRC_DIR/landing" dst="$INSTALL_DIR/landing"
+  [[ -d "$src" ]] || { warn "landing/ is missing in the checkout; the served page stays as it is"; return 0; }
+  local tmp="$INSTALL_DIR/.landing.new"
+  run "clean tmp" rm -rf "$tmp"
+  run "copy landing" bash -c "mkdir -p '$tmp' && tar -C '$src' -cf - . | tar -C '$tmp' -xf -"
+  if [[ "$CHECK" == "1" ]]; then skip "landing would be swapped in"; return 0; fi
+  local prev="$INSTALL_DIR/landing.prev.$(stamp)"
+  mv "$dst" "$prev" 2>/dev/null || true
+  mv "$tmp" "$dst"
+  rm -rf "$prev"
+  ok "landing page updated ($(find "$dst" -maxdepth 1 -type f | wc -l) files at the root)"
+}
+
+update_admin() {
+  [[ "$DO_ADMIN" == "1" ]] || return 0
+  log "admin panel"
+  local src="$SRC_DIR/admin" dst="$INSTALL_DIR/admin"
+  [[ -d "$src" ]] || { warn "admin/ is missing in the checkout; the served panel stays as it is"; return 0; }
+  # the static UI is swapped atomically, like the landing page
+  local tmp="$INSTALL_DIR/.admin.new"
+  run "clean tmp" rm -rf "$tmp"
+  run "copy admin" bash -c "mkdir -p '$tmp' && tar -C '$src' -cf - . | tar -C '$tmp' -xf -"
+  if [[ "$CHECK" == "1" ]]; then skip "admin panel would be swapped in and the service restarted"; return 0; fi
+  local prev="$INSTALL_DIR/admin.prev.$(stamp)"
+  mv "$dst" "$prev" 2>/dev/null || true
+  mv "$tmp" "$dst"
+  rm -rf "$prev"
+  ok "admin panel static files updated"
+  # the node script runs from backend/admin so the backend Prisma client is reused
+  if have systemctl && systemctl list-unit-files "$ADMIN_SVC.service" >/dev/null 2>&1; then
+    run "install script" bash -c "mkdir -p '$INSTALL_DIR/backend/admin' && cp '$dst/server.js' '$INSTALL_DIR/backend/admin/server.js'"
+    run "restart $ADMIN_SVC" systemctl restart "$ADMIN_SVC"
+    sleep 1
+    if systemctl is-active --quiet "$ADMIN_SVC"; then
+      ok "admin service restarted on 127.0.0.1:$ADMIN_PORT"
+    else
+      err "$ADMIN_SVC did not come back; last log lines:"
+      journalctl -u "$ADMIN_SVC" -n 25 --no-pager 2>/dev/null | sed 's/^/        /'
+      exit 1
+    fi
+  else
+    warn "$ADMIN_SVC unit not found - run scripts/setup-server.sh once to install the admin panel"
+  fi
 }
 
 # ------------------------------------------------------------------
@@ -575,7 +635,7 @@ restart_service() {
   else
     warn "no systemctl here; restart the process yourself (pm2 restart all / node dist/main.js)"
   fi
-  if have nginx && [[ "$DO_FRONTEND" == "1" || "$RESTART_ONLY" == "1" ]]; then
+  if have nginx && [[ "$DO_FRONTEND" == "1" || "$DO_LANDING" == "1" || "$DO_ADMIN" == "1" || "$RESTART_ONLY" == "1" ]]; then
     if run "nginx -t" nginx -t >/dev/null 2>&1; then
       run "reload nginx" systemctl reload nginx 2>/dev/null && ok "nginx reloaded"
     else
@@ -601,12 +661,22 @@ verify() {
       journalctl -u "$SETUP_SVC" -n 25 --no-pager 2>/dev/null | sed 's/^/        /'
       return 1
     fi
-    local host="${DOMAIN_PROBE:-$(awk '/server_name/{print $2; exit}' /etc/nginx/sites-enabled/vizitik /etc/nginx/sites-enabled/vizitik.conf 2>/dev/null)}"
-    [[ -z "$host" ]] && host="127.0.0.1"
-    code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' -H "Host: $host" http://127.0.0.1/ 2>/dev/null)"
-    if [[ "$code" =~ ^(200|301|302|304)$ ]]; then ok "nginx serves the PWA for $host (http $code)"
-    elif [[ "$CHECK" == "1" ]]; then skip "no probe in check mode"
-    else warn "http://127.0.0.1/ answered '$code' for Host: $host"; fi
+    local hosts
+    hosts="$(awk '/server_name/{gsub(/;/,""); for(i=2;i<=NF;i++) print $i}' /etc/nginx/sites-enabled/vizitik /etc/nginx/sites-enabled/vizitik.conf 2>/dev/null | sort -u | head -4)"
+    [[ -n "${DOMAIN_PROBE:-}" ]] && hosts="$DOMAIN_PROBE"
+    [[ -z "${hosts// /}" ]] && hosts="127.0.0.1"
+    for host in $hosts; do
+      code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' -H "Host: $host" http://127.0.0.1/ 2>/dev/null)"
+      if [[ "$code" =~ ^(200|301|302|304)$ ]]; then ok "nginx serves $host (http $code)"
+      elif [[ "$CHECK" == "1" ]]; then skip "no probe in check mode"
+      else warn "http://127.0.0.1/ answered '$code' for Host: $host"; fi
+    done
+    if systemctl list-unit-files "$ADMIN_SVC.service" >/dev/null 2>&1; then
+      code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "http://127.0.0.1:${ADMIN_PORT}/api/health" 2>/dev/null)"
+      if [[ "$code" == "200" ]]; then ok "the admin panel answers on 127.0.0.1:${ADMIN_PORT}"
+      elif [[ "$CHECK" == "1" ]]; then skip "no admin probe in check mode"
+      else warn "the admin panel did not answer on 127.0.0.1:${ADMIN_PORT} (journalctl -u $ADMIN_SVC)"; fi
+    fi
   else
     skip "curl not found, skipping the probes"
   fi
@@ -637,6 +707,8 @@ main() {
   sync_source
   update_backend
   update_frontend
+  update_landing
+  update_admin
   restart_service || exit 1
   verify || exit 1
   log "done"
