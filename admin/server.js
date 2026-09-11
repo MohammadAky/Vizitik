@@ -110,6 +110,87 @@ function guardSql(raw) {
   return { ok: true, sql: `${sql} LIMIT ${MAX_LIMIT}` };
 }
 
+// ------------------------------------------------------------- products
+
+const MAX_PRICE = 9999999999.99;
+const MAX_TEXT = 200;
+
+function cleanText(v) {
+  if (v === undefined || v === null) return undefined;
+  const s = String(v).trim();
+  return s.length ? (s.length > MAX_TEXT ? s.slice(0, MAX_TEXT) : s) : undefined;
+}
+
+function cleanNumber(v) {
+  if (v === undefined || v === null || v === '') return undefined;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > MAX_PRICE) return NaN;
+  return n;
+}
+
+/**
+ * Validates a product payload. With { partial: false } (create) name and
+ * unitsPerCartonDefault are required; with { partial: true } (update) every
+ * field is optional. Mirrors the rules of backend ProductsService: when only
+ * a carton price is given, the unit price is derived from it.
+ */
+function validateProductBody(body, { partial, currentUnits } = {}) {
+  const data = {};
+  const name = cleanText(body.name);
+  if (name === undefined) {
+    if (!partial) return { ok: false, error: 'نام محصول الزامی است' };
+  } else {
+    data.name = name;
+  }
+  for (const f of ['brand', 'category', 'imageUrl']) {
+    const v = cleanText(body[f]);
+    if (v !== undefined) data[f] = v;
+  }
+  let units = cleanNumber(body.unitsPerCartonDefault);
+  if (units !== undefined) {
+    if (!Number.isInteger(units) || units < 1) return { ok: false, error: 'تعداد در کارتن باید عدد صحیح بزرگ‌تر از صفر باشد' };
+    data.unitsPerCartonDefault = units;
+  } else if (!partial) {
+    return { ok: false, error: 'تعداد در کارتن الزامی است' };
+  } else {
+    units = currentUnits;
+  }
+  const carton = cleanNumber(body.cartonPrice);
+  if (Number.isNaN(carton)) return { ok: false, error: 'قیمت کارتن نامعتبر است' };
+  const unit = cleanNumber(body.baseUnitPrice);
+  if (Number.isNaN(unit)) return { ok: false, error: 'قیمت واحد نامعتبر است' };
+  if (unit !== undefined) {
+    data.baseUnitPrice = unit;
+  } else if (carton !== undefined) {
+    if (!units) return { ok: false, error: 'برای محاسبه‌ی قیمت واحد، تعداد در کارتن لازم است' };
+    data.baseUnitPrice = Math.round(carton / units);
+  } else if (carton === undefined && !partial) {
+    return { ok: false, error: 'قیمت کارتن یا قیمت واحد الزامی است' };
+  }
+  return { ok: true, data };
+}
+
+/** global catalog products with usage counts */
+async function listProducts() {
+  const rows = await prisma.product.findMany({
+    orderBy: [{ brand: 'asc' }, { name: 'asc' }],
+    include: { _count: { select: { userSettings: true, orderItems: true } } },
+  });
+  return rows.map((p) => ({
+    id: p.id,
+    name: p.name,
+    brand: p.brand,
+    category: p.category,
+    imageUrl: p.imageUrl,
+    baseUnitPrice: p.baseUnitPrice === null ? null : Number(p.baseUnitPrice),
+    unitsPerCartonDefault: p.unitsPerCartonDefault,
+    isGlobal: p.isGlobal,
+    createdAt: p.createdAt,
+    userSettingsCount: p._count.userSettings,
+    orderItemsCount: p._count.orderItems,
+  }));
+}
+
 async function listTables() {
   const rows = await prisma.$queryRawUnsafe('SHOW TABLES');
   const key = rows.length ? Object.keys(rows[0])[0] : null;
@@ -180,6 +261,57 @@ const server = http.createServer(async (req, res) => {
         ms: Date.now() - t0,
         sql: guarded.sql,
       });
+    }
+
+    // ----- products: structured CRUD (the SQL tab itself stays read-only) -----
+    const productMatch = urlPath.match(/^\/api\/products(?:\/([A-Za-z0-9-]{1,64}))?$/);
+    if (productMatch) {
+      if (!authorized(req)) return sendJson(res, 401, { error: 'توکن ادمین درست نیست' });
+      const id = productMatch[1];
+
+      if (!id && req.method === 'GET') {
+        return sendJson(res, 200, { products: await listProducts() });
+      }
+
+      if (!id && req.method === 'POST') {
+        const payload = JSON.parse((await readBody(req, 64 * 1024)) || '{}');
+        const v = validateProductBody(payload, { partial: false });
+        if (!v.ok) return sendJson(res, 400, { error: v.error });
+        const product = await prisma.product.create({
+          data: Object.assign({ isGlobal: true }, v.data),
+          include: { _count: { select: { userSettings: true, orderItems: true } } },
+        });
+        return sendJson(res, 201, { product: (await listProducts()).find((x) => x.id === product.id) || plain(product) });
+      }
+
+      if (id && req.method === 'PUT') {
+        const existing = await prisma.product.findUnique({ where: { id } });
+        if (!existing) return sendJson(res, 404, { error: 'محصول یافت نشد' });
+        const payload = JSON.parse((await readBody(req, 64 * 1024)) || '{}');
+        const v = validateProductBody(payload, { partial: true, currentUnits: existing.unitsPerCartonDefault });
+        if (!v.ok) return sendJson(res, 400, { error: v.error });
+        if (!Object.keys(v.data).length) return sendJson(res, 400, { error: 'چیزی برای تغییر ارسال نشده است' });
+        await prisma.product.update({ where: { id }, data: v.data });
+        return sendJson(res, 200, { product: (await listProducts()).find((x) => x.id === id) });
+      }
+
+      if (id && req.method === 'DELETE') {
+        const existing = await prisma.product.findUnique({
+          where: { id },
+          include: { _count: { select: { orderItems: true, userSettings: true } } },
+        });
+        if (!existing) return sendJson(res, 404, { error: 'محصول یافت نشد' });
+        const used = existing._count.orderItems;
+        if (used > 0) {
+          return sendJson(res, 409, {
+            error: `این محصول در ${used} ردیف فاکتور ثبت شده و حذف نمی‌شود (تاریخچه‌ی سفارش‌ها باید سالم بماند)`,
+          });
+        }
+        await prisma.product.delete({ where: { id } });
+        return sendJson(res, 200, { deleted: true, wasUserSettingCount: existing._count.userSettings });
+      }
+
+      return sendJson(res, 405, { error: 'method not allowed' });
     }
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {

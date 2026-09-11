@@ -152,4 +152,127 @@
   $('sql').addEventListener('keydown', function (e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runQuery(); }
   });
+
+  // ------------------------------------------------------------- tabs
+
+  var views = { sql: $('view-sql'), products: $('view-products') };
+  document.querySelectorAll('.tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      var name = tab.getAttribute('data-tab');
+      Object.keys(views).forEach(function (k) { views[k].hidden = k !== name; });
+      if (name === 'products') loadProducts();
+    });
+  });
+
+  // ------------------------------------------------------------- products
+
+  var editingId = null;
+
+  function pStatus(msg, isError) {
+    var s = $('p-status');
+    s.className = 'status' + (isError ? ' error' : '');
+    s.textContent = msg || '';
+  }
+
+  function loadProducts() {
+    var body = $('products-body');
+    body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted)">در حال دریافت…</td></tr>';
+    api('/api/products').then(function (data) {
+      if (!data.products.length) {
+        body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted)">هنوز محصولی ثبت نشده است.</td></tr>';
+        return;
+      }
+      body.innerHTML = data.products.map(function (p) {
+        var price = p.baseUnitPrice === null || p.baseUnitPrice === undefined ? '—' : Number(p.baseUnitPrice).toLocaleString('fa-IR');
+        return '<tr>' +
+          '<td>' + esc(p.name) + '</td>' +
+          '<td>' + esc(p.brand || '—') + '</td>' +
+          '<td>' + esc(p.category || '—') + '</td>' +
+          '<td>' + price + '</td>' +
+          '<td>' + p.unitsPerCartonDefault + '</td>' +
+          '<td>' + p.orderItemsCount + '</td>' +
+          '<td>' + p.userSettingsCount + '</td>' +
+          '<td class="row-actions">' +
+            '<button type="button" class="btn btn-ghost btn-sm" data-edit="' + esc(p.id) + '">ویرایش</button>' +
+            '<button type="button" class="btn btn-danger btn-sm" data-del="' + esc(p.id) + '" data-name="' + esc(p.name) + '">حذف</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('');
+      body.querySelectorAll('[data-edit]').forEach(function (b) {
+        b.addEventListener('click', function () { startEdit(b.getAttribute('data-edit')); });
+      });
+      body.querySelectorAll('[data-del]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var id = b.getAttribute('data-del');
+          if (!confirm('محصول «' + b.getAttribute('data-name') + '» حذف شود؟')) return;
+          api('/api/products/' + id, { method: 'DELETE' })
+            .then(function () { pStatus('محصول حذف شد.'); loadProducts(); })
+            .catch(function (err) { pStatus('حذف نشد: ' + err.message, true); });
+        });
+      });
+    }).catch(function (err) {
+      body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--danger)">خطا: ' + esc(err.message) + '</td></tr>';
+    });
+  }
+
+  function findProduct(id) {
+    return api('/api/products').then(function (d) {
+      return d.products.find(function (p) { return p.id === id; });
+    });
+  }
+
+  function startEdit(id) {
+    findProduct(id).then(function (p) {
+      if (!p) { pStatus('محصول یافت نشد.', true); return; }
+      editingId = id;
+      $('p-name').value = p.name || '';
+      $('p-brand').value = p.brand || '';
+      $('p-category').value = p.category || '';
+      $('p-units').value = p.unitsPerCartonDefault;
+      $('p-carton').value = '';
+      $('p-unit').value = p.baseUnitPrice === null ? '' : Number(p.baseUnitPrice);
+      $('product-form').hidden = false;
+      $('p-name').focus();
+      pStatus('در حال ویرایش: ' + p.name + ' — برای قیمت واحد جدید، قیمت کارتن را هم می‌توانید خالی بگذارید.');
+    }).catch(function (err) { pStatus('خطا: ' + err.message, true); });
+  }
+
+  function resetForm() {
+    editingId = null;
+    $('product-form').hidden = true;
+    ['p-name', 'p-brand', 'p-category', 'p-units', 'p-carton', 'p-unit'].forEach(function (id) { $(id).value = ''; });
+  }
+
+  $('add-product').addEventListener('click', function () {
+    resetForm();
+    $('product-form').hidden = false;
+    $('p-name').focus();
+  });
+
+  $('p-cancel').addEventListener('click', resetForm);
+
+  $('product-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var payload = {
+      name: $('p-name').value,
+      brand: $('p-brand').value,
+      category: $('p-category').value,
+      unitsPerCartonDefault: $('p-units').value === '' ? undefined : Number($('p-units').value),
+      cartonPrice: $('p-carton').value === '' ? undefined : Number($('p-carton').value),
+      baseUnitPrice: $('p-unit').value === '' ? undefined : Number($('p-unit').value),
+    };
+    var req = editingId
+      ? api('/api/products/' + editingId, { method: 'PUT', body: JSON.stringify(payload) })
+      : api('/api/products', { method: 'POST', body: JSON.stringify(payload) });
+    $('p-save').disabled = true;
+    req.then(function () {
+      pStatus(editingId ? 'محصول به‌روزرسانی شد.' : 'محصول ثبت شد و از همین لحظه برای همه‌ی ویزیتورها قابل مشاهده است.');
+      resetForm();
+      loadProducts();
+    }).catch(function (err) {
+      pStatus('خطا: ' + err.message, true);
+    }).then(function () { $('p-save').disabled = false; });
+  });
 })();
