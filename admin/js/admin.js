@@ -15,7 +15,7 @@
   let currentTab = 'dashboard';
   let editingProductId = null;
   let currentOrderId = null;
-  let orderCustomerId = '';
+   let orderCustomerId = '';
   let queryHistory = [];
   let queryBookmarks = [];
   let tablesData = [];
