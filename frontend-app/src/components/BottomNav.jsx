@@ -7,22 +7,21 @@
 export default function BottomNav({ items, active, onGo }) {
   if (!items) return null;
   return (
-    <nav className="app-nav animate-item">
+    <nav className="app-nav">
       {items.map((it) => {
         const isActive = active === it.view;
         return (
           <a
             key={it.view + it.label}
             href={`#/${it.view}`}
-            className={`nav-item ${isActive ? 'active' : ''}`}
+            className={`nav-item ${isActive ? "active" : ""}`}
             title={it.title}
             aria-label={it.aria}
             onClick={(e) => {
               e.preventDefault();
               onGo(it.view);
-            }}
-          >
-            <span className={`material-symbols-outlined ${isActive ? 'icon-fill' : ''}`.trim()}>
+            }}>
+            <span className={`material-symbols-outlined ${isActive ? "icon-fill" : ""}`.trim()}>
               {it.icon}
             </span>
             <span>{it.label}</span>
