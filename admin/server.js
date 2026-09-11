@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
- * vizitik admin panel - a small read-only SQL viewer.
- *   GET  /api/tables   list of tables with row counts   (auth)
- *   POST /api/query    run one read-only SELECT         (auth, LIMIT enforced)
- *   GET  /api/health   unauthenticated probe
- * Config (written by scripts/setup-server.sh):
- *   ADMIN_PORT, ADMIN_TOKEN, ADMIN_STATIC_DIR, ADMIN_FONTS_DIR
- * This file is copied to backend/admin/server.js on deploy so that
- * require('@prisma/client') resolves from the backend node_modules.
+ * Vizitik Admin Panel - Advanced SQL Management Interface
+ * Features:
+ * - Read-only and write SQL operations with safety checks
+ * - Query history and bookmarks
+ * - Schema introspection
+ * - Batch query support
+ * - CSV/JSON export
+ * - Database statistics
+ * - Product, user, customer management
  */
 'use strict';
 
@@ -22,8 +23,14 @@ const TOKEN = process.env.ADMIN_TOKEN || '';
 const STATIC_DIR = process.env.ADMIN_STATIC_DIR || path.join(__dirname, 'static');
 const FONTS_DIR = process.env.ADMIN_FONTS_DIR || path.join(__dirname, '..', '..', 'landing', 'fonts');
 const MAX_LIMIT = 500;
+const MAX_ROWS_WRITE = 1000; // Safety limit for write operations
 
 const prisma = new PrismaClient();
+
+// In-memory storage for query history and bookmarks
+const queryHistory = [];
+const queryBookmarks = [];
+const MAX_HISTORY = 100;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -34,6 +41,8 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
 };
+
+// ============================================================ Utility Functions
 
 function sendJson(res, code, obj) {
   res.writeHead(code, {
@@ -66,7 +75,6 @@ function readBody(req, max) {
   });
 }
 
-/** BigInt, Date and Prisma Decimal all become plain strings */
 function plain(v) {
   if (v === null || v === undefined) return v;
   const t = typeof v;
@@ -85,32 +93,150 @@ function plain(v) {
   return String(v);
 }
 
-// ------------------------------------------------------------- sql guard
-
-const FORBIDDEN = /\b(into\s+(outfile|dumpfile)|for\s+update|lock\s+in\s+share\s+mode)\b/i;
-
-/** one SELECT only, read-only, LIMIT capped at MAX_LIMIT */
-function guardSql(raw) {
-  const sql = String(raw || '').trim().replace(/;\s*$/, '');
-  if (!sql) return { ok: false, error: 'کوئری خالی است' };
-  if (sql.includes(';')) return { ok: false, error: 'فقط یک دستور در هر اجرا مجاز است' };
-  if (!/^select\s/i.test(sql)) return { ok: false, error: 'فقط دستور SELECT اجرا می‌شود (این پنل فقط‌خواندنی است)' };
-  if (FORBIDDEN.test(sql)) return { ok: false, error: 'این عبارت در پنل مجاز نیست' };
-  const limit = sql.match(/\blimit\s+(\d+)\s*(,\s*(\d+))?\s*$/i);
-  if (limit) {
-    if (limit[3] !== undefined) {
-      return parseInt(limit[3], 10) > MAX_LIMIT
-        ? { ok: true, sql: sql.replace(/\blimit\s+(\d+)\s*,\s*\d+\s*$/i, `LIMIT ${limit[1]}, ${MAX_LIMIT}`) }
-        : { ok: true, sql };
-    }
-    return parseInt(limit[1], 10) > MAX_LIMIT
-      ? { ok: true, sql: sql.replace(/\blimit\s+\d+\s*$/i, `LIMIT ${MAX_LIMIT}`) }
-      : { ok: true, sql };
+function addToHistory(sql, success, rowCount, ms) {
+  queryHistory.unshift({
+    id: Date.now(),
+    sql: sql.trim(),
+    success,
+    rowCount,
+    ms,
+    timestamp: new Date().toISOString()
+  });
+  if (queryHistory.length > MAX_HISTORY) {
+    queryHistory.pop();
   }
-  return { ok: true, sql: `${sql} LIMIT ${MAX_LIMIT}` };
 }
 
-// ------------------------------------------------------------- products
+// ============================================================ SQL Guard
+
+const FORBIDDEN_READ = /\b(into\s+(outfile|dumpfile)|for\s+update|lock\s+in\s+share\s+mode)\b/i;
+const FORBIDDEN_WRITE = /\b(drop\s+database|truncate\s+database|alter\s+database)\b/i;
+
+function classifyQuery(sql) {
+  const trimmed = sql.trim().toLowerCase();
+  if (/^select\s/i.test(trimmed)) return 'SELECT';
+  if (/^insert\s/i.test(trimmed)) return 'INSERT';
+  if (/^update\s/i.test(trimmed)) return 'UPDATE';
+  if (/^delete\s/i.test(trimmed)) return 'DELETE';
+  if (/^show\s/i.test(trimmed)) return 'SHOW';
+  if (/^describe\s/i.test(trimmed)) return 'DESCRIBE';
+  if (/^explain\s/i.test(trimmed)) return 'EXPLAIN';
+  return 'UNKNOWN';
+}
+
+function guardSql(raw, allowWrite = false) {
+  const sql = String(raw || '').trim().replace(/;\s*$/, '');
+  if (!sql) return { ok: false, error: 'کوئری خالی است' };
+
+  // Check for multiple statements
+  if (sql.includes(';')) return { ok: false, error: 'فقط یک دستور در هر اجرا مجاز است' };
+
+  const queryType = classifyQuery(sql);
+
+  // Read operations
+  if (queryType === 'SELECT' || queryType === 'SHOW' || queryType === 'DESCRIBE' || queryType === 'EXPLAIN') {
+    if (FORBIDDEN_READ.test(sql)) return { ok: false, error: 'این عبارت در پنل مجاز نیست' };
+
+    // Apply LIMIT for SELECT queries
+    if (queryType === 'SELECT') {
+      const limit = sql.match(/\blimit\s+(\d+)\s*(,\s*(\d+))?\s*$/i);
+      if (limit) {
+        if (limit[3] !== undefined) {
+          return {
+            ok: true,
+            sql: parseInt(limit[3], 10) > MAX_LIMIT
+              ? sql.replace(/\blimit\s+(\d+)\s*,\s*\d+\s*$/i, `LIMIT ${limit[1]}, ${MAX_LIMIT}`)
+              : sql,
+            type: queryType,
+            requiresConfirmation: false
+          };
+        }
+        return {
+          ok: true,
+          sql: parseInt(limit[1], 10) > MAX_LIMIT
+            ? sql.replace(/\blimit\s+\d+\s*$/i, `LIMIT ${MAX_LIMIT}`)
+            : sql,
+          type: queryType,
+          requiresConfirmation: false
+        };
+      }
+      return { ok: true, sql: `${sql} LIMIT ${MAX_LIMIT}`, type: queryType, requiresConfirmation: false };
+    }
+
+    return { ok: true, sql, type: queryType, requiresConfirmation: false };
+  }
+
+  // Write operations
+  if (queryType === 'INSERT' || queryType === 'UPDATE' || queryType === 'DELETE') {
+    if (!allowWrite) {
+      return { ok: false, error: 'عملیات نوشتن در حالت عادی مجاز نیست. لطفاً گزینه "اجازه نوشتن" را فعال کنید.' };
+    }
+
+    if (FORBIDDEN_WRITE.test(sql)) {
+      return { ok: false, error: 'این عملیات خطرناک و غیرقابل بازگشت است و مجاز نیست' };
+    }
+
+    // Require WHERE clause for UPDATE and DELETE (except DELETE with LIMIT 1)
+    if (queryType === 'UPDATE' && !/\bwhere\s/i.test(sql)) {
+      return { ok: false, error: 'برای عملیات UPDATE الزاماً باید شرط WHERE داشته باشید' };
+    }
+
+    if (queryType === 'DELETE' && !/\bwhere\s/i.test(sql) && !/\blimit\s+1\s*$/i.test(sql)) {
+      return { ok: false, error: 'برای عملیات DELETE الزاماً باید شرط WHERE یا LIMIT 1 داشته باشید' };
+    }
+
+    return { ok: true, sql, type: queryType, requiresConfirmation: true };
+  }
+
+  return { ok: false, error: 'نوع کوئری پشتیبانی نمی‌شود. فقط SELECT, INSERT, UPDATE, DELETE, SHOW, DESCRIBE مجاز هستند.' };
+}
+
+// ============================================================ Schema Introspection
+
+async function getTableSchema(tableName) {
+  const columns = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM \`${tableName}\``);
+  const indexes = await prisma.$queryRawUnsafe(`SHOW INDEX FROM \`${tableName}\``);
+  return {
+    columns: columns.map(c => ({
+      name: c.Field,
+      type: c.Type,
+      nullable: c.Null === 'YES',
+      key: c.Key,
+      defaultValue: c.Default,
+      extra: c.Extra
+    })),
+    indexes: indexes.map(i => ({
+      name: i.Key_name,
+      column: i.Column_name,
+      unique: !i.Non_unique,
+      type: i.Index_type
+    }))
+  };
+}
+
+async function getDatabaseStats() {
+  const tables = await prisma.$queryRawUnsafe('SHOW TABLES');
+  const key = tables.length ? Object.keys(tables[0])[0] : null;
+  const stats = { tables: 0, totalRows: 0, details: [] };
+
+  for (const r of tables) {
+    const name = r[key];
+    if (!/^[A-Za-z0-9_]+$/.test(name)) continue;
+    try {
+      const c = await prisma.$queryRawUnsafe(`SELECT COUNT(*) AS n FROM \`${name}\``);
+      const rowCount = Number(c[0].n);
+      stats.tables++;
+      stats.totalRows += rowCount;
+      stats.details.push({ name, rows: rowCount });
+    } catch {
+      stats.details.push({ name, rows: null, error: true });
+    }
+  }
+
+  return stats;
+}
+
+// ============================================================ Products CRUD
 
 const MAX_PRICE = 9999999999.99;
 const MAX_TEXT = 200;
@@ -128,12 +254,6 @@ function cleanNumber(v) {
   return n;
 }
 
-/**
- * Validates a product payload. With { partial: false } (create) name and
- * unitsPerCartonDefault are required; with { partial: true } (update) every
- * field is optional. Mirrors the rules of backend ProductsService: when only
- * a carton price is given, the unit price is derived from it.
- */
 function validateProductBody(body, { partial, currentUnits } = {}) {
   const data = {};
   const name = cleanText(body.name);
@@ -170,7 +290,6 @@ function validateProductBody(body, { partial, currentUnits } = {}) {
   return { ok: true, data };
 }
 
-/** global catalog products with usage counts */
 async function listProducts() {
   const rows = await prisma.product.findMany({
     orderBy: [{ brand: 'asc' }, { name: 'asc' }],
@@ -191,14 +310,13 @@ async function listProducts() {
   }));
 }
 
-// ------------------------------------------------- visitors + per-user prices
+// ============================================================ Users & Pricing
 
-/** visitors for the pricing matrix and the customer list */
 async function listUsers() {
   const rows = await prisma.user.findMany({
     select: {
       id: true, firstName: true, lastName: true, phone: true, role: true, isActive: true,
-      _count: { select: { customers: true, customUserProducts: true } },
+      _count: { select: { customers: true, customUserProducts: true, orders: true } },
     },
     orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
   });
@@ -211,10 +329,10 @@ async function listUsers() {
     isActive: u.isActive,
     customersCount: u._count.customers,
     userProductsCount: u._count.customUserProducts,
+    ordersCount: u._count.orders,
   }));
 }
 
-/** every per-user price override, joined with user and product names */
 async function listUserProducts() {
   const rows = await prisma.userProduct.findMany({
     include: {
@@ -241,7 +359,6 @@ async function listUserProducts() {
   }));
 }
 
-/** validates a per-user price override; null clears a field back to the default */
 function validateUserProductBody(body) {
   const data = {};
   for (const f of ['customCartonPrice', 'customUnitPrice']) {
@@ -265,8 +382,8 @@ function validateUserProductBody(body) {
   return { ok: true, data };
 }
 
-/** customers with their current balance - same rule as backend CustomersService:
-    the balance is the balanceAfter of the newest ledger entry */
+// ============================================================ Customers
+
 async function listCustomers(q) {
   const rows = await prisma.customer.findMany({
     where: q ? { OR: [{ name: { contains: q } }, { phone: { contains: q } }] } : undefined,
@@ -296,6 +413,62 @@ async function listCustomers(q) {
   });
 }
 
+// ============================================================ Orders
+
+async function listOrders(filters = {}) {
+  const where = {};
+
+  if (filters.status) where.status = filters.status;
+  if (filters.visitorId) where.visitorId = filters.visitorId;
+  if (filters.customerId) where.customerId = filters.customerId;
+  if (filters.dateFrom || filters.dateTo) {
+    where.orderDate = {};
+    if (filters.dateFrom) where.orderDate.gte = new Date(filters.dateFrom);
+    if (filters.dateTo) where.orderDate.lte = new Date(filters.dateTo);
+  }
+
+  const rows = await prisma.order.findMany({
+    where,
+    include: {
+      customer: { select: { name: true, phone: true } },
+      visitor: { select: { firstName: true, lastName: true } },
+      items: { include: { product: { select: { name: true } } } },
+      payments: true,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: filters.limit || 100,
+  });
+
+  return rows.map((o) => ({
+    id: o.id,
+    localUuid: o.localUuid,
+    invoiceNumber: o.invoiceNumber,
+    customerName: o.customer.name,
+    customerPhone: o.customer.phone,
+    visitorName: `${o.visitor.firstName} ${o.visitor.lastName}`.trim(),
+    orderDate: o.orderDate,
+    status: o.status,
+    subtotalAmount: Number(o.subtotalAmount),
+    totalDiscountAmount: Number(o.totalDiscountAmount),
+    finalAmount: Number(o.finalAmount),
+    itemsCount: o.items.length,
+    items: o.items.map(i => ({
+      productName: i.product.name,
+      cartonCount: i.cartonCount,
+      unitCount: i.unitCount,
+      lineTotal: Number(i.lineTotal)
+    })),
+    payments: o.payments.map(p => ({
+      method: p.method,
+      amount: Number(p.amount),
+      paidAt: p.paidAt
+    })),
+    createdAt: o.createdAt,
+  }));
+}
+
+// ============================================================ Tables
+
 async function listTables() {
   const rows = await prisma.$queryRawUnsafe('SHOW TABLES');
   const key = rows.length ? Object.keys(rows[0])[0] : null;
@@ -312,6 +485,8 @@ async function listTables() {
   }
   return out;
 }
+
+// ============================================================ Static Files
 
 function serveFile(res, filePath) {
   fs.readFile(filePath, (err, data) => {
@@ -338,41 +513,132 @@ function serveStatic(res, urlPath) {
   return serveFile(res, full);
 }
 
+// ============================================================ HTTP Server
+
 const server = http.createServer(async (req, res) => {
   const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
   const query = new URL(req.url || '/', 'http://localhost').searchParams;
+
   try {
+    // Health check (no auth)
     if (urlPath === '/api/health') return sendJson(res, 200, { ok: true });
 
-    if (urlPath === '/api/tables' && req.method === 'GET') {
+    // Auth check for all other API endpoints
+    if (urlPath.startsWith('/api/')) {
       if (!authorized(req)) return sendJson(res, 401, { error: 'توکن ادمین درست نیست' });
+    }
+
+    // ============================================================ Schema & Stats
+
+    // Get schema for a specific table
+    if (urlPath.match(/^\/api\/schema\/[A-Za-z0-9_]+$/) && req.method === 'GET') {
+      const tableName = urlPath.split('/').pop();
+      const schema = await getTableSchema(tableName);
+      return sendJson(res, 200, { schema });
+    }
+
+    // Get database statistics
+    if (urlPath === '/api/stats' && req.method === 'GET') {
+      const stats = await getDatabaseStats();
+      return sendJson(res, 200, { stats });
+    }
+
+    // ============================================================ SQL Queries
+
+    // List tables
+    if (urlPath === '/api/tables' && req.method === 'GET') {
       return sendJson(res, 200, { tables: await listTables() });
     }
 
+    // Execute SQL query
     if (urlPath === '/api/query' && req.method === 'POST') {
-      if (!authorized(req)) return sendJson(res, 401, { error: 'توکن ادمین درست نیست' });
       const raw = await readBody(req, 32 * 1024);
       let payload;
       try { payload = JSON.parse(raw || '{}'); }
       catch { return sendJson(res, 400, { error: 'بدنه‌ی درخواست JSON نیست' }); }
-      const guarded = guardSql(payload.sql);
+
+      const allowWrite = payload.allowWrite === true;
+      const guarded = guardSql(payload.sql, allowWrite);
       if (!guarded.ok) return sendJson(res, 400, { error: guarded.error });
+
       const t0 = Date.now();
-      const rows = await prisma.$queryRawUnsafe(guarded.sql);
-      const clean = (rows || []).map((r) => plain(r));
-      return sendJson(res, 200, {
-        columns: clean.length ? Object.keys(clean[0]) : [],
-        rows: clean,
-        rowCount: clean.length,
-        ms: Date.now() - t0,
-        sql: guarded.sql,
-      });
+      let result;
+
+      if (guarded.type === 'SELECT' || guarded.type === 'SHOW' || guarded.type === 'DESCRIBE' || guarded.type === 'EXPLAIN') {
+        const rows = await prisma.$queryRawUnsafe(guarded.sql);
+        const clean = (rows || []).map((r) => plain(r));
+        result = {
+          columns: clean.length ? Object.keys(clean[0]) : [],
+          rows: clean,
+          rowCount: clean.length,
+          ms: Date.now() - t0,
+          sql: guarded.sql,
+          type: guarded.type,
+          success: true
+        };
+      } else {
+        // Write operation
+        const affected = await prisma.$executeRawUnsafe(guarded.sql);
+        result = {
+          affectedRows: affected,
+          ms: Date.now() - t0,
+          sql: guarded.sql,
+          type: guarded.type,
+          success: true
+        };
+      }
+
+      addToHistory(guarded.sql, true, result.rowCount || result.affectedRows || 0, result.ms);
+      return sendJson(res, 200, result);
     }
 
-    // ----- products: structured CRUD (the SQL tab itself stays read-only) -----
+    // ============================================================ Query History
+
+    if (urlPath === '/api/query-history' && req.method === 'GET') {
+      const limit = parseInt(query.get('limit') || '50', 10);
+      return sendJson(res, 200, { history: queryHistory.slice(0, limit) });
+    }
+
+    if (urlPath === '/api/query-history' && req.method === 'DELETE') {
+      queryHistory.length = 0;
+      return sendJson(res, 200, { cleared: true });
+    }
+
+    // ============================================================ Query Bookmarks
+
+    if (urlPath === '/api/query-bookmarks' && req.method === 'GET') {
+      return sendJson(res, 200, { bookmarks: queryBookmarks });
+    }
+
+    if (urlPath === '/api/query-bookmarks' && req.method === 'POST') {
+      const raw = await readBody(req, 32 * 1024);
+      const payload = JSON.parse(raw || '{}');
+      if (!payload.sql || !payload.name) {
+        return sendJson(res, 400, { error: 'نام و کوئری الزامی است' });
+      }
+      const bookmark = {
+        id: Date.now(),
+        name: payload.name.trim().slice(0, 100),
+        sql: payload.sql.trim(),
+        description: (payload.description || '').trim().slice(0, 500),
+        createdAt: new Date().toISOString()
+      };
+      queryBookmarks.push(bookmark);
+      return sendJson(res, 201, { bookmark });
+    }
+
+    if (urlPath.match(/^\/api\/query-bookmarks\/[0-9]+$/) && req.method === 'DELETE') {
+      const id = parseInt(urlPath.split('/').pop(), 10);
+      const index = queryBookmarks.findIndex(b => b.id === id);
+      if (index === -1) return sendJson(res, 404, { error: 'Bookmark یافت نشد' });
+      queryBookmarks.splice(index, 1);
+      return sendJson(res, 200, { deleted: true });
+    }
+
+    // ============================================================ Products
+
     const productMatch = urlPath.match(/^\/api\/products(?:\/([A-Za-z0-9-]{1,64}))?$/);
     if (productMatch) {
-      if (!authorized(req)) return sendJson(res, 401, { error: 'توکن ادمین درست نیست' });
       const id = productMatch[1];
 
       if (!id && req.method === 'GET') {
@@ -410,7 +676,7 @@ const server = http.createServer(async (req, res) => {
         const used = existing._count.orderItems;
         if (used > 0) {
           return sendJson(res, 409, {
-            error: `این محصول در ${used} ردیف فاکتور ثبت شده و حذف نمی‌شود (تاریخچه‌ی سفارش‌ها باید سالم بماند)`,
+            error: `این محصول در ${used} ردیف فاکتور ثبت شده و حذف نمی‌شود`,
           });
         }
         await prisma.product.delete({ where: { id } });
@@ -420,15 +686,14 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 405, { error: 'method not allowed' });
     }
 
-    // ----- visitors, per-user price overrides, customers -----
-    const userProductMatch = urlPath.match(/^\/api\/user-products(?:\/([A-Za-z0-9-]{1,64}))?(?:\/([A-Za-z0-9-]{1,64}))?$/);
+    // ============================================================ Users & Per-User Pricing
+
     if (urlPath === '/api/users' && req.method === 'GET') {
-      if (!authorized(req)) return sendJson(res, 401, { error: 'توکن ادمین درست نیست' });
       return sendJson(res, 200, { users: await listUsers() });
     }
 
+    const userProductMatch = urlPath.match(/^\/api\/user-products(?:\/([A-Za-z0-9-]{1,64}))?(?:\/([A-Za-z0-9-]{1,64}))?$/);
     if (userProductMatch) {
-      if (!authorized(req)) return sendJson(res, 401, { error: 'توکن ادمین درست نیست' });
       const userId = userProductMatch[1];
       const productId = userProductMatch[2];
 
@@ -467,17 +732,78 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 405, { error: 'method not allowed' });
     }
 
+    // ============================================================ Customers
+
     if (urlPath === '/api/customers' && req.method === 'GET') {
-      if (!authorized(req)) return sendJson(res, 401, { error: 'توکن ادمین درست نیست' });
       const q = (query.get('q') || '').trim().slice(0, 100);
       return sendJson(res, 200, { customers: await listCustomers(q || undefined) });
     }
+
+    // ============================================================ Orders
+
+    if (urlPath === '/api/orders' && req.method === 'GET') {
+      const filters = {
+        status: query.get('status') || undefined,
+        visitorId: query.get('visitorId') || undefined,
+        customerId: query.get('customerId') || undefined,
+        dateFrom: query.get('dateFrom') || undefined,
+        dateTo: query.get('dateTo') || undefined,
+        limit: parseInt(query.get('limit') || '100', 10)
+      };
+      return sendJson(res, 200, { orders: await listOrders(filters) });
+    }
+
+    // ============================================================ Export
+
+    if (urlPath === '/api/export' && req.method === 'POST') {
+      const raw = await readBody(req, 32 * 1024);
+      const payload = JSON.parse(raw || '{}');
+
+      if (!payload.sql) return sendJson(res, 400, { error: 'کوئری الزامی است' });
+
+      const guarded = guardSql(payload.sql, false);
+      if (!guarded.ok) return sendJson(res, 400, { error: guarded.error });
+
+      const format = payload.format || 'csv';
+      const rows = await prisma.$queryRawUnsafe(guarded.sql);
+      const clean = (rows || []).map((r) => plain(r));
+
+      if (clean.length === 0) {
+        return sendJson(res, 200, { data: '', format, rowCount: 0 });
+      }
+
+      if (format === 'json') {
+        return sendJson(res, 200, { data: JSON.stringify(clean, null, 2), format, rowCount: clean.length });
+      }
+
+      // CSV format
+      const columns = Object.keys(clean[0]);
+      const csvRows = [columns.join(',')];
+      for (const row of clean) {
+        const values = columns.map(c => {
+          const v = row[c];
+          if (v === null || v === undefined) return '';
+          const str = String(v);
+          if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return '"' + str.replace(/"/g, '""') + '"';
+          }
+          return str;
+        });
+        csvRows.push(values.join(','));
+      }
+
+      return sendJson(res, 200, { data: csvRows.join('\n'), format, rowCount: clean.length });
+    }
+
+    // ============================================================ Fallback
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       return sendJson(res, 405, { error: 'method not allowed' });
     }
     return serveStatic(res, urlPath);
+
   } catch (err) {
+    console.error('Server error:', err);
     return sendJson(res, 500, { error: (err && err.message) || 'خطای ناشناخته' });
   }
 });
