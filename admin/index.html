@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>پنل ادمین ویزیتیک</title>
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="stylesheet" href="/fonts/vazirmatn/vazirmatn.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+</head>
+<body>
+  <!-- token gate -->
+  <div id="gate" class="gate">
+    <form id="gate-form" class="gate-card">
+      <div class="gate-logo">ویزیتیک · پنل ادمین</div>
+      <p class="gate-hint">توکن ادمین را وارد کنید. این توکن در فایل <span dir="ltr">backend/.env</span> سرور (متغیر <span dir="ltr">ADMIN_TOKEN</span>) تنظیم شده است.</p>
+      <input id="gate-token" type="password" dir="ltr" autocomplete="current-password" placeholder="ADMIN_TOKEN" aria-label="توکن ادمین" required />
+      <button type="submit" class="btn btn-primary">ورود</button>
+      <p id="gate-error" class="gate-error" role="alert" hidden></p>
+    </form>
+  </div>
+
+  <!-- panel -->
+  <main id="panel" class="panel" hidden>
+    <header class="topbar">
+      <h1 class="topbar-title">پنل ادمین ویزیتیک</h1>
+      <button id="logout" type="button" class="btn btn-ghost">خروج</button>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <span>جدول‌ها</span>
+          <button id="refresh-tables" type="button" class="btn btn-ghost btn-sm" title="به‌روزرسانی فهرست">↻</button>
+        </div>
+        <ul id="table-list" class="table-list" aria-label="فهرست جدول‌های دیتابیس"></ul>
+      </aside>
+
+      <section class="content">
+        <div class="editor-box">
+          <label class="editor-label" for="sql">کوئری SQL (فقط SELECT، حداکثر ۵۰۰ ردیف)</label>
+          <textarea id="sql" dir="ltr" rows="5" spellcheck="false" placeholder="SELECT * FROM `Order` ORDER BY createdAt DESC"></textarea>
+          <div class="editor-actions">
+            <select id="table-pick" class="table-pick" aria-label="انتخاب سریع جدول">
+              <option value="">جدول…</option>
+            </select>
+            <button id="run" type="button" class="btn btn-primary">اجرای کوئری</button>
+          </div>
+        </div>
+
+        <div id="status" class="status" role="status"></div>
+
+        <div class="results-wrap" id="results-wrap" hidden>
+          <table class="results" dir="ltr"><thead id="results-head"></thead><tbody id="results-body"></tbody></table>
+        </div>
+
+        <p id="empty" class="empty">کوئری را بنویسید و «اجرای کوئری» را بزنید. نتایج همین‌جا نمایش داده می‌شود.</p>
+      </section>
+    </div>
+  </main>
+
+  <script src="/js/admin.js"></script>
+</body>
+</html>

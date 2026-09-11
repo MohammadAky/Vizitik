@@ -6,13 +6,19 @@
 #   3) builds the NestJS backend and writes backend/.env
 #   4) builds the PWA frontend (Vite) and writes frontend-app/.env
 #   5) installs a permanent systemd service for the backend
-#   6) configures Nginx (serves the PWA, reverse-proxies /api)
-#   7) HTTPS (when DOMAIN is given), firewall and daily backup cron job
+#   6) configures Nginx:
+#        DOMAIN      -> the marketing landing page (landing/)
+#        APP_DOMAIN  -> the PWA + /api proxy (frontend-app/dist)
+#        ADMIN_DOMAIN-> the admin SQL panel (admin/, proxied to 127.0.0.1:ADMIN_PORT)
+#      APP_DOMAIN defaults to app.$DOMAIN and ADMIN_DOMAIN to admin.$DOMAIN.
+#      Giving only APP_DOMAIN (no DOMAIN) keeps the classic single-site layout (PWA alone).
+#   7) HTTPS (Let's Encrypt) for all domains, firewall, daily backup cron job
 #
 # Usage (needs root):
 #   sudo bash scripts/setup-server.sh
 # Values can be edited at the bottom of this file or passed as environment vars:
-#   DOMAIN=app.example.com DB_PASS='...' BALE_BOT_TOKEN='...' sudo -E bash scripts/setup-server.sh
+#   DOMAIN=vizitik.ir DB_PASS='...' BALE_BOT_TOKEN='...' sudo -E bash scripts/setup-server.sh
+#   (the app is served on app.$DOMAIN; override it with APP_DOMAIN=app.example.com)
 #
 # Idempotent: re-running updates services and configuration without breaking anything.
 # On a box with little RAM it adds a swap file first, otherwise npm/vite get killed.
@@ -41,6 +47,10 @@ BALE_ADMIN_CHAT_ID="${BALE_ADMIN_CHAT_ID:-}"
 JWT_SECRET="${JWT_SECRET:-}"   # a fresh one is generated while asking, if this is empty
 
 DOMAIN="${DOMAIN:-}"
+APP_DOMAIN="${APP_DOMAIN:-}"   # defaults to app.$DOMAIN (subdomain of the landing page)
+ADMIN_DOMAIN="${ADMIN_DOMAIN:-}"   # defaults to admin.$DOMAIN (read-only SQL panel)
+ADMIN_TOKEN="${ADMIN_TOKEN:-}"   # generated while asking, if this is empty
+ADMIN_PORT="${ADMIN_PORT:-3001}"
 CERT_EMAIL="${CERT_EMAIL:-}"
 
 BACKEND_PORT="${BACKEND_PORT:-3000}"
@@ -296,6 +306,8 @@ print_config_summary() {
   local shown="$DOMAIN"
   if [[ -n "$DOMAIN" && "${WITH_WWW:-0}" == "1" ]]; then shown="$DOMAIN www.$DOMAIN"; fi
   echo "  domain      : ${shown:-<none - plain http on the server ip>}"
+  echo "  app domain  : ${APP_DOMAIN:-<same as domain - PWA on $DOMAIN>}"
+  echo "  admin panel : ${ADMIN_DOMAIN:-<disabled>} (127.0.0.1:${ADMIN_PORT}, token: ${ADMIN_TOKEN:+set}${ADMIN_TOKEN:-unset})"
   echo "  https       : $ENABLE_HTTPS mode=${HTTPS_MODE:-http} (email: ${CERT_EMAIL:-<none>})"
   echo "  api         : 127.0.0.1:${BACKEND_PORT}, proxied at /api"
   echo "  database    : ${DB_USER}@${DB_HOST}/${DB_NAME} (password: $dbpass_state)"
@@ -328,6 +340,25 @@ collect_inputs() {
     fi
   else
     ENABLE_HTTPS=0
+  fi
+
+  if [[ -n "$DOMAIN" ]]; then
+    if [[ -z "$APP_DOMAIN" ]]; then APP_DOMAIN="app.$DOMAIN"; fi
+    ask APP_DOMAIN "subdomain that serves the app (the landing page stays on $DOMAIN)" "$APP_DOMAIN"
+    if ! [[ "$APP_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*\.)+[A-Za-z]{2,}$ ]]; then
+      warn "'$APP_DOMAIN' does not look like a full domain name (app.example.com expected)"
+    fi
+    if [[ -z "$ADMIN_DOMAIN" ]]; then ADMIN_DOMAIN="admin.$DOMAIN"; fi
+    ask ADMIN_DOMAIN "subdomain that serves the admin SQL panel (empty = no admin panel)" "$ADMIN_DOMAIN"
+    if [[ -z "$ADMIN_DOMAIN" ]]; then
+      warn "no admin domain - the SQL panel will not be deployed"
+    elif ! [[ "$ADMIN_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*\.)+[A-Za-z]{2,}$ ]]; then
+      warn "'$ADMIN_DOMAIN' does not look like a full domain name (admin.example.com expected)"
+    fi
+    if [[ -n "$ADMIN_DOMAIN" && -z "$ADMIN_TOKEN" ]]; then
+      ADMIN_TOKEN="$(openssl rand -hex 24)"
+      log "a fresh ADMIN_TOKEN was generated (you can change it in backend/.env later)"
+    fi
   fi
 
   if [[ -n "$DOMAIN" ]]; then
@@ -423,7 +454,7 @@ usage: sudo bash scripts/setup-server.sh [options]
   -h, --help           this text
 
 environment overrides:
-  INSTALL_DIR SRC_DIR DOMAIN CERT_EMAIL BACKEND_PORT
+  INSTALL_DIR SRC_DIR DOMAIN APP_DOMAIN ADMIN_DOMAIN ADMIN_TOKEN ADMIN_PORT CERT_EMAIL BACKEND_PORT
   WITH_WWW HTTPS_MODE CF_API_TOKEN
   MIN_TOTAL_MB CREATE_SWAP SWAP_FILE SWAP_MB NODE_HEAP_MB
   DB_HOST DB_NAME DB_USER DB_PASS APP_NAME_FA APP_NAME_EN
@@ -517,9 +548,21 @@ copy_source() {
   log "copying sources to $INSTALL_DIR"
   mkdir -p "$INSTALL_DIR"
   if [[ -d "$SRC_DIR/backend" && -d "$SRC_DIR/frontend-app" ]]; then
-    rm -rf "$INSTALL_DIR/backend" "$INSTALL_DIR/frontend-app"
+    rm -rf "$INSTALL_DIR/backend" "$INSTALL_DIR/frontend-app" "$INSTALL_DIR/landing" "$INSTALL_DIR/admin"
     cp -r "$SRC_DIR/backend" "$SRC_DIR/frontend-app" "$INSTALL_DIR/"
-    ok "backend and frontend-app copied"
+    if [[ -d "$SRC_DIR/landing" ]]; then
+      cp -r "$SRC_DIR/landing" "$INSTALL_DIR/"
+      ok "backend, frontend-app and landing copied"
+    else
+      rm -rf "$INSTALL_DIR/landing"
+      warn "landing/ not found in $SRC_DIR - the root domain will have no page"
+    fi
+    if [[ -d "$SRC_DIR/admin" ]]; then
+      cp -r "$SRC_DIR/admin" "$INSTALL_DIR/"
+      ok "admin panel sources copied"
+    else
+      warn "admin/ not found in $SRC_DIR - the admin panel will not be deployed"
+    fi
   else
     fail "repo structure not found in $SRC_DIR (backend and frontend-app are required)"
   fi
@@ -550,6 +593,10 @@ APP_NAME_EN="${APP_NAME_EN}"
 BALE_BOT_USERNAME="${BALE_BOT_USERNAME}"
 BALE_BOT_TOKEN="${BALE_BOT_TOKEN}"
 BALE_ADMIN_CHAT_ID="${BALE_ADMIN_CHAT_ID}"
+ADMIN_PORT=${ADMIN_PORT}
+ADMIN_TOKEN="${ADMIN_TOKEN}"
+ADMIN_STATIC_DIR="${INSTALL_DIR}/admin"
+ADMIN_FONTS_DIR="${INSTALL_DIR}/landing/fonts"
 EOF
   if [[ -z "$BALE_BOT_TOKEN" ]]; then
     warn "BALE_BOT_TOKEN is empty; the bot will not send messages (fill it in .env and restart the service)"
@@ -557,6 +604,22 @@ EOF
   npx prisma db push --skip-generate || warn "prisma db push failed; check the tables manually"
   run_here "backend build (tsc)" npm run build
   ok "backend built (dist/main.js)"
+}
+
+# ------------------------------------------------------------------
+# 6b) admin panel (a plain node script running from the backend dir so
+#     the Prisma client of the backend is reused - no extra npm install)
+# ------------------------------------------------------------------
+
+build_admin() {
+  if [[ -z "$ADMIN_DOMAIN" || ! -d "$INSTALL_DIR/admin" ]]; then
+    warn "admin panel skipped (no domain or no sources)"
+    return 0
+  fi
+  log "installing the admin panel"
+  mkdir -p "$INSTALL_DIR/backend/admin"
+  cp "$INSTALL_DIR/admin/server.js" "$INSTALL_DIR/backend/admin/server.js"
+  ok "admin panel installed (static: $INSTALL_DIR/admin, script: backend/admin/server.js)"
 }
 
 # ------------------------------------------------------------------
@@ -604,6 +667,34 @@ EOF
   systemctl restart vizitik-backend
   sleep 2
   systemctl is-active --quiet vizitik-backend && ok "service is active" || warn "service did not start; check: journalctl -u vizitik-backend -n 50"
+
+  if [[ -n "$ADMIN_DOMAIN" && -f "$INSTALL_DIR/backend/admin/server.js" ]]; then
+    log "creating the admin panel systemd service"
+    local aunit="/etc/systemd/system/vizitik-admin.service"
+    cat > "$aunit" <<EOF
+[Unit]
+Description=${APP_NAME_EN} Admin SQL Panel (read-only)
+After=network.target mariadb.service vizitik-backend.service
+
+[Service]
+Type=simple
+WorkingDirectory=$INSTALL_DIR/backend
+ExecStart=$(command -v node) admin/server.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable vizitik-admin
+    systemctl restart vizitik-admin
+    sleep 1
+    systemctl is-active --quiet vizitik-admin && ok "admin service is active on 127.0.0.1:${ADMIN_PORT}" \
+      || warn "admin service did not start; check: journalctl -u vizitik-admin -n 50"
+  fi
 }
 
 # ------------------------------------------------------------------
@@ -612,21 +703,48 @@ EOF
 
 setup_nginx() {
   log "configuring Nginx"
-  local names="_"
-  if [[ -n "$DOMAIN" ]]; then
-    names="$DOMAIN"
-    if [[ "$WITH_WWW" == "1" ]]; then names="$DOMAIN www.$DOMAIN"; fi
-  fi
+  # DOMAIN serves the landing page (root of the site), APP_DOMAIN serves the PWA.
+  # APP_DOMAIN defaults to app.$DOMAIN; when both are empty the classic single
+  # site layout is kept (the PWA answers on the bare IP / server_name "_").
+  local app_name="${APP_DOMAIN:-$DOMAIN}"
+  app_name="${app_name:-_}"
   local conf="/etc/nginx/sites-available/vizitik"
 
   log "what nginx serves right now (useful when port 80 was already taken)"
   nginx -T 2>/dev/null | grep -E '^[[:space:]]*(server_name|listen|root|proxy_pass)' | head -20 || true
 
-  cat > "$conf" <<EOF
+  # --- landing page on the root domain (when DOMAIN is configured) ---
+  if [[ -n "$DOMAIN" ]]; then
+    local names="$DOMAIN"
+    if [[ "$WITH_WWW" == "1" ]]; then names="$DOMAIN www.$DOMAIN"; fi
+    cat > "$conf" <<EOF
 server {
     listen 80;
     listen [::]:80;
     server_name ${names};
+    root $INSTALL_DIR/landing;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    location ~* \.(woff2?|png|js|css)$ {
+        expires 30d;
+        add_header Cache-Control "public";
+    }
+}
+EOF
+  else
+    : > "$conf"
+  fi
+
+  # --- the app (PWA + /api) ---
+  cat >> "$conf" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${app_name};
     root $INSTALL_DIR/frontend-app/dist;
     index index.html;
 
@@ -657,6 +775,29 @@ server {
 }
 EOF
 
+  # --- admin SQL panel (everything proxied to its own node service) ---
+  if [[ -n "$ADMIN_DOMAIN" ]]; then
+    cat >> "$conf" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${ADMIN_DOMAIN};
+
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:${ADMIN_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_read_timeout 60s;
+    }
+}
+EOF
+  fi
+
   ln -sf "$conf" /etc/nginx/sites-enabled/vizitik
   if [[ -e /etc/nginx/sites-enabled/default ]]; then
     mv /etc/nginx/sites-enabled/default /etc/nginx/sites-enabled/default.disabled-by-vizitik 2>/dev/null || true
@@ -666,7 +807,7 @@ EOF
     fail "the nginx configuration test failed - fix the reported error and run this script again"
   fi
   systemctl reload nginx
-  ok "Nginx configured (server_name: ${names})"
+  ok "Nginx configured (landing: ${DOMAIN:-<none>} | app: $app_name | admin: ${ADMIN_DOMAIN:-<none>})"
 }
 
 # ------------------------------------------------------------------
@@ -682,6 +823,8 @@ setup_https() {
   local logf="/var/log/vizitik-certbot.log"
   local -a cnames=( -d "$DOMAIN" )
   if [[ "$WITH_WWW" == "1" ]]; then cnames+=( -d "www.$DOMAIN" ); fi
+  if [[ -n "$APP_DOMAIN" && "$APP_DOMAIN" != "$DOMAIN" ]]; then cnames+=( -d "$APP_DOMAIN" ); fi
+  if [[ -n "$ADMIN_DOMAIN" && "$ADMIN_DOMAIN" != "$DOMAIN" ]]; then cnames+=( -d "$ADMIN_DOMAIN" ); fi
 
   # an empty contact address is legal (only the expiry notice is missed) but
   # "certbot -m ''" is not, so the flag is decided here once
@@ -751,25 +894,35 @@ setup_https() {
 
   # HTTP-01: port 80 has to be reachable from the internet, so probe it first
   local probe="acme-probe-$$.txt"
-  if [[ -d "$INSTALL_DIR/frontend-app/dist" ]]; then
-    echo ok > "$INSTALL_DIR/frontend-app/dist/$probe"
-    local code
-    code="$(curl -s -o /dev/null -m 25 -w '%{http_code}' "http://$DOMAIN/$probe" 2>/dev/null)"
-    rm -f "$INSTALL_DIR/frontend-app/dist/$probe"
-    if [[ "$code" != "200" ]]; then
-      warn "http://$DOMAIN/$probe returned '${code:-nothing}' from this box - Let's Encrypt needs the same path"
+  local -a probe_roots=()
+  [[ -d "$INSTALL_DIR/frontend-app/dist" ]] && probe_roots+=("$INSTALL_DIR/frontend-app/dist")
+  [[ -d "$INSTALL_DIR/landing" ]] && probe_roots+=("$INSTALL_DIR/landing")
+  local root
+  for root in "${probe_roots[@]}"; do echo ok > "$root/$probe"; done
+  local -a probe_hosts=( "$DOMAIN" )
+  if [[ -n "$APP_DOMAIN" && "$APP_DOMAIN" != "$DOMAIN" ]]; then probe_hosts+=( "$APP_DOMAIN" ); fi
+  if [[ -n "$ADMIN_DOMAIN" && "$ADMIN_DOMAIN" != "$DOMAIN" ]]; then probe_hosts+=( "$ADMIN_DOMAIN" ); fi
+  local ph code
+  for ph in "${probe_hosts[@]}"; do
+    code="$(curl -s -o /dev/null -m 25 -w '%{http_code}' "http://$ph/$probe" 2>/dev/null)"
+    if [[ "$code" == "200" ]]; then
+      ok "http://$ph answers from this box (probe ok)"
+    else
+      warn "http://$ph/$probe returned '${code:-nothing}' from this box - Let's Encrypt needs the same path"
       if can_ask; then
         local reply=""
         read -r -p "  retry with the Cloudflare DNS challenge instead? [Y/n]: " reply || reply=""
         if [[ ! "$reply" =~ ^[Nn] ]]; then
           if [[ -z "$CF_API_TOKEN" ]]; then ask_secret CF_API_TOKEN "Cloudflare API token (Edit zone DNS)"; fi
           HTTPS_MODE="dns"
+          for root in "${probe_roots[@]}"; do rm -f "$root/$probe"; done
           setup_https
           return
         fi
       fi
     fi
-  fi
+  done
+  for root in "${probe_roots[@]}"; do rm -f "$root/$probe"; done
 
   local rc=0
   certbot --nginx "${cnames[@]}" --redirect --agree-tos "${email_args[@]}" --non-interactive >"$logf" 2>&1 || rc=$?
@@ -843,6 +996,9 @@ final_summary() {
   echo -e "\033[1;32m  deployment finished! \033[0m"
   echo -e "\033[1;32m  site:       $url\033[0m"
   echo -e "\033[1;32m  API:      $url/api\033[0m"
+  if [[ -n "$ADMIN_DOMAIN" ]]; then
+    echo -e "\033[1;32m  admin:      https://$ADMIN_DOMAIN  (token: \$ADMIN_TOKEN in backend/.env)\033[0m"
+  fi
   echo -e "\033[1;32m======================================================\033[0m"
   echo "  next steps:"
   if [[ -n "$DOMAIN" ]]; then
@@ -886,6 +1042,7 @@ main() {
   setup_database
   copy_source
   build_backend
+  build_admin
   build_frontend
   create_service
   setup_nginx
