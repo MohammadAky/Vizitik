@@ -28,6 +28,8 @@
       <nav class="tabs" aria-label="بخش‌های پنل">
         <button type="button" class="tab active" data-tab="sql">کوئری SQL</button>
         <button type="button" class="tab" data-tab="products">محصولات</button>
+        <button type="button" class="tab" data-tab="pricing">قیمت اختصاصی</button>
+        <button type="button" class="tab" data-tab="customers">مشتریان</button>
       </nav>
       <button id="logout" type="button" class="btn btn-ghost">خروج</button>
     </header>
@@ -107,6 +109,47 @@
                 <tr><th>نام</th><th>برند</th><th>دسته</th><th>قیمت واحد</th><th>تعداد/کارتن</th><th>سفارش‌ها</th><th>قیمت اختصاصی</th><th>عملیات</th></tr>
               </thead>
               <tbody id="products-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- per-visitor price overrides tab -->
+        <div id="view-pricing" class="view" hidden>
+          <p class="products-hint">قیمت‌های اختصاصی هر ویزیتور. وقتی قید اختصاصی نداشته باشد، قیمت کاتالوگ اعمال می‌شود. برای خالی‌گذاشتن یک فیلد و بازگشت به قیمت کاتالوگ، آن را خالی بگذارید و ذخیره کنید.</p>
+          <div class="editor-box">
+            <label class="form-field" for="pricing-product">محصول
+              <select id="pricing-product" class="table-pick"><option value="">در حال دریافت…</option></select>
+            </label>
+          </div>
+          <div id="pricing-status" class="status" role="status"></div>
+          <div class="results-wrap">
+            <table class="results" dir="rtl">
+              <thead>
+                <tr><th>ویزیتور</th><th>قیمت واحد</th><th>قیمت کارتن</th><th>تعداد/کارتن</th><th>فعال</th><th>عملیات</th></tr>
+              </thead>
+              <tbody id="pricing-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- customers tab (read-only: money flows through the app's ledger) -->
+        <div id="view-customers" class="view" hidden>
+          <div class="products-head">
+            <p class="products-hint">مشتریان همه‌ی ویزیتورها با مانده‌ی حساب (از دفتر حساب). تغییر مانده فقط از طریق ثبت سفارش و دریافت وجه داخل اپ انجام می‌شود تا دفتر حساب سالم بماند — این بخش فقط‌خواندنی است.</p>
+          </div>
+          <div class="editor-box">
+            <div class="editor-actions">
+              <input id="customer-q" type="search" class="form-field-input" placeholder="جست‌وجو بر اساس نام یا تلفن…" aria-label="جست‌وجوی مشتری" style="flex:1;min-width:220px" />
+              <button id="customer-search" type="button" class="btn btn-primary">جست‌وجو</button>
+            </div>
+          </div>
+          <div id="customers-status" class="status" role="status"></div>
+          <div class="results-wrap">
+            <table class="results" dir="rtl">
+              <thead>
+                <tr><th>نام</th><th>تلفن</th><th>ویزیتور</th><th>مانده حساب</th><th>سفارش‌ها</th><th>آخرین سفارش</th></tr>
+              </thead>
+              <tbody id="customers-body"></tbody>
             </table>
           </div>
         </div>
