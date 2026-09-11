@@ -155,7 +155,7 @@
 
   // ------------------------------------------------------------- tabs
 
-  var views = { sql: $('view-sql'), products: $('view-products') };
+  var views = { sql: $('view-sql'), products: $('view-products'), pricing: $('view-pricing'), customers: $('view-customers') };
   document.querySelectorAll('.tab').forEach(function (tab) {
     tab.addEventListener('click', function () {
       document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
@@ -163,6 +163,8 @@
       var name = tab.getAttribute('data-tab');
       Object.keys(views).forEach(function (k) { views[k].hidden = k !== name; });
       if (name === 'products') loadProducts();
+      if (name === 'pricing') loadPricingTab();
+      if (name === 'customers') loadCustomers();
     });
   });
 
@@ -274,5 +276,130 @@
     }).catch(function (err) {
       pStatus('خطا: ' + err.message, true);
     }).then(function () { $('p-save').disabled = false; });
+  });
+
+  // ------------------------------------------------------------- pricing
+
+  var pricingProductId = '';
+
+  function priceStatus(msg, isError) {
+    var s = $('pricing-status');
+    s.className = 'status' + (isError ? ' error' : '');
+    s.textContent = msg || '';
+  }
+
+  function loadPricingTab() {
+    var pick = $('pricing-product');
+    Promise.all([api('/api/products'), api('/api/users')]).then(function (all) {
+      var products = all[0].products;
+      window.__pricingUsers = all[1].users;
+      var prev = pricingProductId;
+      pick.innerHTML = products.map(function (p) {
+        return '<option value="' + esc(p.id) + '">' + esc(p.name) + (p.brand ? ' — ' + esc(p.brand) : '') + '</option>';
+      }).join('');
+      pricingProductId = products.some(function (p) { return p.id === prev; }) ? prev : (products[0] ? products[0].id : '');
+      pick.value = pricingProductId;
+      if (!pricingProductId) {
+        $('pricing-body').innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">اول از تب محصولات یک محصول اضافه کنید.</td></tr>';
+        return;
+      }
+      pick.onchange = function () { pricingProductId = this.value; renderPricing(); };
+      renderPricing();
+    }).catch(function (err) {
+      $('pricing-body').innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger)">خطا: ' + esc(err.message) + '</td></tr>';
+    });
+  }
+
+  function renderPricing() {
+    var users = window.__pricingUsers || [];
+    var body = $('pricing-body');
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">در حال دریافت…</td></tr>';
+    Promise.all([
+      api('/api/user-products?productId=' + encodeURIComponent(pricingProductId)),
+      api('/api/products'),
+    ]).then(function (all) {
+      var overrides = {};
+      all[0].userProducts.forEach(function (r) { overrides[r.userId] = r; });
+      var product = all[1].products.find(function (p) { return p.id === pricingProductId; }) || {};
+      body.innerHTML = users.filter(function (u) { return u.role === 'VISITOR'; }).map(function (u) {
+        var o = overrides[u.id] || {};
+        return '<tr data-user="' + esc(u.id) + '">' +
+          '<td>' + esc(u.firstName + ' ' + u.lastName) + '<span class="cell-sub">' + esc(u.phone) + '</span></td>' +
+          '<td><input class="cell-input" data-f="customUnitPrice" dir="ltr" type="number" min="0" step="any" placeholder="' + (product.baseUnitPrice == null ? '—' : product.baseUnitPrice) + '" value="' + (o.customUnitPrice == null ? '' : o.customUnitPrice) + '" /></td>' +
+          '<td><input class="cell-input" data-f="customCartonPrice" dir="ltr" type="number" min="0" step="any" placeholder="—" value="' + (o.customCartonPrice == null ? '' : o.customCartonPrice) + '" /></td>' +
+          '<td><input class="cell-input" data-f="customUnitsPerCarton" dir="ltr" type="number" min="1" step="1" placeholder="' + (product.unitsPerCartonDefault || '—') + '" value="' + (o.customUnitsPerCarton == null ? '' : o.customUnitsPerCarton) + '" /></td>' +
+          '<td><input class="cell-check" data-f="isActiveForUser" type="checkbox"' + (o.isActiveForUser === false ? '' : ' checked') + ' aria-label="فعال برای این ویزیتور" /></td>' +
+          '<td class="row-actions">' +
+            '<button type="button" class="btn btn-primary btn-sm" data-save="' + esc(u.id) + '">ذخیره</button>' +
+            '<button type="button" class="btn btn-danger btn-sm" data-reset="' + esc(u.id) + '">حذف قید</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('');
+      body.querySelectorAll('[data-save]').forEach(function (b) {
+        b.addEventListener('click', function () { saveOverride(b.getAttribute('data-save')); });
+      });
+      body.querySelectorAll('[data-reset]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var uid = b.getAttribute('data-reset');
+          if (!confirm('قید اختصاصی این ویزیتور برای این محصول حذف شود؟ (برمی‌گردد به قیمت کاتالوگ)')) return;
+          api('/api/user-products/' + uid + '/' + pricingProductId, { method: 'DELETE' })
+            .then(function () { priceStatus('قید حذف شد؛ قیمت کاتالوگ اعمال می‌شود.'); renderPricing(); })
+            .catch(function (err) { priceStatus('خطا: ' + err.message, true); });
+        });
+      });
+    }).catch(function (err) {
+      body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger)">خطا: ' + esc(err.message) + '</td></tr>';
+    });
+  }
+
+  function saveOverride(userId) {
+    var tr = $('pricing-body').querySelector('tr[data-user="' + userId + '"]');
+    if (!tr) return;
+    var payload = { isActiveForUser: tr.querySelector('[data-f="isActiveForUser"]').checked };
+    ['customUnitPrice', 'customCartonPrice', 'customUnitsPerCarton'].forEach(function (f) {
+      var input = tr.querySelector('[data-f="' + f + '"]');
+      payload[f] = input.value === '' ? null : Number(input.value);
+    });
+    api('/api/user-products/' + userId + '/' + pricingProductId, { method: 'PUT', body: JSON.stringify(payload) })
+      .then(function () { priceStatus('قیمت اختصاصی ذخیره شد.'); renderPricing(); })
+      .catch(function (err) { priceStatus('خطا: ' + err.message, true); });
+  }
+
+  // ------------------------------------------------------------- customers
+
+  function loadCustomers(q) {
+    var body = $('customers-body');
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">در حال دریافت…</td></tr>';
+    api('/api/customers' + (q ? '?q=' + encodeURIComponent(q) : ''))
+      .then(function (data) {
+        if (!data.customers.length) {
+          body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">مشتری‌ای پیدا نشد.</td></tr>';
+          return;
+        }
+        body.innerHTML = data.customers.map(function (c) {
+          var last = c.lastOrderDate ? new Date(c.lastOrderDate).toLocaleDateString('fa-IR') : '—';
+          var debt = c.hasDebt
+            ? '<span class="debt-badge">' + Number(c.debt).toLocaleString('fa-IR') + ' تومان</span>'
+            : '<span class="settled-badge">تسویه</span>';
+          return '<tr>' +
+            '<td>' + esc(c.name) + '</td>' +
+            '<td dir="ltr">' + esc(c.phone || '—') + '</td>' +
+            '<td>' + esc(c.visitorName) + '</td>' +
+            '<td>' + debt + '</td>' +
+            '<td>' + c.ordersCount + '</td>' +
+            '<td>' + last + '</td>' +
+          '</tr>';
+        }).join('');
+      })
+      .catch(function (err) {
+        body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger)">خطا: ' + esc(err.message) + '</td></tr>';
+      });
+  }
+
+  $('customer-search').addEventListener('click', function () {
+    loadCustomers($('customer-q').value.trim());
+  });
+  $('customer-q').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); loadCustomers(this.value.trim()); }
   });
 })();

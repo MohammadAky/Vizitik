@@ -145,12 +145,36 @@ body {
 .btn-danger:hover { background: var(--danger); color: #fff; }
 .results td.row-actions { max-width: none; overflow: visible; }
 
+/* ---- pricing + customers tabs ---- */
+.cell-sub { display: block; color: var(--muted); font-size: 11px; direction: ltr; text-align: start; }
+.cell-input {
+  font-family: inherit; font-size: 12.5px; width: 110px; max-width: 100%;
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 9px; background: #fbfdfe; color: var(--text);
+}
+.cell-input:focus { border-color: var(--teal); }
+.cell-check { width: 18px; height: 18px; accent-color: var(--teal); cursor: pointer; }
+.debt-badge {
+  background: #fee2e2; color: var(--danger);
+  border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+.settled-badge {
+  background: #dcfce7; color: #15803d;
+  border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+#customer-q {
+  font-family: inherit; font-size: 14px; color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 10px 12px; min-height: 44px; background: #fbfdfe;
+}
+
 @media (max-width: 900px) {
   .form-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 640px) {
   .form-grid { grid-template-columns: 1fr; }
   .topbar { flex-wrap: wrap; }
+  .cell-input { width: 84px; }
 }
 
 @media (max-width: 760px) {

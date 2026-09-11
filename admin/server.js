@@ -191,6 +191,111 @@ async function listProducts() {
   }));
 }
 
+// ------------------------------------------------- visitors + per-user prices
+
+/** visitors for the pricing matrix and the customer list */
+async function listUsers() {
+  const rows = await prisma.user.findMany({
+    select: {
+      id: true, firstName: true, lastName: true, phone: true, role: true, isActive: true,
+      _count: { select: { customers: true, customUserProducts: true } },
+    },
+    orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+  });
+  return rows.map((u) => ({
+    id: u.id,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    phone: u.phone,
+    role: u.role,
+    isActive: u.isActive,
+    customersCount: u._count.customers,
+    userProductsCount: u._count.customUserProducts,
+  }));
+}
+
+/** every per-user price override, joined with user and product names */
+async function listUserProducts() {
+  const rows = await prisma.userProduct.findMany({
+    include: {
+      user: { select: { firstName: true, lastName: true, phone: true } },
+      product: { select: { name: true, brand: true, baseUnitPrice: true, unitsPerCartonDefault: true } },
+    },
+    orderBy: { updatedAt: 'desc' },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    userId: r.userId,
+    productId: r.productId,
+    userName: `${r.user.firstName} ${r.user.lastName}`.trim(),
+    userPhone: r.user.phone,
+    productName: r.product.name,
+    productBrand: r.product.brand,
+    productBaseUnitPrice: r.product.baseUnitPrice === null ? null : Number(r.product.baseUnitPrice),
+    productUnitsPerCarton: r.product.unitsPerCartonDefault,
+    customCartonPrice: r.customCartonPrice === null ? null : Number(r.customCartonPrice),
+    customUnitPrice: r.customUnitPrice === null ? null : Number(r.customUnitPrice),
+    customUnitsPerCarton: r.customUnitsPerCarton,
+    isActiveForUser: r.isActiveForUser,
+    updatedAt: r.updatedAt,
+  }));
+}
+
+/** validates a per-user price override; null clears a field back to the default */
+function validateUserProductBody(body) {
+  const data = {};
+  for (const f of ['customCartonPrice', 'customUnitPrice']) {
+    const v = body[f];
+    if (v === undefined) continue;
+    if (v === null || v === '') { data[f] = null; continue; }
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0 || n > MAX_PRICE) return { ok: false, error: `مقدار ${f === 'customCartonPrice' ? 'قیمت کارتن' : 'قیمت واحد'} نامعتبر است` };
+    data[f] = n;
+  }
+  if (body.customUnitsPerCarton !== undefined) {
+    const v = body.customUnitsPerCarton;
+    if (v === null || v === '') { data.customUnitsPerCarton = null; }
+    else {
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 1) return { ok: false, error: 'تعداد در کارتن باید عدد صحیح بزرگ‌تر از صفر باشد' };
+      data.customUnitsPerCarton = n;
+    }
+  }
+  if (body.isActiveForUser !== undefined) data.isActiveForUser = Boolean(body.isActiveForUser);
+  return { ok: true, data };
+}
+
+/** customers with their current balance - same rule as backend CustomersService:
+    the balance is the balanceAfter of the newest ledger entry */
+async function listCustomers(q) {
+  const rows = await prisma.customer.findMany({
+    where: q ? { OR: [{ name: { contains: q } }, { phone: { contains: q } }] } : undefined,
+    include: {
+      assignedVisitor: { select: { firstName: true, lastName: true } },
+      ledgerEntries: { orderBy: { createdAt: 'desc' }, take: 1 },
+      orders: { orderBy: { createdAt: 'desc' }, take: 1, select: { orderDate: true, finalAmount: true } },
+      _count: { select: { orders: true } },
+    },
+    orderBy: { name: 'asc' },
+  });
+  return rows.map((c) => {
+    const debt = c.ledgerEntries.length > 0 ? Number(c.ledgerEntries[0].balanceAfter) : 0;
+    const last = c.orders[0];
+    return {
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      address: c.address,
+      visitorName: `${c.assignedVisitor.firstName} ${c.assignedVisitor.lastName}`.trim(),
+      debt,
+      hasDebt: debt > 0,
+      ordersCount: c._count.orders,
+      lastOrderDate: last ? last.orderDate : null,
+      lastOrderAmount: last ? Number(last.finalAmount) : null,
+    };
+  });
+}
+
 async function listTables() {
   const rows = await prisma.$queryRawUnsafe('SHOW TABLES');
   const key = rows.length ? Object.keys(rows[0])[0] : null;
@@ -235,6 +340,7 @@ function serveStatic(res, urlPath) {
 
 const server = http.createServer(async (req, res) => {
   const urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
+  const query = new URL(req.url || '/', 'http://localhost').searchParams;
   try {
     if (urlPath === '/api/health') return sendJson(res, 200, { ok: true });
 
@@ -312,6 +418,59 @@ const server = http.createServer(async (req, res) => {
       }
 
       return sendJson(res, 405, { error: 'method not allowed' });
+    }
+
+    // ----- visitors, per-user price overrides, customers -----
+    const userProductMatch = urlPath.match(/^\/api\/user-products(?:\/([A-Za-z0-9-]{1,64}))?(?:\/([A-Za-z0-9-]{1,64}))?$/);
+    if (urlPath === '/api/users' && req.method === 'GET') {
+      if (!authorized(req)) return sendJson(res, 401, { error: 'توکن ادمین درست نیست' });
+      return sendJson(res, 200, { users: await listUsers() });
+    }
+
+    if (userProductMatch) {
+      if (!authorized(req)) return sendJson(res, 401, { error: 'توکن ادمین درست نیست' });
+      const userId = userProductMatch[1];
+      const productId = userProductMatch[2];
+
+      if (!userId && req.method === 'GET') {
+        const productIdFilter = query.get('productId') || '';
+        const rows = await listUserProducts();
+        return sendJson(res, 200, {
+          userProducts: productIdFilter ? rows.filter((r) => r.productId === productIdFilter) : rows,
+        });
+      }
+
+      if (userId && productId && req.method === 'PUT') {
+        const [user, product] = await Promise.all([
+          prisma.user.findUnique({ where: { id: userId }, select: { id: true } }),
+          prisma.product.findUnique({ where: { id: productId }, select: { id: true } }),
+        ]);
+        if (!user) return sendJson(res, 404, { error: 'ویزیتور یافت نشد' });
+        if (!product) return sendJson(res, 404, { error: 'محصول یافت نشد' });
+        const payload = JSON.parse((await readBody(req, 32 * 1024)) || '{}');
+        const v = validateUserProductBody(payload);
+        if (!v.ok) return sendJson(res, 400, { error: v.error });
+        if (!Object.keys(v.data).length) return sendJson(res, 400, { error: 'چیزی برای تغییر ارسال نشده است' });
+        await prisma.userProduct.upsert({
+          where: { userId_productId: { userId, productId } },
+          update: v.data,
+          create: Object.assign({ userId, productId, isActiveForUser: true }, v.data),
+        });
+        return sendJson(res, 200, { ok: true });
+      }
+
+      if (userId && productId && req.method === 'DELETE') {
+        await prisma.userProduct.deleteMany({ where: { userId, productId } });
+        return sendJson(res, 200, { deleted: true });
+      }
+
+      return sendJson(res, 405, { error: 'method not allowed' });
+    }
+
+    if (urlPath === '/api/customers' && req.method === 'GET') {
+      if (!authorized(req)) return sendJson(res, 401, { error: 'توکن ادمین درست نیست' });
+      const q = (query.get('q') || '').trim().slice(0, 100);
+      return sendJson(res, 200, { customers: await listCustomers(q || undefined) });
     }
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {
