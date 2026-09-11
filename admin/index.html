@@ -25,6 +25,10 @@
   <main id="panel" class="panel" hidden>
     <header class="topbar">
       <h1 class="topbar-title">پنل ادمین ویزیتیک</h1>
+      <nav class="tabs" aria-label="بخش‌های پنل">
+        <button type="button" class="tab active" data-tab="sql">کوئری SQL</button>
+        <button type="button" class="tab" data-tab="products">محصولات</button>
+      </nav>
       <button id="logout" type="button" class="btn btn-ghost">خروج</button>
     </header>
 
@@ -38,24 +42,74 @@
       </aside>
 
       <section class="content">
-        <div class="editor-box">
-          <label class="editor-label" for="sql">کوئری SQL (فقط SELECT، حداکثر ۵۰۰ ردیف)</label>
-          <textarea id="sql" dir="ltr" rows="5" spellcheck="false" placeholder="SELECT * FROM `Order` ORDER BY createdAt DESC"></textarea>
-          <div class="editor-actions">
-            <select id="table-pick" class="table-pick" aria-label="انتخاب سریع جدول">
-              <option value="">جدول…</option>
-            </select>
-            <button id="run" type="button" class="btn btn-primary">اجرای کوئری</button>
+        <!-- SQL tab (read-only) -->
+        <div id="view-sql" class="view">
+          <div class="editor-box">
+            <label class="editor-label" for="sql">کوئری SQL (فقط SELECT، حداکثر ۵۰۰ ردیف)</label>
+            <textarea id="sql" dir="ltr" rows="5" spellcheck="false" placeholder="SELECT * FROM `Order` ORDER BY createdAt DESC"></textarea>
+            <div class="editor-actions">
+              <select id="table-pick" class="table-pick" aria-label="انتخاب سریع جدول">
+                <option value="">جدول…</option>
+              </select>
+              <button id="run" type="button" class="btn btn-primary">اجرای کوئری</button>
+            </div>
+          </div>
+
+          <div id="status" class="status" role="status"></div>
+
+          <div class="results-wrap" id="results-wrap" hidden>
+            <table class="results" dir="ltr"><thead id="results-head"></thead><tbody id="results-body"></tbody></table>
+          </div>
+
+          <p id="empty" class="empty">کوئری را بنویسید و «اجرای کوئری» را بزنید. نتایج همین‌جا نمایش داده می‌شود.</p>
+        </div>
+
+        <!-- products tab (managed through safe endpoints, not raw SQL) -->
+        <div id="view-products" class="view" hidden>
+          <div class="products-head">
+            <p class="products-hint">محصولات سراسری کاتالوگ — همه‌ی ویزیتورها این‌ها را می‌بینند. SQL همچنان فقط‌خواندنی است؛ تغییرات از همین فرم انجام می‌شود.</p>
+            <button id="add-product" type="button" class="btn btn-primary">افزودن محصول</button>
+          </div>
+
+          <form id="product-form" class="editor-box product-form" hidden>
+            <div class="form-grid">
+              <label class="form-field">نام محصول
+                <input id="p-name" type="text" required maxlength="200" />
+              </label>
+              <label class="form-field">برند
+                <input id="p-brand" type="text" maxlength="200" placeholder="خالی = شخصی" />
+              </label>
+              <label class="form-field">دسته
+                <input id="p-category" type="text" maxlength="200" placeholder="خالی = متفرقه" />
+              </label>
+              <label class="form-field">تعداد در کارتن
+                <input id="p-units" type="number" dir="ltr" min="1" step="1" required />
+              </label>
+              <label class="form-field">قیمت کارتن (تومان)
+                <input id="p-carton" type="number" dir="ltr" min="0" step="any" placeholder="اختیاری" />
+              </label>
+              <label class="form-field">قیمت واحد (تومان)
+                <input id="p-unit" type="number" dir="ltr" min="0" step="any" placeholder="اختیاری" />
+              </label>
+            </div>
+            <p class="form-hint">اگر فقط قیمت کارتن را بدهید، قیمت واحد خودکار محاسبه می‌شود (قیمت کارتن ÷ تعداد در کارتن).</p>
+            <div class="editor-actions">
+              <button type="submit" id="p-save" class="btn btn-primary">ذخیره</button>
+              <button type="button" id="p-cancel" class="btn btn-ghost">انصراف</button>
+            </div>
+          </form>
+
+          <div id="p-status" class="status" role="status"></div>
+
+          <div class="results-wrap">
+            <table class="results" dir="rtl">
+              <thead>
+                <tr><th>نام</th><th>برند</th><th>دسته</th><th>قیمت واحد</th><th>تعداد/کارتن</th><th>سفارش‌ها</th><th>قیمت اختصاصی</th><th>عملیات</th></tr>
+              </thead>
+              <tbody id="products-body"></tbody>
+            </table>
           </div>
         </div>
-
-        <div id="status" class="status" role="status"></div>
-
-        <div class="results-wrap" id="results-wrap" hidden>
-          <table class="results" dir="ltr"><thead id="results-head"></thead><tbody id="results-body"></tbody></table>
-        </div>
-
-        <p id="empty" class="empty">کوئری را بنویسید و «اجرای کوئری» را بزنید. نتایج همین‌جا نمایش داده می‌شود.</p>
       </section>
     </div>
   </main>

@@ -112,6 +112,47 @@ body {
 .results tbody tr:nth-child(even) { background: #f7fafc; }
 .results td.null { color: #b0bfca; font-style: italic; }
 
+/* ---- tabs ---- */
+.tabs { display: flex; gap: 6px; }
+.tab {
+  font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  background: transparent; color: #cfe4ee;
+  border: 1px solid #27455c; border-radius: 8px;
+  padding: 8px 16px; min-height: 40px;
+}
+.tab:hover { color: #fff; border-color: var(--teal); }
+.tab.active { background: var(--teal); color: var(--navy); border-color: var(--teal); }
+
+.view { display: grid; gap: 14px; align-content: start; }
+
+/* ---- products tab ---- */
+.products-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.products-hint { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.9; flex: 1; min-width: 240px; }
+.products-head .btn { flex-shrink: 0; }
+
+.product-form { border-color: var(--teal); }
+.form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.form-field { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.form-field input {
+  font-family: inherit; font-size: 14px; color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 10px 12px; min-height: 44px; background: #fbfdfe; width: 100%;
+}
+.form-field input:focus { border-color: var(--teal); }
+.form-hint { margin: 0; font-size: 12.5px; color: var(--muted); }
+.row-actions { white-space: nowrap; display: flex; gap: 6px; }
+.btn-danger { background: #fee2e2; color: var(--danger); border: 1px solid #fca5a5; min-height: 32px; padding: 4px 10px; }
+.btn-danger:hover { background: var(--danger); color: #fff; }
+.results td.row-actions { max-width: none; overflow: visible; }
+
+@media (max-width: 900px) {
+  .form-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 640px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .topbar { flex-wrap: wrap; }
+}
+
 @media (max-width: 760px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar { border-inline-end: none; border-bottom: 1px solid var(--line); }
