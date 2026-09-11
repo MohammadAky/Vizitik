@@ -1,0 +1,46 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+let handler, orderArgs;
+const prisma = { order: { findMany: async args => { orderArgs = args; return []; } } };
+const context = vm.createContext({
+  require(name) {
+    if (name === '@prisma/client') return { PrismaClient: function () { return prisma; } };
+    if (name === 'http') return { createServer(fn) { handler = fn; return { listen() {} }; } };
+    return require(name);
+  },
+  process: { env: { ADMIN_TOKEN: 'test-only', ADMIN_STATIC_DIR: path.resolve(__dirname, '..') }, exit() { throw Error('unexpected exit'); } },
+  __dirname: path.resolve(__dirname, '..'), console, Buffer, URL, Date
+});
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8'), context);
+function run(code) { return vm.runInContext(code, context); }
+async function request(url, token) {
+  return new Promise((resolve, reject) => {
+    const res = { writeHead(status) { this.status = status; }, end(body) { resolve({ status: this.status, body }); } };
+    Promise.resolve(handler({ url, method: 'GET', headers: { 'x-admin-token': token } }, res)).catch(reject);
+  });
+}
+(async () => {
+  assert.equal((await request('/%zz')).status, 400);
+  assert.equal((await request('/api/health')).status, 200);
+  assert.equal((await request('/api/orders')).status, 401);
+  assert.equal((await request('/server.js')).status, 404);
+  assert.equal((await request('/fonts/../fonts-private/secret')).status, 403);
+  assert.equal((await request('/')).status, 200);
+  assert.equal((await request('/api/orders?status=BAD', 'test-only')).status, 400);
+  await request('/api/orders?dateTo=2026-09-11&limit=9999&customerId=c1', 'test-only');
+  assert.equal(orderArgs.take, 500);
+  assert.equal(orderArgs.where.customerId, 'c1');
+  assert.equal(orderArgs.where.orderDate.lt.toISOString(), '2026-09-12T00:00:00.000Z');
+  assert.equal(run("guardSql('SELECT * FROM users LIMIT 900 OFFSET 10').sql"), 'SELECT * FROM users LIMIT 500 OFFSET 10');
+  assert.equal(run("guardSql('SELECT * FROM users -- bypass').ok"), false);
+  assert.equal(run("guardSql('DELETE FROM users', true).ok"), false);
+  assert.equal(run("guardSql('INSERT INTO users VALUES (1)', false).ok"), false);
+  const css = fs.readFileSync(path.join(__dirname, '../css/admin.css'), 'utf8');
+  assert.match(css, /\[hidden\]\s*\{\s*display:\s*none\s*!important/);
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const js = fs.readFileSync(path.join(__dirname, '../js/admin.js'), 'utf8');
+  for (const [, id] of js.matchAll(/\$\('([^']+)'\)/g)) assert.ok(html.includes(`id="${id}"`), `missing DOM id: ${id}`);
+  console.log('PASS: routing/auth, malformed URL, static boundaries, date/limit/customer filters, SQL guards, hidden rule, DOM IDs');
+})().catch(e => { console.error(e); process.exitCode = 1; });

@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>پنل ادمین ویزیتیک</title>
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="stylesheet" href="/fonts/vazirmatn/vazirmatn.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
+</head>
+<body>
+  <!-- Token Gate -->
+  <div id="gate" class="gate">
+    <form id="gate-form" class="gate-card">
+      <div class="gate-logo">
+        <span class="gate-logo-icon">⚡</span>
+        ویزیتیک · پنل ادمین
+      </div>
+      <p class="gate-hint">توکن ادمین را وارد کنید. این توکن در فایل <span dir="ltr">backend/.env</span> سرور (متغیر <span dir="ltr">ADMIN_TOKEN</span>) تنظیم شده است.</p>
+      <input id="gate-token" type="password" dir="ltr" autocomplete="current-password" placeholder="ADMIN_TOKEN" aria-label="توکن ادمین" required />
+      <button type="submit" class="btn btn-primary btn-block">ورود به پنل</button>
+      <p id="gate-error" class="gate-error" role="alert" hidden></p>
+    </form>
+  </div>
+
+  <!-- Main Panel -->
+  <main id="panel" class="panel" hidden>
+    <!-- Top Navigation -->
+    <header class="topbar">
+      <div class="topbar-right">
+        <button id="sidebar-toggle" type="button" class="btn btn-ghost btn-icon" title="منو">☰</button>
+        <h1 class="topbar-title">پنل ادمین ویزیتیک</h1>
+      </div>
+      <nav class="tabs" aria-label="بخش‌های پنل">
+        <button type="button" class="tab active" data-tab="dashboard">
+          <span class="tab-icon">📊</span>
+          <span class="tab-text">داشبورد</span>
+        </button>
+        <button type="button" class="tab" data-tab="sql">
+          <span class="tab-icon">🔍</span>
+          <span class="tab-text">کوئری SQL</span>
+        </button>
+        <button type="button" class="tab" data-tab="products">
+          <span class="tab-icon">📦</span>
+          <span class="tab-text">محصولات</span>
+        </button>
+        <button type="button" class="tab" data-tab="orders">
+          <span class="tab-icon">📋</span>
+          <span class="tab-text">سفارشات</span>
+        </button>
+        <button type="button" class="tab" data-tab="customers">
+          <span class="tab-icon">👥</span>
+          <span class="tab-text">مشتریان</span>
+        </button>
+        <button type="button" class="tab" data-tab="settings">
+          <span class="tab-icon">⚙️</span>
+          <span class="tab-text">تنظیمات</span>
+        </button>
+      </nav>
+      <div class="topbar-left">
+        <span id="user-info" class="user-info"></span>
+        <button id="logout" type="button" class="btn btn-ghost">خروج</button>
+      </div>
+    </header>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Main Layout -->
+    <div class="layout">
+      <!-- Sidebar -->
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-head">
+            <span>جدول‌های دیتابیس</span>
+            <button id="refresh-tables" type="button" class="btn btn-ghost btn-sm" title="به‌روزرسانی">↻</button>
+          </div>
+          <ul id="table-list" class="table-list" aria-label="فهرست جدول‌ها"></ul>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-head">
+            <span>کوئری‌های ذخیره‌شده</span>
+          </div>
+          <ul id="bookmark-list" class="bookmark-list"></ul>
+        </div>
+      </aside>
+
+      <!-- Content Area -->
+      <section class="content">
+        <!-- ==================== Dashboard Tab ==================== -->
+        <div id="view-dashboard" class="view">
+          <div class="dashboard-grid">
+            <div class="stat-card">
+              <div class="stat-icon">📦</div>
+              <div class="stat-info">
+                <div class="stat-value" id="stat-products">-</div>
+                <div class="stat-label">محصولات</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">📋</div>
+              <div class="stat-info">
+                <div class="stat-value" id="stat-orders">-</div>
+                <div class="stat-label">سفارشات</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">👥</div>
+              <div class="stat-info">
+                <div class="stat-value" id="stat-customers">-</div>
+                <div class="stat-label">مشتریان</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">💰</div>
+              <div class="stat-info">
+                <div class="stat-value" id="stat-revenue">-</div>
+                <div class="stat-label">درآمد کل</div>
+              </div>
+            </div>
+          </div>
+          <div class="dashboard-charts">
+            <div class="chart-card">
+              <h3>آمار جدول‌ها</h3>
+              <div id="table-stats" class="table-stats"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== SQL Tab ==================== -->
+        <div id="view-sql" class="view" hidden>
+          <!-- SQL Sub-tabs -->
+          <div class="sql-tabs">
+            <button type="button" class="sql-tab active" data-sqltab="editor">ویرایشگر کوئری</button>
+            <button type="button" class="sql-tab" data-sqltab="templates">قالب‌های آماده</button>
+            <button type="button" class="sql-tab" data-sqltab="history">تاریخچه</button>
+            <button type="button" class="sql-tab" data-sqltab="bookmarks">ذخیره‌شده‌ها</button>
+          </div>
+
+          <!-- SQL Editor Sub-tab -->
+          <div id="sqltab-editor" class="sql-subtab">
+            <div class="editor-box">
+              <div class="editor-header">
+                <label class="editor-label" for="sql-editor">کوئری SQL</label>
+                <div class="editor-options">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="allow-write" />
+                    <span>اجازه نوشتن (INSERT/UPDATE/DELETE)</span>
+                  </label>
+                  <button id="bookmark-current" type="button" class="btn btn-ghost btn-sm" title="ذخیره کوئری">⭐</button>
+                </div>
+              </div>
+              <div class="sql-editor-wrapper">
+                <div id="schema-info" class="schema-info" hidden>
+                  <div class="schema-info-header">
+                    <span>ساختار جدول: <strong id="schema-table-name"></strong></span>
+                    <button id="close-schema" type="button" class="btn btn-ghost btn-sm">✕</button>
+                  </div>
+                  <div id="schema-columns" class="schema-columns"></div>
+                </div>
+                <textarea id="sql-editor" dir="ltr" rows="8" spellcheck="false" placeholder="SELECT * FROM Product ORDER BY createdAt DESC"></textarea>
+              </div>
+              <div class="editor-actions">
+                <select id="table-pick" class="table-pick" aria-label="انتخاب سریع جدول">
+                  <option value="">انتخاب جدول...</option>
+                </select>
+                <select id="query-template" class="table-pick" aria-label="قالب کوئری">
+                  <option value="">قالب آماده...</option>
+                  <option value="select-all">انتخاب همه ردیف‌ها</option>
+                  <option value="select-limit">انتخاب با محدودیت</option>
+                  <option value="select-count">شمارش ردیف‌ها</option>
+                  <option value="select-unique">مقادیر یکتا</option>
+                  <option value="select-join">انتخاب با JOIN</option>
+                  <option value="select-group">گروه‌بندی و شمارش</option>
+                  <option value="select-date-range">بازه تاریخی</option>
+                  <option value="select-search">جستجو در متن</option>
+                  <option value="insert-template">قالب INSERT</option>
+                  <option value="update-template">قالب UPDATE</option>
+                  <option value="delete-template">قالب DELETE</option>
+                </select>
+                <div class="editor-actions-right">
+                  <button id="clear-editor" type="button" class="btn btn-ghost btn-sm">پاک کردن</button>
+                  <button id="run" type="button" class="btn btn-primary">▶ اجرای کوئری</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="sql-status" class="status" role="status"></div>
+
+            <div class="results-header" id="results-header" hidden>
+              <div class="results-info">
+                <span id="results-count"></span>
+                <span id="results-time"></span>
+              </div>
+              <div class="results-actions">
+                <button id="export-csv" type="button" class="btn btn-ghost btn-sm">📥 CSV</button>
+                <button id="export-json" type="button" class="btn btn-ghost btn-sm">📥 JSON</button>
+                <button id="copy-results" type="button" class="btn btn-ghost btn-sm">📋 کپی</button>
+              </div>
+            </div>
+
+            <div class="results-wrap" id="results-wrap" hidden>
+              <table class="results" dir="ltr">
+                <thead id="results-head"></thead>
+                <tbody id="results-body"></tbody>
+              </table>
+            </div>
+
+            <p id="empty" class="empty">کوئری را بنویسید و «اجرای کوئری» را بزنید. از Ctrl+Enter هم می‌توانید استفاده کنید.</p>
+          </div>
+
+          <!-- Templates Sub-tab -->
+          <div id="sqltab-templates" class="sql-subtab" hidden>
+            <div class="templates-grid">
+              <div class="template-card" data-template="products-all">
+                <h4>📦 همه محصولات</h4>
+                <p>لیست کامل محصولات با قیمت‌ها</p>
+                <code>SELECT * FROM Product ORDER BY brand, name</code>
+              </div>
+              <div class="template-card" data-template="products-with-orders">
+                <h4>📊 محصولات پرفروش</h4>
+                <p>محصولات به تعداد سفارش</p>
+                <code>SELECT p.name, p.brand, COUNT(oi.id) as orderCount FROM Product p LEFT JOIN OrderItem oi ON p.id = oi.productId GROUP BY p.id ORDER BY orderCount DESC</code>
+              </div>
+              <div class="template-card" data-template="orders-recent">
+                <h4>📋 سفارشات اخیر</h4>
+                <p>۱۰۰ سفارش آخر</p>
+                <code>SELECT o.*, c.name as customerName, u.firstName as visitorName FROM Order o JOIN Customer c ON o.customerId = c.id JOIN User u ON o.visitorId = u.id ORDER BY o.createdAt DESC LIMIT 100</code>
+              </div>
+              <div class="template-card" data-template="orders-pending">
+                <h4>⏳ سفارشات در انتظار</h4>
+                <p>سفارشات تایید نشده</p>
+                <code>SELECT * FROM Order WHERE status = 'DRAFT' ORDER BY createdAt DESC</code>
+              </div>
+              <div class="template-card" data-template="customers-debt">
+                <h4>💰 بدهکاران</h4>
+                <p>مشتریان با مانده حساب منفی</p>
+                <code>SELECT c.name, c.phone, le.balanceAfter as debt FROM Customer c JOIN CustomerLedger le ON c.id = le.customerId WHERE le.balanceAfter > 0 AND le.id = (SELECT MAX(id) FROM CustomerLedger WHERE customerId = c.id) ORDER BY debt DESC</code>
+              </div>
+              <div class="template-card" data-template="payments-summary">
+                <h4>💳 خلاصه پرداخت‌ها</h4>
+                <p>پرداخت‌ها به ت.method</p>
+                <code>SELECT method, COUNT(*) as count, SUM(amount) as total FROM Payment GROUP BY method</code>
+              </div>
+              <div class="template-card" data-template="visitors-performance">
+                <h4>🏃 عملکرد ویزیتورها</h4>
+                <p>تعداد سفارش و فروش هر ویزیتور</p>
+                <code>SELECT u.firstName, u.lastName, COUNT(o.id) as orderCount, SUM(o.finalAmount) as totalSales FROM User u LEFT JOIN Order o ON u.id = o.visitorId WHERE u.role = 'VISITOR' GROUP BY u.id ORDER BY totalSales DESC</code>
+              </div>
+              <div class="template-card" data-template="van-inventory">
+                <h4>🚚 موجودی ون</h4>
+                <p>موجودی فعلی ون‌ها</p>
+                <code>SELECT u.firstName, u.lastName, p.name as productName, vi.quantityCartons, vi.quantityUnits FROM VanInventory vi JOIN User u ON vi.userId = u.id JOIN Product p ON vi.productId = p.id ORDER BY u.firstName, p.name</code>
+              </div>
+              <div class="template-card" data-template="revenue-monthly">
+                <h4>📈 درآمد ماهانه</h4>
+                <p>درآمد هر ماه شمسی</p>
+                <code>SELECT DATE_FORMAT(orderDate, '%Y-%m') as month, COUNT(*) as orderCount, SUM(finalAmount) as revenue FROM Order WHERE status != 'CANCELLED' GROUP BY month ORDER BY month DESC</code>
+              </div>
+              <div class="template-card" data-template="database-stats">
+                <h4>📊 آمار دیتابیس</h4>
+                <p>تعداد ردیف هر جدول</p>
+                <code>SELECT TABLE_NAME as tableName, TABLE_ROWS as rowCount FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_ROWS DESC</code>
+              </div>
+            </div>
+          </div>
+
+          <!-- History Sub-tab -->
+          <div id="sqltab-history" class="sql-subtab" hidden>
+            <div class="editor-box">
+              <div class="editor-header">
+                <span class="editor-label">تاریخچه کوئری‌ها</span>
+                <button id="clear-history" type="button" class="btn btn-danger btn-sm">پاک کردن تاریخچه</button>
+              </div>
+              <div id="history-list" class="history-list">
+                <p class="empty">هنوز کوئری‌ای اجرا نشده است.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bookmarks Sub-tab -->
+          <div id="sqltab-bookmarks" class="sql-subtab" hidden>
+            <div class="editor-box">
+              <div class="editor-header">
+                <span class="editor-label">کوئری‌های ذخیره‌شده</span>
+                <button id="add-bookmark" type="button" class="btn btn-primary btn-sm">+ افزودن</button>
+              </div>
+              <div id="bookmarks-list" class="bookmarks-list">
+                <p class="empty">هنوز کوئری‌ای ذخیره نشده است.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== Products Tab ==================== -->
+        <div id="view-products" class="view" hidden>
+          <div class="view-header">
+            <div class="view-header-info">
+              <h2>مدیریت محصولات</h2>
+              <p>محصولات سراسری کاتالوگ — همه‌ی ویزیتورها این‌ها را می‌بینند.</p>
+            </div>
+            <div class="view-header-actions">
+              <button id="import-products" type="button" class="btn btn-ghost">📥 ورودی</button>
+              <button id="export-products" type="button" class="btn btn-ghost">📤 خروجی</button>
+              <button id="add-product" type="button" class="btn btn-primary">+ افزودن محصول</button>
+            </div>
+          </div>
+
+          <!-- Product Form -->
+          <form id="product-form" class="editor-box product-form" hidden>
+            <div class="form-header">
+              <h3 id="product-form-title">افزودن محصول جدید</h3>
+              <button type="button" id="p-cancel" class="btn btn-ghost btn-sm">✕</button>
+            </div>
+            <div class="form-grid">
+              <label class="form-field">نام محصول *
+                <input id="p-name" type="text" required maxlength="200" placeholder="مثال: بستنی صبحانه وانیلی" />
+              </label>
+              <label class="form-field">برند
+                <input id="p-brand" type="text" maxlength="200" placeholder="مثال: میهن" />
+              </label>
+              <label class="form-field">دسته‌بندی
+                <input id="p-category" type="text" maxlength="200" placeholder="مثال: بستنی" />
+              </label>
+              <label class="form-field">تعداد در کارتن *
+                <input id="p-units" type="number" dir="ltr" min="1" step="1" required placeholder="6" />
+              </label>
+              <label class="form-field">قیمت کارتن (تومان)
+                <input id="p-carton" type="number" dir="ltr" min="0" step="any" placeholder="120000" />
+              </label>
+              <label class="form-field">قیمت واحد (تومان)
+                <input id="p-unit" type="number" dir="ltr" min="0" step="any" placeholder="20000" />
+              </label>
+            </div>
+            <p class="form-hint">💡 اگر فقط قیمت کارتن را بدهید، قیمت واحد خودکار محاسبه می‌شود (قیمت کارتن ÷ تعداد در کارتن).</p>
+            <div class="form-actions">
+              <button type="submit" id="p-save" class="btn btn-primary">💾 ذخیره</button>
+              <button type="button" id="p-reset" class="btn btn-ghost">پاک کردن فرم</button>
+            </div>
+          </form>
+
+          <!-- Product Filters -->
+          <div class="filters-box">
+            <div class="filters-grid">
+              <input id="product-search" type="search" class="filter-input" placeholder="جستجو در نام، برند، دسته..." />
+              <select id="product-brand-filter" class="filter-select">
+                <option value="">همه برندها</option>
+              </select>
+              <select id="product-category-filter" class="filter-select">
+                <option value="">همه دسته‌ها</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="products-status" class="status" role="status"></div>
+
+          <div class="results-wrap">
+            <table class="results" dir="rtl">
+              <thead>
+                <tr>
+                  <th>نام</th>
+                  <th>برند</th>
+                  <th>دسته</th>
+                  <th>قیمت واحد</th>
+                  <th>تعداد/کارتن</th>
+                  <th>سفارش‌ها</th>
+                  <th>قیمت اختصاصی</th>
+                  <th>عملیات</th>
+                </tr>
+              </thead>
+              <tbody id="products-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ==================== Orders Tab ==================== -->
+        <div id="view-orders" class="view" hidden>
+          <div class="view-header">
+            <div class="view-header-info">
+              <h2>مدیریت سفارشات</h2>
+              <p>مشاهده و مدیریت تمامی سفارشات ثبت‌شده.</p>
+            </div>
+            <div class="view-header-actions">
+              <button id="export-orders" type="button" class="btn btn-ghost">📤 خروجی</button>
+            </div>
+          </div>
+
+          <!-- Order Filters -->
+          <div class="filters-box">
+            <div class="filters-grid">
+              <select id="order-status-filter" class="filter-select">
+                <option value="">همه وضعیت‌ها</option>
+                <option value="DRAFT">پیش‌نویس</option>
+                <option value="CONFIRMED">تایید شده</option>
+                <option value="DELIVERED">تحویل شده</option>
+                <option value="CANCELLED">لغو شده</option>
+              </select>
+              <select id="order-visitor-filter" class="filter-select">
+                <option value="">همه ویزیتورها</option>
+              </select>
+              <input id="order-date-from" type="date" class="filter-input" dir="ltr" placeholder="از تاریخ" />
+              <input id="order-date-to" type="date" class="filter-input" dir="ltr" placeholder="تا تاریخ" />
+              <button id="order-search" type="button" class="btn btn-primary btn-sm">🔍 جستجو</button>
+            </div>
+          </div>
+
+          <div id="orders-status" class="status" role="status"></div>
+
+          <div class="results-wrap">
+            <table class="results" dir="rtl">
+              <thead>
+                <tr>
+                  <th>شماره فاکتور</th>
+                  <th>مشتری</th>
+                  <th>ویزیتور</th>
+                  <th>تاریخ</th>
+                  <th>وضعیت</th>
+                  <th>مبلغ نهایی</th>
+                  <th>اقلام</th>
+                  <th>عملیات</th>
+                </tr>
+              </thead>
+              <tbody id="orders-body"></tbody>
+            </table>
+          </div>
+
+          <!-- Order Detail Modal -->
+          <div id="order-detail-modal" class="modal" hidden>
+            <div class="modal-content">
+              <div class="modal-header">
+                <h3>جزئیات سفارش</h3>
+                <button id="close-order-modal" type="button" class="btn btn-ghost btn-sm">✕</button>
+              </div>
+              <div id="order-detail-content" class="modal-body"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== Customers Tab ==================== -->
+        <div id="view-customers" class="view" hidden>
+          <div class="view-header">
+            <div class="view-header-info">
+              <h2>مدیریت مشتریان</h2>
+              <p>مشتریان همه‌ی ویزیتورها با مانده‌ی حساب.</p>
+            </div>
+            <div class="view-header-actions">
+              <button id="export-customers" type="button" class="btn btn-ghost">📤 خروجی</button>
+            </div>
+          </div>
+
+          <!-- Customer Filters -->
+          <div class="filters-box">
+            <div class="filters-grid">
+              <input id="customer-search" type="search" class="filter-input" placeholder="جستجو بر اساس نام یا تلفن..." />
+              <select id="customer-debt-filter" class="filter-select">
+                <option value="">همه مشتریان</option>
+                <option value="debt">بدهکار</option>
+                <option value="settled">تسویه</option>
+              </select>
+              <button id="customer-search-btn" type="button" class="btn btn-primary btn-sm">🔍 جستجو</button>
+            </div>
+          </div>
+
+          <div id="customers-status" class="status" role="status"></div>
+
+          <div class="results-wrap">
+            <table class="results" dir="rtl">
+              <thead>
+                <tr>
+                  <th>نام</th>
+                  <th>تلفن</th>
+                  <th>آدرس</th>
+                  <th>ویزیتور</th>
+                  <th>مانده حساب</th>
+                  <th>تعداد سفارش</th>
+                  <th>آخرین سفارش</th>
+                  <th>عملیات</th>
+                </tr>
+              </thead>
+              <tbody id="customers-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ==================== Settings Tab ==================== -->
+        <div id="view-settings" class="view" hidden>
+          <div class="view-header">
+            <div class="view-header-info">
+              <h2>تنظیمات سیستم</h2>
+              <p>مدیریت تنظیمات پنل ادمین و سیستم.</p>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <!-- SQL Settings -->
+            <div class="settings-card">
+              <h3>🔍 تنظیمات SQL</h3>
+              <div class="setting-item">
+                <label class="setting-label">
+                  <input type="checkbox" id="setting-auto-limit" checked />
+                  <span>افزودن خودکار LIMIT به SELECT</span>
+                </label>
+                <p class="setting-desc">حداکثر ۵۰۰ ردیف به کوئری‌های SELECT اضافه شود</p>
+              </div>
+              <div class="setting-item">
+                <label class="setting-label">
+                  <input type="checkbox" id="setting-confirm-write" checked />
+                  <span>تایید قبل از اجرای کوئری نوشتن</span>
+                </label>
+                <p class="setting-desc">برای INSERT/UPDATE/DELETE پیام تایید نمایش داده شود</p>
+              </div>
+              <div class="setting-item">
+                <label class="setting-label">
+                  <input type="checkbox" id="setting-show-schema" checked />
+                  <span>نمایش ساختار جدول در ویرایشگر</span>
+                </label>
+                <p class="setting-desc">اطلاعات ستون‌ها هنگام انتخاب جدول نمایش داده شود</p>
+              </div>
+            </div>
+
+            <!-- Display Settings -->
+            <div class="settings-card">
+              <h3>🎨 تنظیمات نمایش</h3>
+              <div class="setting-item">
+                <label class="setting-label">
+                  <input type="checkbox" id="setting-dark-mode" />
+                  <span>حالت تاریک</span>
+                </label>
+                <p class="setting-desc">نمایش پنل با پس‌زمینه تاریک</p>
+              </div>
+              <div class="setting-item">
+                <label class="setting-label">
+                  <input type="checkbox" id="setting-compact-mode" />
+                  <span>حالت فشرده</span>
+                </label>
+                <p class="setting-desc">نمایش بیشتر اطلاعات در فضای کمتر</p>
+              </div>
+              <div class="setting-item">
+                <label class="setting-label">تعداد ردیف در هر صفحه</label>
+                <input type="number" id="setting-page-size" class="setting-input" value="50" min="10" max="500" dir="ltr" />
+              </div>
+            </div>
+
+            <!-- Export Settings -->
+            <div class="settings-card">
+              <h3>📤 تنظیمات خروجی</h3>
+              <div class="setting-item">
+                <label class="setting-label">فرمت پیش‌فرض خروجی</label>
+                <select id="setting-export-format" class="setting-select">
+                  <option value="csv">CSV</option>
+                  <option value="json">JSON</option>
+                </select>
+              </div>
+              <div class="setting-item">
+                <label class="setting-label">
+                  <input type="checkbox" id="setting-export-headers" checked />
+                  <span>شامل کردن هدرها در خروجی</span>
+                </label>
+                <p class="setting-desc">نام ستون‌ها در ردیف اول فایل خروجی نمایش داده شود</p>
+              </div>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="settings-card danger-zone">
+              <h3>⚠️ منطقه خطرناک</h3>
+              <div class="setting-item">
+                <button id="clear-all-history" type="button" class="btn btn-danger">پاک کردن تمام تاریخچه کوئری‌ها</button>
+                <p class="setting-desc">تمام کوئری‌های اجرا شده حذف می‌شوند</p>
+              </div>
+              <div class="setting-item">
+                <button id="clear-all-bookmarks" type="button" class="btn btn-danger">پاک کردن تمام کوئری‌های ذخیره‌شده</button>
+                <p class="setting-desc">تمام کوئری‌های ذخیره شده حذف می‌شوند</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Bookmark Modal -->
+  <div id="bookmark-modal" class="modal" hidden>
+    <div class="modal-content modal-sm">
+      <div class="modal-header">
+        <h3>ذخیره کوئری</h3>
+        <button id="close-bookmark-modal" type="button" class="btn btn-ghost btn-sm">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="bookmark-form">
+          <label class="form-field">نام کوئری *
+            <input id="bookmark-name" type="text" required maxlength="100" placeholder="مثال: گزارش فروش ماهانه" />
+          </label>
+          <label class="form-field">توضیحات
+            <textarea id="bookmark-desc" rows="2" maxlength="500" placeholder="توضیح کوتاه درباره این کوئری..."></textarea>
+          </label>
+          <label class="form-field">کوئری SQL *
+            <textarea id="bookmark-sql" dir="ltr" rows="4" required readonly></textarea>
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">💾 ذخیره</button>
+            <button type="button" id="cancel-bookmark" class="btn btn-ghost">انصراف</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/admin.js"></script>
+</body>
+</html>
