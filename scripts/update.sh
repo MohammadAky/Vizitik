@@ -37,6 +37,7 @@ ORIGINAL_ARGS=("$@")
 INSTALL_DIR="${INSTALL_DIR:-/opt/vizitik}"
 BACKEND_PORT="${BACKEND_PORT:-3000}"
 ADMIN_PORT="${ADMIN_PORT:-3001}"
+ADMIN_DOMAIN="${ADMIN_DOMAIN:-}"
 SETUP_SVC="${SETUP_SVC:-vizitik-backend}"
 ADMIN_SVC="${ADMIN_SVC:-vizitik-admin}"
 GIT_REMOTE="${GIT_REMOTE:-origin}"
@@ -60,6 +61,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --check|--dry-run) CHECK=1 ;;
     --backend-only)    DO_FRONTEND=0; DO_LANDING=0; DO_ADMIN=0 ;;
+    --admin-only)      DO_BACKEND=0; DO_FRONTEND=0; DO_LANDING=0 ;;
     --frontend-only)   DO_BACKEND=0 ;;
     --restart-only)    RESTART_ONLY=1; DO_PULL=0; DO_BACKEND=0; DO_FRONTEND=0; DO_LANDING=0; DO_ADMIN=0 ;;
     --force-deps)      FORCE_DEPS=1 ;;
@@ -80,6 +82,7 @@ usage: sudo bash scripts/update.sh [options]
   --frontend-only   skip the backend build
   --restart-only    no pull, no build: restart the service and reload nginx
   --force-deps      reinstall node packages even when no lockfile changed
+  --admin-only      only the admin panel: swap the files, provision/repair the service
   -f, --force       rebuild both sides from HEAD, ignoring what the diff says
   --no-restart      build into place, leave the running service alone
   --no-pull         use the checkout as it is
@@ -443,6 +446,115 @@ repair_admin_environment() {
   run "reload units" systemctl daemon-reload
 }
 
+admin_node_bin() {
+  command -v node 2>/dev/null || command -v nodejs 2>/dev/null || echo /usr/bin/node
+}
+
+ensure_admin_env() {  # the admin panel refuses to start without ADMIN_TOKEN
+  local envf="$INSTALL_DIR/backend/.env" key tok
+  if [[ ! -f "$envf" ]]; then
+    err "no $envf - the admin panel cannot get its settings"
+    return 1
+  fi
+  for key in ADMIN_TOKEN ADMIN_PORT ADMIN_STATIC_DIR ADMIN_FONTS_DIR; do
+    if ! grep -q "^${key}=" "$envf"; then
+      case "$key" in
+        ADMIN_PORT)       run "append $key" bash -c "printf 'ADMIN_PORT=%s\n' '$ADMIN_PORT' >> '$envf'" ;;
+        ADMIN_STATIC_DIR) run "append $key" bash -c "printf 'ADMIN_STATIC_DIR="%s"\n' '$INSTALL_DIR/admin' >> '$envf'" ;;
+        ADMIN_FONTS_DIR)  run "append $key" bash -c "printf 'ADMIN_FONTS_DIR="%s"\n' '$INSTALL_DIR/landing/fonts' >> '$envf'" ;;
+        ADMIN_TOKEN)
+          tok="$(openssl rand -hex 24 2>/dev/null | tr -d '\n')"
+          [[ -n "$tok" ]] || tok="$(date +%s%N | sha256sum | cut -c1-48)"
+          run "append $key" bash -c "printf 'ADMIN_TOKEN="%s"\n' '$tok' >> '$envf'"
+          [[ "$CHECK" == "1" ]] && skip "an ADMIN_TOKEN would be generated and written to $envf" \
+            || ok "ADMIN_TOKEN generated - paste this into the token box of the panel: $tok"
+          ;;
+      esac
+      [[ "$CHECK" == "1" ]] && skip "would append $key to $envf"
+    fi
+  done
+  # an empty ADMIN_TOKEN is the single most common reason the service crash-loops
+  if grep -qE '^ADMIN_TOKEN=""?[[:space:]]*$' "$envf"; then
+    tok="$(openssl rand -hex 24 2>/dev/null | tr -d '\n')"
+    [[ -n "$tok" ]] || tok="$(date +%s%N | sha256sum | cut -c1-48)"
+    run "fill empty ADMIN_TOKEN" sed -i "s|^ADMIN_TOKEN=.*|ADMIN_TOKEN=\"$tok\"|" "$envf"
+    ok "ADMIN_TOKEN was empty - it was filled in; the token is: $tok"
+  fi
+  return 0
+}
+
+provision_admin_service() {  # setup-server.sh created the unit only when it was told
+  local unit="/etc/systemd/system/$ADMIN_SVC.service"
+  local be="$INSTALL_DIR/backend" node_bin
+  node_bin="$(admin_node_bin)"
+  [[ -f "$be/admin/server.js" ]] || { run "install script" bash -c "mkdir -p '$be/admin' && cp '$INSTALL_DIR/admin/server.js' '$be/admin/server.js'"; }
+  ensure_admin_env || return 1
+  if [[ "$CHECK" == "1" ]]; then skip "would write $unit and start $ADMIN_SVC"; return 0; fi
+  if [[ ! -f "$unit" ]]; then
+    log "the $ADMIN_SVC unit does not exist - provisioning it now"
+    cat > "$unit" <<EOF
+[Unit]
+Description=${APP_NAME_EN:-Vizitik} Admin SQL Panel
+After=network.target mariadb.service vizitik-backend.service
+
+[Service]
+Type=simple
+WorkingDirectory=$be
+EnvironmentFile=$be/.env
+ExecStart=$node_bin admin/server.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    ok "unit written (node: $node_bin)"
+  fi
+  repair_admin_environment || return 1
+  run "daemon-reload" systemctl daemon-reload
+  run "enable" systemctl enable "$ADMIN_SVC"
+  run "restart" systemctl restart "$ADMIN_SVC"
+  sleep 2
+  if systemctl is-active --quiet "$ADMIN_SVC"; then
+    ok "$ADMIN_SVC is active on 127.0.0.1:$ADMIN_PORT"
+  else
+    err "$ADMIN_SVC did not start; last log lines:"
+    journalctl -u "$ADMIN_SVC" -n 25 --no-pager 2>/dev/null | sed 's/^/        /'
+    return 1
+  fi
+}
+
+admin_upstream_hint() {  # nothing listening + no vhost = the two ways this becomes a 502
+  local where=""
+  if [[ -d /etc/nginx/sites-enabled ]]; then
+    where="$(grep -ls "proxy_pass http://127.0.0.1:${ADMIN_PORT}" /etc/nginx/sites-enabled/* 2>/dev/null | head -1)"
+  fi
+  if [[ -z "$where" ]]; then
+    warn "no nginx server block proxies to 127.0.0.1:$ADMIN_PORT"
+    warn "  that is why the panel answers 502/404: the node service has no front door."
+    warn "  give it one by re-running the installer with the admin domain:"
+    warn "    sudo ADMIN_DOMAIN=${ADMIN_DOMAIN:-admin.example.ir} bash scripts/setup-server.sh"
+    warn "  and a DNS record (proxied, like the app one) for that name"
+  else
+    info "nginx proxies :3001 in $(basename "$where")"
+  fi
+}
+
+admin_health_probe() {
+  have curl || return 0
+  local code
+  code="$(curl -s -o /dev/null -m 4 -w '%{http_code}' "http://127.0.0.1:$ADMIN_PORT/api/health" 2>/dev/null)"
+  if [[ "$code" == "200" ]]; then
+    ok "the panel answers /api/health with 200 - a 502 now means the token, not the service"
+  else
+    err "127.0.0.1:$ADMIN_PORT/api/health answered '${code:-nothing}' - the admin service is not serving"
+    err "  look:  systemctl status $ADMIN_SVC --no-pager ; journalctl -u $ADMIN_SVC -n 40 --no-pager"
+    return 1
+  fi
+}
+
 update_admin() {
   [[ "$DO_ADMIN" == "1" ]] || return 0
   log "admin panel"
@@ -452,7 +564,12 @@ update_admin() {
   local tmp="$INSTALL_DIR/.admin.new"
   run "clean tmp" rm -rf "$tmp"
   run "copy admin" bash -c "mkdir -p '$tmp' && tar -C '$src' -cf - . | tar -C '$tmp' -xf -"
-  if [[ "$CHECK" == "1" ]]; then skip "admin panel would be swapped in and the service restarted"; return 0; fi
+  if [[ "$CHECK" == "1" ]]; then
+    skip "admin panel would be swapped in and the service restarted"
+    [[ -n "$ADMIN_DOMAIN" ]] && info "admin domain asked for: $ADMIN_DOMAIN"
+    info "current upstream state: $(systemctl is-active "$ADMIN_SVC" 2>/dev/null || echo "unit unknown")"
+    return 0
+  fi
   local prev="$INSTALL_DIR/admin.prev.$(stamp)"
   mv "$dst" "$prev" 2>/dev/null || true
   mv "$tmp" "$dst" || { [[ ! -d "$prev" ]] || mv "$prev" "$dst"; exit 1; }
@@ -473,9 +590,9 @@ update_admin() {
       exit 1
     fi
   else
-    err "$ADMIN_SVC unit not found - provision the admin service before updating it"
-    exit 1
+    provision_admin_service || { admin_upstream_hint; exit 1; }
   fi
+  admin_health_probe || admin_upstream_hint
 }
 
 # ------------------------------------------------------------------
