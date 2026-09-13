@@ -1,3 +1,4 @@
+
 /* =========================
    COLORS & TOKENS
 ========================= */
@@ -471,10 +472,7 @@ body {
   justify-content: center;
   gap: 6px;
   width: 100%;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease,
-    border-color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .confirm-cancel-btn:active {
   background: var(--border);
@@ -1292,9 +1290,9 @@ body {
 .section-header {
   animation-delay: 0.6s;
 }
-/* .app-nav {
+.app-nav {
   animation-delay: 0.7s;
-} */
+}
 
 @keyframes fadeUp {
   to {
@@ -1504,14 +1502,8 @@ body {
   animation: termsPop 0.25s ease;
 }
 @keyframes termsPop {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .terms-head {
   flex-shrink: 0;

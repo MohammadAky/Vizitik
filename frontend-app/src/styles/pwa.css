@@ -76,3 +76,10 @@ button:disabled {
   background: var(--text-muted);
   animation: none;
 }
+
+/* 7c96bc1 خواست تأخیرِ ورود نوار پایینی خنثی شود (در React هر رندر انیمیشن را از نو
+   اجرا می‌کند). نسخهٔ php آن مشکل را ندارد، پس style.css — که باید بایت‌به‌بایت کپیِ
+   نسخهٔ php بماند — دست‌نخورده می‌ماند و override همین‌جا می‌نشیند. */
+.app-nav {
+  animation-delay: 0s;
+}
