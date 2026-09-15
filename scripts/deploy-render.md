@@ -167,6 +167,10 @@ https://app.دامنه‌ی‌شما           https://admin.دامنه‌ی‌�
    postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?pgbouncer=true&connection_limit=1
    ```
    (پلن free فقط Session Mode/پورت ۵۴۲ را دارد؛ ۵۴۳ مخصوص پلن پولی است.)
+   URI **Direct connection** (`db.<project-ref>.supabase.co:5432`) که در
+   همان بخش «Connection string» می‌آید هم کار می‌کند.
+   ⚠️ اگر رمز دیتابیس کاراکترهای `@ : / # %` دارد، در URI باید
+   percent-encoding شوند (مثلاً `@` → `%40`).
 3. این رشته را به‌عنوان `DATABASE_URL` در **هر دو** سرویس app و admin بگذار
    (تب Environment).
 4. **تمام:** build سرویس `vizitik-app` خودش `prisma db push` را می‌زند و
