@@ -29,7 +29,7 @@ services:
     buildCommand: |
       cd frontend-app && npm install --no-audit --no-fund && npm run build &&
       cd ../backend && npm install --no-audit --no-fund && npx prisma generate &&
-      npx prisma db push --skip-generate && npm run build
+      npx prisma db push && npm run build
     startCommand: cd backend && node dist/main.js
     healthCheckPath: /
     envVars:
