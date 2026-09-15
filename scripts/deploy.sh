@@ -1,415 +1,729 @@
 #!/usr/bin/env bash
 #
-# Run this on the server instead of calling setup-server.sh directly:
+# Vizitik - First-time VPS deployment script
 #
+# This script deploys Vizitik to a fresh Ubuntu/Debian VPS:
+#   1) Installs prerequisites (Nginx, Node, MariaDB, certbot)
+#   2) Sets up MariaDB database
+#   3) Builds NestJS backend
+#   4) Builds PWA frontend
+#   5) Creates systemd services
+#   6) Configures Nginx
+#   7) Sets up HTTPS (Let's Encrypt)
+#   8) Enables firewall and backup cron
+#
+# Usage (requires root):
 #   sudo bash scripts/deploy.sh
 #
-# A second deploy on the same box is where most trouble comes from: a pm2 backend
-# still holding the API port, an Apache from the hosting panel answering on 80, a
-# half finished npm install, a certbot from the previous attempt that never exited.
-# This script stops all of that first, shows you what it found, then hands over to
-# scripts/setup-server.sh with the same arguments.
+# Configuration via environment variables:
+#   DOMAIN=vizitik.ir DB_PASS='...' BALE_BOT_TOKEN='...' sudo -E bash scripts/deploy.sh
 #
-# Nothing here deletes data. The database, backend/.env, the Nginx log files and the
-# issued certificates are never touched. --full-reset also removes the installed copy
-# in /opt/vizitik and the site file in /etc/nginx/sites-enabled (both are rebuilt).
+# The app is served on app.$DOMAIN; override with APP_DOMAIN=app.example.com
 #
-# options:
-#   --dry-run          show what would be stopped or disabled, change nothing, no root
-#   --only-clean       stop everything and exit without deploying
-#   --skip-pull        do not run git pull, use the checkout as it is
-#   --require-clean    abort if the checkout has uncommitted changes
-#   --full-reset       remove the installed copy and the nginx site before deploying
-#   -y, --yes          no questions, and forward --yes to setup-server.sh
-#   -h, --help         this text
-#
-# environment overrides (also read by setup-server.sh):
-#   INSTALL_DIR BACKEND_PORT DOMAIN SETUP_SCRIPT
-#
-set -uo pipefail
+set -euo pipefail
 
+# ------------------------------------------------------------------
+# Vizitik branding - hardcoded
+# ------------------------------------------------------------------
+APP_NAME_EN="Vizitik"
+APP_NAME_FA="ویزیتیک"
+
+# ------------------------------------------------------------------
+# Configuration (override via environment or edit here)
+# ------------------------------------------------------------------
 INSTALL_DIR="${INSTALL_DIR:-/opt/vizitik}"
-BACKEND_PORT="${BACKEND_PORT:-3000}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="${SRC_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SETUP_SCRIPT="${SETUP_SCRIPT:-$SCRIPT_DIR/setup-server.sh}"
-SETUP_SVC="vizitik-backend"
-SWAP_NEEDED_MB=2048
 
-# services that fight for port 80 (hosting panels ship these next to nginx)
-CONFLICT_SERVICES=(apache2 httpd lighttpd litespeed caddy nginx-passenger)
-# what may be left behind by an earlier run. "scoped" patterns are only stopped
-# when the command line also mentions vizitik, so another app on this box is safe.
-STRAY_SCOPED=( "dist/main.js" "node_modules/.bin/vite" "nodemon" "ts-node" )
-STRAY_ANY=( "scripts/dev-preview.mjs" "pwa-parity-check.py" "certbot" )
-STRAY_PORTS=( "${BACKEND_PORT}" "8000" )   # a "php -S" dev server on these ports
+DB_NAME="${DB_NAME:-vizitik_db}"
+DB_USER="${DB_USER:-vizitik}"
+DB_PASS="${DB_PASS:-}"
+DB_HOST="localhost"
 
+BALE_BOT_TOKEN="${BALE_BOT_TOKEN:-}"
+BALE_BOT_USERNAME="${BALE_BOT_USERNAME:-}"
+BALE_ADMIN_CHAT_ID="${BALE_ADMIN_CHAT_ID:-}"
+JWT_SECRET="${JWT_SECRET:-}"
+
+DOMAIN="${DOMAIN:-}"
+APP_DOMAIN="${APP_DOMAIN:-}"
+ADMIN_DOMAIN="${ADMIN_DOMAIN:-}"
+ADMIN_TOKEN="${ADMIN_TOKEN:-}"
+ADMIN_PORT="${ADMIN_PORT:-3001}"
+CERT_EMAIL="${CERT_EMAIL:-}"
+
+BACKEND_PORT="${BACKEND_PORT:-3000}"
+WITH_WWW="${WITH_WWW:-0}"
+HTTPS_MODE="${HTTPS_MODE:-}"
+CF_API_TOKEN="${CF_API_TOKEN:-}"
+NODEJS_MAJOR=20
+
+ASK="${ASK:-1}"
+YES="${YES:-0}"
+ENABLE_HTTPS="${ENABLE_HTTPS:-1}"
+ENABLE_UFW="${ENABLE_UFW:-1}"
+ENABLE_BACKUP="${ENABLE_BACKUP:-1}"
+TEST_PHONE="${TEST_PHONE:-}"
+TEST_PASSWORD="${TEST_PASSWORD:-}"
+
+MIN_TOTAL_MB="${MIN_TOTAL_MB:-2048}"
+CREATE_SWAP="${CREATE_SWAP:-auto}"
+SWAP_FILE="${SWAP_FILE:-/swapfile}"
+SWAP_MB="${SWAP_MB:-auto}"
+NODE_HEAP_MB="${NODE_HEAP_MB:-auto}"
+
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
 log()  { echo -e "\n\033[1;36m> $*\033[0m"; }
 ok()   { echo -e "\033[1;32m  OK  $*\033[0m"; }
-info() { echo -e "\033[0;36m  ..  $*\033[0m"; }
 warn() { echo -e "\033[1;33m  WARN $*\033[0m"; }
+info() { echo -e "\033[0;36m  ..  $*\033[0m"; }
+fail() { echo -e "\033[1;31m  FAIL $*\033[0m" >&2; exit 1; }
 err()  { echo -e "\033[1;31m  FAIL $*\033[0m" >&2; }
-skip() { echo -e "  --  $*"; }
 
-YES=0; DRY=0; ONLY_CLEAN=0; SKIP_PULL=0; REQUIRE_CLEAN=0; FULL_RESET=0
-FORWARD=()
-usage() {
-  cat <<TXT
-usage: sudo bash scripts/deploy.sh [options]
-
-  stops what an earlier run left behind (services, stray node/php/certbot
-  processes, a panel web server on port 80), updates the checkout and then runs
-  scripts/setup-server.sh with the remaining arguments.
-
-  --dry-run          print what would be stopped or disabled, change nothing
-  --only-clean       stop everything and exit without deploying
-  --skip-pull        do not run git pull, use the checkout as it is
-  --require-clean    abort if the checkout has uncommitted changes
-  --full-reset       remove $INSTALL_DIR and the nginx site before deploying
-  -y, --yes          no questions, and forward --yes to setup-server.sh
-  -h, --help         this text
-
-  every other argument is passed to setup-server.sh, e.g.
-  sudo bash scripts/deploy.sh --yes --check
-  sudo bash scripts/deploy.sh --only-clean
-
-  environment: INSTALL_DIR BACKEND_PORT DOMAIN CF_API_TOKEN SETUP_SCRIPT
-TXT
+report_step_rc() {
+  local rc="$1" label="$2"
+  if (( rc == 0 )); then return 0; fi
+  err "step failed (exit $rc): $label"
+  if (( rc == 137 )) || (( rc == 143 )); then
+    err "exit $rc means the kernel killed the process: out of memory"
+    err "  ram:  $(free -m | awk '/^Mem:/{print $2" MB"}') | swap: $(free -m | awk '/^Swap:/{print $2" MB"}')"
+    err "  fix: add swap or increase it"
+  fi
+  err "this script is idempotent - fix the cause and run it again"
+  exit "$rc"
 }
 
-for a in "$@"; do
-  case "$a" in
-    --dry-run)    DRY=1 ;;
-    --only-clean) ONLY_CLEAN=1 ;;
-    --skip-pull)  SKIP_PULL=1 ;;
-    --require-clean) REQUIRE_CLEAN=1 ;;
-    --full-reset) FULL_RESET=1 ;;
-    -y|--yes)     YES=1; FORWARD+=("$a") ;;
-    -h|--help)    usage; exit 0 ;;
-    *)            FORWARD+=("$a") ;;
-  esac
-done
+run_here() {
+  local label="$1"; shift
+  local rc=0
+  "$@" || rc=$?
+  report_step_rc "$rc" "$label"
+}
 
-have() { command -v "$1" >/dev/null 2>&1; }
+run_in() {
+  local dir="$1" label="$2"; shift 2
+  local rc=0
+  ( cd "$dir" && "$@" ) || rc=$?
+  report_step_rc "$rc" "$label"
+}
+
+memory_totals() {
+  local r sm
+  r="$(awk '/^MemTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null)"
+  sm="$(awk '/^SwapTotal:/{t+=$2} END{print int(t/1024)}' /proc/meminfo 2>/dev/null)"
+  echo "${r:-0} ${sm:-0}"
+}
+
+ensure_swapfile() {
+  local mb="$1"
+  if command -v swapon >/dev/null 2>&1 && swapon --show=NAME --noheadings 2>/dev/null | grep -qx "$SWAP_FILE"; then
+    ok "swap file $SWAP_FILE is already active"
+    return 0
+  fi
+  log "creating ${mb} MB of swap at $SWAP_FILE"
+  if [[ ! -f "$SWAP_FILE" ]]; then
+    if ! fallocate -l "${mb}M" "$SWAP_FILE" 2>/dev/null; then
+      dd if=/dev/zero of="$SWAP_FILE" bs=1M count="$mb" status=none || { err "could not create $SWAP_FILE"; return 0; }
+    fi
+    chmod 600 "$SWAP_FILE"
+    mkswap "$SWAP_FILE" >/dev/null 2>&1 || { err "mkswap failed"; return 0; }
+  fi
+  swapon "$SWAP_FILE" 2>/dev/null || { warn "swapon refused"; return 0; }
+  if ! grep -qs "^$SWAP_FILE" /etc/fstab; then
+    echo "$SWAP_FILE none swap sw 0 0" >> /etc/fstab 2>/dev/null || true
+  fi
+  ok "swap enabled"
+}
+
+memory_guard() {
+  local parts ram swap total heap
+  parts=($(memory_totals)); ram="${parts[0]}"; swap="${parts[1]}"; total=$(( ram + swap ))
+  info "memory: ${ram} MB ram + ${swap} MB swap = ${total} MB"
+  if (( total >= MIN_TOTAL_MB )); then
+    ok "enough memory for the builds"
+  elif [[ "$CREATE_SWAP" == "0" ]]; then
+    warn "only ${total} MB and CREATE_SWAP=0: builds may be killed"
+  else
+    local want="$SWAP_MB"
+    [[ "$want" == "auto" ]] && want=$(( MIN_TOTAL_MB - total + 1024 ))
+    if can_ask && [[ "$YES" != "1" ]]; then
+      read -r -p "  create a ${want} MB swap file? [Y/n]: " ans || ans=""
+      [[ "$ans" =~ ^[Nn] ]] && { warn "no swap; builds may be killed"; want=0; }
+    fi
+    [[ "$want" != "0" ]] && ensure_swapfile "$want"
+  fi
+  heap="$NODE_HEAP_MB"
+  if [[ "$heap" == "auto" ]]; then
+    parts=($(memory_totals)); total=$(( ${parts[0]} + ${parts[1]} ))
+    heap=$(( total * 6 / 10 ))
+    (( heap < 512 )) && heap=512
+    (( heap > 3072 )) && heap=3072
+  fi
+  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${heap}"
+  info "node heap capped at ${heap} MB"
+}
+
+npm_install_in() {
+  local dir="$1" rc=0
+  if [[ -f "$dir/package-lock.json" ]]; then
+    ( cd "$dir" && npm ci --no-audit --no-fund --no-progress --loglevel=error ) || rc=$?
+    if (( rc == 0 )); then return 0; fi
+    if (( rc == 137 )) || (( rc == 143 )); then
+      report_step_rc "$rc" "npm ci in $dir"
+    fi
+    warn "npm ci failed; retrying with npm install"
+  fi
+  run_in "$dir" "npm install in $dir" npm install --no-audit --no-fund --no-progress --loglevel=error
+}
+
+urlencode() {
+  local s="$1"
+  jq -rn --arg v "$s" '$v|@uri'
+}
+
+gen_secret() {
+  head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48
+}
+
 is_tty() { [[ -t 0 ]]; }
+can_ask() { [[ "${ASK:-1}" == "1" ]] && is_tty; }
+set_var() { printf -v "$1" '%s' "$2"; }
 
-ask_yes() {  # ask_yes <var name> <prompt> <default 1|0>; sets the var to 1 or 0
+ask() {
+  local name="$1" prompt="$2" default="${3:-}" cur="" ans=""
+  cur="${!name:-}"
+  if ! can_ask; then
+    [[ -z "$cur" ]] && set_var "$name" "$default"
+    return 0
+  fi
+  if [[ -n "$cur" ]]; then
+    read -r -p "  $prompt [$cur]: " ans || ans=""
+  else
+    read -r -p "  $prompt [${default:-none}]: " ans || ans=""
+  fi
+  [[ -z "$ans" ]] && ans="${cur:-$default}"
+  set_var "$name" "$ans"
+}
+
+ask_secret() {
+  local name="$1" prompt="$2" cur="" a="" b=""
+  cur="${!name:-}"
+  if ! can_ask; then
+    [[ -z "$cur" || "$cur" == CHANGE_ME* ]] && { warn "$name not set"; return 1; }
+    return 0
+  fi
+  while :; do
+    read -r -s -p "  $prompt: " a || { printf '\n'; return 1; }
+    printf '\n'
+    if [[ -z "$a" ]]; then
+      read -r -p "  keep current value? [y/N]: " keep || return 1
+      [[ "$keep" =~ ^[Yy] ]] && return 0
+      continue
+    fi
+    read -r -s -p "  repeat: " b || { printf '\n'; return 1; }
+    printf '\n'
+    if [[ "$a" == "$b" ]]; then set_var "$name" "$a"; return 0; fi
+    warn "entries do not match"
+  done
+}
+
+ask_yes() {
   local name="$1" prompt="$2" default="${3:-1}" ans=""
-  if [[ "$YES" == "1" || "$DRY" == "1" ]] || ! is_tty; then
-    printf -v "$name" '%s' "$default"; return 0
+  if ! can_ask; then
+    [[ -z "${!name:-}" ]] && set_var "$name" "$default"
+    return 0
   fi
   read -r -p "  $prompt [Y/n]: " ans || ans=""
-  case "${ans:-$default}" in
-    [Nn]*|0) printf -v "$name" '%s' 0 ;;
-    *)       printf -v "$name" '%s' 1 ;;
+  [[ -z "$ans" ]] && ans="${default}"
+  case "$ans" in
+    [Nn]*|0) set_var "$name" 0 ;;
+    *)       set_var "$name" 1 ;;
   esac
 }
 
-did() {  # did <text> - report a change, but say "would" during a dry run
-  if [[ "$DRY" == "1" ]]; then info "$* (not in dry run)"; else ok "$*"; fi
-}
+# ------------------------------------------------------------------
+# Collect inputs
+# ------------------------------------------------------------------
+collect_inputs() {
+  log "Vizitik deployment - press Enter to keep the value in brackets"
 
-doit() {  # doit <command...> - run it, or only print it in dry-run mode
-  if [[ "$DRY" == "1" ]]; then
-    echo "      would run: $*"
-  else
-    "$@"
-  fi
-}
-
-root_check() {
-  if [[ "$DRY" == "1" ]]; then
-    info "dry run: no privileges needed, nothing will be changed"
-    return 0
-  fi
-  if [[ "$(id -u)" -ne 0 ]]; then
-    err "this must run as root:  sudo bash scripts/deploy.sh $*"
-    exit 1
-  fi
-}
-
-show_state() {
-  log "server state"
-  if [[ -r /etc/os-release ]]; then
-    info "os:      $(. /etc/os-release; echo "${PRETTY_NAME:-$NAME}")"
-  fi
-  info "kernel:  $(uname -sr)"
-  info "ram:     $(free -m | awk '/^Mem:/{printf "%s MB total, %s MB used, %s MB free", $2, $3, $4}')"
-  info "swap:    $(free -m | awk '/^Swap:/{printf "%s MB", $2}')"
-  info "disk /:  $(df -hP / | awk 'NR==2{printf "%s used of %s (%s free)", $3, $2, $4}')"
-  info "cores:   $(nproc)"
-  local total free_kb
-  free_kb="$(df -Pk / 2>/dev/null | awk 'NR==2{print $4}')"
-  if [[ -n "${free_kb:-}" ]] && (( free_kb / 1024 < SWAP_NEEDED_MB + 1024 )); then
-    warn "only $(( free_kb / 1024 )) MB free on /: a swap file plus node_modules need about $(( SWAP_NEEDED_MB + 1024 )) MB"
-    warn "  free some up first:  apt clean; journalctl --vacuum-size=100M; du -xh -d1 / | sort -h | tail"
-  fi
-  total="$(awk '/^MemTotal:/{r=int($2/1024)} /^SwapTotal:/{s=int($2/1024)} END{print r+s}' /proc/meminfo)"
-  if [[ "${total:-0}" -lt "$SWAP_NEEDED_MB" ]]; then
-    warn "only ${total} MB of ram+swap; npm and vite builds need about ${SWAP_NEEDED_MB} MB"
-    info "setup-server.sh will create /swapfile for you (refuse with CREATE_SWAP=0)"
-  fi
-}
-
-stop_previous_service() {
-  log "previous vizitik service"
-  if have systemctl && [[ "$(systemctl is-active "$SETUP_SVC" 2>/dev/null)" == "active" ]]; then
-    info "stopping ${SETUP_SVC} so the api port is free during the build"
-    doit systemctl stop "$SETUP_SVC"
-    did "${SETUP_SVC} stopped (setup-server.sh installs and starts it again)"
-  else
-    skip "${SETUP_SVC} is not running"
-  fi
-  if have pm2; then
-    local names
-    names="$(pm2 jlist 2>/dev/null | tr -d '\n')"
-    if [[ -n "${names:-}" && "$names" != "[]" ]]; then
-      info "pm2 holds processes from an earlier manual deploy"
-      ask_yes PM2_STOP "stop them (pm2 delete all)? ${names:0:120}" 1
-      if [[ "${PM2_STOP:-1}" == "1" ]]; then
-        doit pm2 delete all && did "pm2 processes removed"
-      else
-        warn "leaving pm2 alone; port ${BACKEND_PORT} may stay busy and the service will fail to start"
+  ask INSTALL_DIR "install directory" "/opt/vizitik"
+  ask DOMAIN "public domain (empty = no https)" ""
+  if [[ -n "$DOMAIN" ]]; then
+    ask_yes ENABLE_HTTPS "get Let's Encrypt certificate for $DOMAIN" 1
+    if [[ "$ENABLE_HTTPS" == "1" ]]; then
+      ask CERT_EMAIL "email for certificate (empty = no expiry notices)" ""
+      if [[ -z "$APP_DOMAIN" ]]; then APP_DOMAIN="app.$DOMAIN"; fi
+      ask APP_DOMAIN "app subdomain" "$APP_DOMAIN"
+      if [[ -z "$ADMIN_DOMAIN" ]]; then ADMIN_DOMAIN="admin.$DOMAIN"; fi
+      ask ADMIN_DOMAIN "admin subdomain (empty = no admin panel)" "$ADMIN_DOMAIN"
+      if [[ -n "$ADMIN_DOMAIN" && -z "$ADMIN_TOKEN" ]]; then
+        ADMIN_TOKEN="$(openssl rand -hex 24)"
+        ok "ADMIN_TOKEN generated"
       fi
-    else
-      skip "pm2 has no processes"
-    fi
-  fi
-}
-
-kill_strays() {
-  log "leftover processes"
-  local rows
-  rows="$(ps -eo pid=,args= 2>/dev/null)"
-  local keep="" pat line pid
-  while read -r pid line; do
-    [[ -z "${pid:-}" || "$pid" == "$$" || "$pid" == "$PPID" ]] && continue
-    local hit=0
-    for pat in "${STRAY_ANY[@]}"; do
-      [[ "$line" == *"$pat"* ]] && hit=1
-    done
-    if [[ "$hit" == "0" ]]; then
-      for pat in "${STRAY_SCOPED[@]}"; do
-        if [[ "$line" == *"$pat"* ]] && [[ "$line" == *izitik* ]]; then hit=1; fi
-      done
-    fi
-    if [[ "$hit" == "0" ]]; then
-      for pat in "${STRAY_PORTS[@]}"; do
-        case "$line" in
-          *"php -S "*":$pat "*|*"php -S "*":$pat") hit=1 ;;
-          *"python3 -m http.server $pat "*|*"http.server $pat") hit=1 ;;
+      if [[ -z "$HTTPS_MODE" ]]; then
+        echo "  HTTPS challenge method:"
+        echo "    1) http - needs port 80 reachable (default)"
+        echo "    2) dns  - Cloudflare DNS API"
+        read -r -p "  choice [1]: " hm || hm=""
+        case "$hm" in
+          2|dns) HTTPS_MODE="dns" ;;
+          *)     HTTPS_MODE="http" ;;
         esac
-      done
+      fi
+      if [[ "$HTTPS_MODE" == "dns" ]]; then
+        ask_secret CF_API_TOKEN "Cloudflare API token" || true
+      fi
     fi
-    [[ "$hit" == "1" ]] && keep+="$pid "
-  done <<< "$rows"
+    ask_yes WITH_WWW "also serve www.$DOMAIN" 1
+  else
+    ENABLE_HTTPS=0
+  fi
 
-  if [[ -z "${keep// /}" ]]; then skip "nothing left from an earlier run"; return 0; fi
-  echo "      processes an earlier run or a dev session left behind:"
-  for pid in $keep; do
-    echo "$rows" | awk -v p="$pid" '$1 == p {printf "          %s  %s\n", $1, substr($0, index($0,$2))}'
-  done
-  ask_yes KILL "  stop these processes?" 1
-  if [[ "${KILL:-1}" != "1" ]]; then warn "left running on purpose; port 80 or ${BACKEND_PORT} may stay busy"; return 0; fi
-  if [[ "$DRY" == "1" ]]; then echo "      would run: kill ${keep% }"; return 0; fi
-  # shellcheck disable=SC2086
-  kill $keep 2>/dev/null
+  ask BACKEND_PORT "backend port" "3000"
+  ask DB_HOST "database host" "localhost"
+  ask DB_NAME "database name" "vizitik_db"
+  ask DB_USER "database user" "vizitik"
+  if [[ -z "$DB_PASS" || "$DB_PASS" == CHANGE_ME* ]]; then
+    ask_secret DB_PASS "database password" || true
+  fi
+  [[ -z "$DB_PASS" ]] && fail "database password is required"
+  [[ "$DB_PASS" == CHANGE_ME* ]] && fail "DB_PASS still has placeholder"
+
+  ask BALE_BOT_USERNAME "Bale bot username (empty = disabled)" ""
+  if [[ -n "$BALE_BOT_USERNAME" ]]; then
+    ask_secret BALE_BOT_TOKEN "Bale bot token" || true
+    ask BALE_ADMIN_CHAT_ID "admin chat id for alerts" ""
+  fi
+
+  [[ -z "$JWT_SECRET" ]] && JWT_SECRET="$(gen_secret)" && ok "JWT secret generated"
+  ask_yes ENABLE_UFW "enable UFW firewall" 1
+  ask_yes ENABLE_BACKUP "install nightly backup cron" 1
+  ask TEST_PHONE "phone for login test (empty = skip)" ""
+}
+
+print_summary() {
+  echo
+  echo "  App:         $APP_NAME_EN / $APP_NAME_FA"
+  echo "  Install dir: $INSTALL_DIR"
+  echo "  Domain:      ${DOMAIN:-<none>} | App: ${APP_DOMAIN:-<same>} | Admin: ${ADMIN_DOMAIN:-<none>}"
+  echo "  HTTPS:       $ENABLE_HTTPS (mode: ${HTTPS_MODE:-http})"
+  echo "  Database:    ${DB_USER}@${DB_HOST}/${DB_NAME}"
+  echo "  Backend:     port $BACKEND_PORT"
+  echo "  Bale bot:    ${BALE_BOT_USERNAME:-<disabled>}"
+  echo "  Firewall:    $ENABLE_UFW | Backup: $ENABLE_BACKUP"
+  local mt; mt=($(memory_totals))
+  echo "  Memory:      ${mt[0]} MB ram + ${mt[1]} MB swap"
+}
+
+# ------------------------------------------------------------------
+# Prerequisites
+# ------------------------------------------------------------------
+install_prereqs() {
+  log "installing prerequisites"
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y
+  apt-get upgrade -y
+  apt-get install -y \
+    curl git nginx ufw mariadb-server \
+    certbot python3-certbot-nginx \
+    build-essential python3 make g++ \
+    ca-certificates gnupg jq
+
+  if ! command -v node >/dev/null 2>&1 || [[ "$(node -v | sed 's/v//;s/\..*//')" -lt 18 ]]; then
+    warn "Installing Node $NODEJS_MAJOR..."
+    curl -fsSL "https://deb.nodesource.com/setup_${NODEJS_MAJOR}.x" | bash -
+    apt-get install -y nodejs
+  fi
+  ok "Node: $(node -v), npm: $(npm -v)"
+}
+
+# ------------------------------------------------------------------
+# Database
+# ------------------------------------------------------------------
+setup_database() {
+  log "setting up MariaDB"
+  systemctl enable --now mariadb
+  systemctl restart mariadb
   sleep 2
-  local left=""
-  for pid in $keep; do kill -0 "$pid" 2>/dev/null && left+="$pid "; done
-  if [[ -n "${left// /}" ]]; then
-    warn "still alive after SIGTERM: ${left% } - sending SIGKILL"
-    # shellcheck disable=SC2086
-    kill -9 $left 2>/dev/null
+
+  mysql -u root <<SQL
+CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+  ok "database ready"
+
+  local dump="$SRC_DIR/documents/hesabchin.sql"
+  if [[ -f "$dump" ]]; then
+    log "importing initial schema"
+    local tmp="/tmp/vizitik_import.sql"
+    sed '/CREATE DATABASE/,/^USE `hesabchin`;/d' "$dump" > "$tmp"
+    mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$tmp"
+    rm -f "$tmp"
+    ok "schema imported"
   fi
-  ok "stopped"
 }
 
-disable_web_server_conflicts() {
-  log "who owns port 80 and 443"
-  local p line svc
-  for p in 80 443 "$BACKEND_PORT"; do
-    line="$(ss -ltnp 2>/dev/null | awk -v port=":$p" '$4 ~ port"$" || $4 ~ port" " {print}')"
-    if [[ -z "$line" ]]; then skip "port $p is free"; continue; fi
-    echo "      port $p: $(echo "$line" | head -1 | cut -c1-150)"
-    if [[ "$p" == "$BACKEND_PORT" ]] && [[ "$line" != *izitik* ]]; then
-      warn "the api port is held by something this script does not recognise as ours"
-      warn "  stop it yourself if it is an old run:  fuser -k ${BACKEND_PORT}/tcp"
+# ------------------------------------------------------------------
+# Copy sources
+# ------------------------------------------------------------------
+copy_source() {
+  log "copying sources to $INSTALL_DIR"
+  mkdir -p "$INSTALL_DIR"
+  rm -rf "$INSTALL_DIR/backend" "$INSTALL_DIR/frontend-app" "$INSTALL_DIR/landing" "$INSTALL_DIR/admin"
+  cp -r "$SRC_DIR/backend" "$SRC_DIR/frontend-app" "$INSTALL_DIR/"
+  [[ -d "$SRC_DIR/landing" ]] && cp -r "$SRC_DIR/landing" "$INSTALL_DIR/"
+  [[ -d "$SRC_DIR/admin" ]] && cp -r "$SRC_DIR/admin" "$INSTALL_DIR/"
+  ok "sources copied"
+}
+
+# ------------------------------------------------------------------
+# Build backend
+# ------------------------------------------------------------------
+build_backend() {
+  log "building backend"
+  cd "$INSTALL_DIR/backend"
+  npm_install_in "$INSTALL_DIR/backend"
+  run_here "prisma generate" npx prisma generate
+
+  local DB_PASS_URL
+  DB_PASS_URL="$(urlencode "$DB_PASS")"
+
+  cat > "$INSTALL_DIR/.env" <<EOF
+DATABASE_URL="mysql://${DB_USER}:${DB_PASS_URL}@${DB_HOST}:3306/${DB_NAME}"
+NODE_ENV=production
+JWT_SECRET="${JWT_SECRET}"
+JWT_EXPIRES_IN="30d"
+PORT=${BACKEND_PORT}
+BIND_HOST=127.0.0.1
+APP_NAME_FA="${APP_NAME_FA}"
+APP_NAME_EN="${APP_NAME_EN}"
+BALE_BOT_USERNAME="${BALE_BOT_USERNAME}"
+BALE_BOT_TOKEN="${BALE_BOT_TOKEN}"
+BALE_ADMIN_CHAT_ID="${BALE_ADMIN_CHAT_ID}"
+ADMIN_PORT=${ADMIN_PORT}
+ADMIN_TOKEN="${ADMIN_TOKEN}"
+ADMIN_STATIC_DIR="${INSTALL_DIR}/admin"
+ADMIN_FONTS_DIR="${INSTALL_DIR}/landing/fonts"
+VITE_API_URL="/api"
+EOF
+  [[ -f "$INSTALL_DIR/scripts/env-sync.mjs" ]] && node "$INSTALL_DIR/scripts/env-sync.mjs" || true
+  [[ -f .env ]] || cp "$INSTALL_DIR/.env" .env
+
+  npx prisma db push --skip-generate || warn "prisma db push failed"
+  run_here "backend build" npm run build
+  ok "backend built"
+}
+
+# ------------------------------------------------------------------
+# Build admin
+# ------------------------------------------------------------------
+build_admin() {
+  [[ -n "$ADMIN_DOMAIN" && -d "$INSTALL_DIR/admin" ]] || return 0
+  log "installing admin panel"
+  mkdir -p "$INSTALL_DIR/backend/admin"
+  cp "$INSTALL_DIR/admin/server.js" "$INSTALL_DIR/backend/admin/server.js"
+  ok "admin panel installed"
+}
+
+# ------------------------------------------------------------------
+# Build frontend
+# ------------------------------------------------------------------
+build_frontend() {
+  log "building PWA frontend"
+  cd "$INSTALL_DIR/frontend-app"
+  npm_install_in "$INSTALL_DIR/frontend-app"
+  [[ -f .env ]] || printf 'VITE_API_URL="/api"\n' > .env
+  run_here "PWA build" npm run build
+  ok "PWA built"
+}
+
+# ------------------------------------------------------------------
+# Systemd services
+# ------------------------------------------------------------------
+create_services() {
+  log "creating systemd services"
+
+  cat > /etc/systemd/system/vizitik-backend.service <<EOF
+[Unit]
+Description=${APP_NAME_EN} Backend API
+After=network.target mariadb.service
+
+[Service]
+Type=simple
+WorkingDirectory=$INSTALL_DIR/backend
+ExecStart=$(command -v node) dist/main.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  if [[ -n "$ADMIN_DOMAIN" && -f "$INSTALL_DIR/backend/admin/server.js" ]]; then
+    cat > /etc/systemd/system/vizitik-admin.service <<EOF
+[Unit]
+Description=${APP_NAME_EN} Admin Panel
+After=network.target mariadb.service vizitik-backend.service
+
+[Service]
+Type=simple
+WorkingDirectory=$INSTALL_DIR/backend
+EnvironmentFile=$INSTALL_DIR/backend/.env
+ExecStart=$(command -v node) admin/server.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  fi
+
+  systemctl daemon-reload
+  systemctl enable vizitik-backend
+  systemctl restart vizitik-backend
+  sleep 2
+  systemctl is-active --quiet vizitik-backend && ok "backend service active" || warn "backend failed to start"
+
+  if [[ -n "$ADMIN_DOMAIN" ]]; then
+    systemctl enable vizitik-admin 2>/dev/null || true
+    systemctl restart vizitik-admin 2>/dev/null || true
+    ok "admin service started"
+  fi
+}
+
+# ------------------------------------------------------------------
+# Nginx
+# ------------------------------------------------------------------
+setup_nginx() {
+  log "configuring Nginx"
+  local app_name="${APP_DOMAIN:-$DOMAIN}"
+  app_name="${app_name:-_}"
+  local conf="/etc/nginx/sites-available/vizitik"
+
+  : > "$conf"
+
+  if [[ -n "$DOMAIN" ]]; then
+    local names="$DOMAIN"
+    [[ "$WITH_WWW" == "1" ]] && names="$DOMAIN www.$DOMAIN"
+    cat >> "$conf" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${names};
+    root $INSTALL_DIR/landing;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    location ~* \.(woff2?|png|js|css)$ {
+        expires 30d;
+        add_header Cache-Control "public";
+    }
+}
+EOF
+  fi
+
+  cat >> "$conf" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${app_name};
+    root $INSTALL_DIR/frontend-app/dist;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    location ~* (sw\.js|workbox-.*\.js|manifest\.webmanifest)$ {
+        expires -1;
+        add_header Cache-Control "no-cache";
+        add_header Service-Worker-Allowed "/";
+    }
+
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:${BACKEND_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 60s;
+    }
+}
+EOF
+
+  if [[ -n "$ADMIN_DOMAIN" ]]; then
+    cat >> "$conf" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${ADMIN_DOMAIN};
+
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:${ADMIN_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_read_timeout 60s;
+    }
+}
+EOF
+  fi
+
+  ln -sf "$conf" /etc/nginx/sites-enabled/vizitik
+  [[ -e /etc/nginx/sites-enabled/default ]] && mv /etc/nginx/sites-enabled/default /etc/nginx/sites-enabled/default.disabled-by-vizitik 2>/dev/null || true
+  nginx -t || fail "nginx config test failed"
+  systemctl reload nginx
+  ok "Nginx configured"
+}
+
+# ------------------------------------------------------------------
+# HTTPS
+# ------------------------------------------------------------------
+setup_https() {
+  [[ "$ENABLE_HTTPS" == "1" && -n "$DOMAIN" ]] || { warn "HTTPS skipped"; return 0; }
+  log "setting up HTTPS"
+
+  local -a cnames=(-d "$DOMAIN")
+  [[ "$WITH_WWW" == "1" ]] && cnames+=(-d "www.$DOMAIN")
+  [[ -n "$APP_DOMAIN" && "$APP_DOMAIN" != "$DOMAIN" ]] && cnames+=(-d "$APP_DOMAIN")
+  [[ -n "$ADMIN_DOMAIN" && "$ADMIN_DOMAIN" != "$DOMAIN" ]] && cnames+=(-d "$ADMIN_DOMAIN")
+
+  local -a email_args=(--register-unsafely-without-email)
+  [[ "$CERT_EMAIL" == *@*.* ]] && email_args=(-m "$CERT_EMAIL")
+
+  if [[ "$HTTPS_MODE" == "dns" ]]; then
+    if ! certbot plugins 2>/dev/null | grep -qi cloudflare; then
+      apt-get install -y python3-certbot-dns-cloudflare >/dev/null 2>&1 || \
+        pip3 install -q certbot-dns-cloudflare >/dev/null 2>&1
     fi
-    for svc in "${CONFLICT_SERVICES[@]}"; do
-      [[ "$svc" == "nginx" ]] && continue
-      if ! have systemctl; then
-        echo "$line" | grep -qi "$svc" && warn "${svc} is answering on port $p; disable it with: service $svc stop"
-        continue
-      fi
-      if [[ "$(systemctl is-active "$svc" 2>/dev/null)" == "active" ]] && echo "$line" | grep -qi "$svc"; then
-        warn "${svc} (from your hosting panel) is answering on port $p"
-        ask_yes DISABLE "  stop and disable ${svc} so nginx can take the port?" 1
-        if [[ "${DISABLE:-1}" == "1" ]]; then
-          doit systemctl stop "$svc"; doit systemctl disable "$svc"
-          did "${svc} stopped; bring it back with: systemctl enable --now $svc"
-        else
-          err "nginx will not be able to listen on port $p while ${svc} owns it"
-          err "the deploy then fails on 'nginx -t' / a site that is unreachable - this is the usual 500 you saw"
-          [[ "$p" != "80" && "$p" != "443" ]] && continue
-          exit 1
-        fi
-      fi
-    done
-  done
-  if [[ -f /etc/nginx/sites-enabled/default ]]; then
-    info "nginx also ships /etc/nginx/sites-enabled/default; setup-server.sh renames it to default.disabled-by-vizitik"
-  fi
-}
-
-certbot_leftovers() {
-  [[ -d /etc/letsencrypt/live ]] || { skip "no certificates yet"; return 0; }
-  log "certificates on this box"
-  local d
-  for d in /etc/letsencrypt/live/*/; do
-    [[ -d "$d" ]] || continue
-    local name; name="$(basename "$d")"
-    info "$name  expires: $(openssl x509 -enddate -noout -in "${d}cert.pem" 2>/dev/null | cut -d= -f2)"
-  done
-  info "setup-server.sh reuses these; it never deletes a certificate"
-  if [[ -f /var/log/vizitik-certbot.log ]]; then
-    doit mv -f /var/log/vizitik-certbot.log /var/log/vizitik-certbot.log.1
-    skip "old certbot log moved aside, so the tail after this run is fresh"
-  fi
-}
-
-update_checkout() {
-  log "source checkout ($SRC_DIR)"
-  have git || { warn "git is not installed, skipping the pull"; return 0; }
-  [[ -d "$SRC_DIR/.git" ]] || { skip "not a git checkout, leaving it alone"; return 0; }
-  if [[ "$SKIP_PULL" == "1" ]]; then skip "git pull skipped (--skip-pull)"; return 0; fi
-  local dirty branch
-  dirty="$(git -C "$SRC_DIR" status --porcelain 2>/dev/null | head -20)"
-  branch="$(git -C "$SRC_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"
-  if [[ -n "$dirty" ]]; then
-    echo "      uncommitted changes:"
-    echo "$dirty" | sed 's/^/        /'
-    if [[ "$REQUIRE_CLEAN" == "1" ]]; then
-      err "--require-clean was given and the checkout is not clean"
-      exit 1
-    fi
-    warn "these files are NOT from the repository and will not be overwritten by the pull"
-    warn "if the deploy is behaving oddly, this is the first thing to look at:"
-    warn "  git -C $SRC_DIR stash && bash scripts/deploy.sh"
-  fi
-  info "branch: ${branch:-unknown}"
-  ask_yes PULL "fetch the newest commits from origin/${branch:-main}?" 1
-  if [[ "${PULL:-1}" != "1" ]]; then skip "keeping the checkout as it is"; return 0; fi
-  if [[ "$DRY" == "1" ]]; then
-    return 0
-  fi
-  local -a pull_args=( pull --ff-only )
-  if git -C "$SRC_DIR" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
-    info "upstream: $(git -C "$SRC_DIR" rev-parse --abbrev-ref '@{u}' 2>/dev/null)"
-  elif git -C "$SRC_DIR" remote get-url origin >/dev/null 2>&1; then
-    warn "this branch has no upstream configured; pulling origin/${branch:-main} explicitly"
-    pull_args=( pull --ff-only origin "${branch:-main}" )
+    local creds="/etc/letsencrypt/cloudflare.credentials"
+    [[ -z "$CF_API_TOKEN" ]] && fail "CF_API_TOKEN required for DNS mode"
+    mkdir -p "$(dirname "$creds")"
+    printf "dns_cloudflare_api_token = %s\n" "$CF_API_TOKEN" > "$creds"
+    chmod 600 "$creds"
+    certbot certonly --expand -a dns-cloudflare --dns-cloudflare-credentials "$creds" \
+      --dns-cloudflare-propagation-seconds 30 "${cnames[@]}" --agree-tos "${email_args[@]}" -n || warn "certbot failed"
   else
-    err "this checkout has no origin remote, so there is nothing to pull. Add it with:"
-    err "  git -C $SRC_DIR remote add origin https://github.com/<your name>/<your repo>.git"
-    exit 1
+    certbot --nginx --expand "${cnames[@]}" --redirect --agree-tos "${email_args[@]}" --non-interactive || warn "certbot failed"
   fi
-  if git -C "$SRC_DIR" "${pull_args[@]}"; then
-    ok "checkout is up to date ($(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null))"
-  else
-    err "git pull --ff-only failed (local commits or a rewritten branch)."
-    err "see where it diverged, then decide:  git -C $SRC_DIR log --oneline -5  /  git -C $SRC_DIR reset --hard origin/main"
-    exit 1
-  fi
+  ok "HTTPS enabled"
 }
 
-full_reset() {
-  [[ "$FULL_RESET" == "1" ]] || return 0
-  log "full reset of the installed copy"
-  warn "this removes $INSTALL_DIR and /etc/nginx/sites-enabled/vizitik*; the database and the certificates stay"
-  if [[ "${FULL_RESET_CONFIRM:-0}" == "1" ]]; then
-    GO=1
-  else
-    ask_yes GO "really remove them now? (--yes never confirms this, use FULL_RESET_CONFIRM=1)" 0
-  fi
-  if [[ "${GO:-0}" != "1" ]]; then skip "reset declined, the installed copy stays as it is"; return 0; fi
-  doit rm -rf "$INSTALL_DIR"
-  if [[ -d /etc/nginx/sites-enabled ]]; then
-    doit rm -f /etc/nginx/sites-enabled/vizitik /etc/nginx/sites-enabled/vizitik.conf
-  fi
-  doit nginx -t 2>/dev/null && doit systemctl reload nginx 2>/dev/null
-  did "installed copy removed; setup-server.sh will rebuild it"
+# ------------------------------------------------------------------
+# Firewall
+# ------------------------------------------------------------------
+setup_firewall() {
+  [[ "$ENABLE_UFW" != "1" ]] && return 0
+  log "configuring firewall"
+  ufw allow OpenSSH >/dev/null 2>&1 || ufw allow 22/tcp >/dev/null 2>&1
+  ufw allow 'Nginx Full' >/dev/null 2>&1
+  ufw --force enable >/dev/null 2>&1 || true
+  ok "UFW enabled"
 }
 
-cloudflare_preflight() {
-  log "dns and cloudflare check"
-  local domain="${DOMAIN:-}"
-  if [[ -z "$domain" && -r /etc/nginx/sites-enabled/vizitik.conf ]]; then
-    domain="$(awk '/server_name/{print $2; exit}' /etc/nginx/sites-enabled/vizitik.conf 2>/dev/null)"
-  fi
-  if [[ -z "$domain" ]]; then
-    skip "no domain given, so the records are not checked; the deploy asks for it and then:"
-    echo "          dig +short A <your domain>"
-    return 0
-  fi
-  local ips mine answers
-  ips="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]' | head -3)"
-  mine="$(echo "$ips" | head -1)"
-  answers="$( (dig +short A "$domain" 2>/dev/null || getent hosts "$domain" 2>/dev/null) | tr -d ' ' | grep -E '^[0-9]' | paste -sd' ' -)"
-  info "domain:   $domain"
-  info "this box: ${mine:-unknown}"
-  info "answers:  ${answers:-no answer at all}"
-  if [[ -z "${answers// /}" ]]; then
-    warn "$domain does not resolve - Let's Encrypt and your visitors both fail on that"
-    warn "  in Cloudflare: DNS -> Records -> A, name @, content ${mine:-<server ip>}, then Save"
-  elif [[ "$answers" == *"$mine"* ]]; then
-    ok "$domain points at this server"
-  else
-    warn "$domain points at ${answers}, which is not ${mine:-this box}"
-    warn "  if the orange cloud is on, that is Cloudflare's ip and is correct;"
-    warn "  if the record is grey (DNS only), fix the A record in Cloudflare before deploying"
-  fi
-  if [[ -n "${CF_API_TOKEN:-}" ]]; then
-    ok "CF_API_TOKEN is in the environment (DNS-01 will be used with HTTPS_MODE=dns)"
-  else
-    info "CF_API_TOKEN is not set: HTTP-01 needs port 80 open to the whole internet, from outside Iran too"
-  fi
-  info "the click-by-click steps are in docs/CLOUDFLARE-SSL.md"
+# ------------------------------------------------------------------
+# Backup
+# ------------------------------------------------------------------
+setup_backup() {
+  [[ "$ENABLE_BACKUP" != "1" ]] && return 0
+  log "creating backup cron job"
+  mkdir -p /var/backups
+  cat > /etc/cron.d/vizitik-backup <<EOF
+SHELL=/bin/bash
+0 2 * * * root mysqldump -u ${DB_USER} -p'${DB_PASS}' ${DB_NAME} > /var/backups/${DB_NAME}-\$(date +\%F).sql && find /var/backups -name '${DB_NAME}-*.sql' -mtime +7 -delete
+EOF
+  chmod 644 /etc/cron.d/vizitik-backup
+  ok "backups scheduled"
 }
 
-post_checks() {
-  cat <<TXT
+# ------------------------------------------------------------------
+# Summary
+# ------------------------------------------------------------------
+final_summary() {
+  log "Vizitik deployed successfully!"
+  local url="http://localhost"
+  [[ -n "$DOMAIN" ]] && url="https://$DOMAIN"
 
-  after the deploy finishes, these four lines tell you if it worked:
-      systemctl is-active $SETUP_SVC nginx
-      ss -ltnp | grep -E ':(80|443|${BACKEND_PORT})\$'
-      curl -sI -H 'Host: ${DOMAIN:-localhost}' http://127.0.0.1/ | head -1
-      curl -s -o /dev/null -w '%{http_code}\n' https://${DOMAIN:-localhost}/
-TXT
+  echo -e "\n\033[1;32m======================================================\033[0m"
+  echo -e "\033[1;32m  $APP_NAME_EN deployment complete! \033[0m"
+  echo -e "\033[1;32m  Site:  $url\033[0m"
+  echo -e "\033[1;32m  API:   $url/api\033[0m"
+  [[ -n "$ADMIN_DOMAIN" ]] && echo -e "\033[1;32m  Admin: https://$ADMIN_DOMAIN\033[0m"
+  echo -e "\033[1;32m======================================================\033[0m"
+  echo "  Next steps:"
+  echo "   - Open $url and register the first account"
+  echo "   - Review $INSTALL_DIR/.env"
+  echo "   - Logs: journalctl -u vizitik-backend -f"
 }
 
+# ------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------
 main() {
-  root_check "$*"
-  log "deploy.sh - stopping what a previous run left behind"
-  show_state
-  stop_previous_service
-  kill_strays
-  disable_web_server_conflicts
-  certbot_leftovers
-  cloudflare_preflight
-  [[ "$ONLY_CLEAN" == "1" ]] && { log "clean only, no deploy (--only-clean)"; exit 0; }
-  update_checkout
-  [[ "$DRY" == "1" ]] && { log "dry run finished, nothing was changed"; post_checks; exit 0; }
-  [[ -x "$SETUP_SCRIPT" || -r "$SETUP_SCRIPT" ]] || { err "setup script not found: $SETUP_SCRIPT"; exit 1; }
-  full_reset
-  if [[ "$YES" != "1" ]] && is_tty; then
-    echo
-    ask_yes GO "start the deploy now?" 1
-    [[ "${GO:-1}" == "1" ]] || { info "cancelled; nothing was deployed"; exit 0; }
+  local mode="deploy"
+  for a in "$@"; do
+    case "$a" in
+      --check) mode="check" ;;
+      -y|--yes) YES=1 ;;
+      --non-interactive) ASK=0 ;;
+      -h|--help)
+        echo "usage: sudo bash scripts/deploy.sh [--check] [-y] [--non-interactive]"
+        exit 0 ;;
+      *) fail "unknown argument: $a" ;;
+    esac
+  done
+
+  if [[ "$mode" == "check" ]]; then
+    collect_inputs
+    print_summary
+    ok "preflight done - nothing changed"
+    exit 0
   fi
-  log "handing over to $(basename "$SETUP_SCRIPT") ${FORWARD[*]:-}"
-  bash "$SETUP_SCRIPT" ${FORWARD[@]+"${FORWARD[@]}"}
-  post_checks
+
+  [[ "$(id -u)" -ne 0 ]] && fail "run as root: sudo bash scripts/deploy.sh"
+  . /etc/os-release 2>/dev/null || fail "unknown OS"
+  case "$ID" in
+    ubuntu|debian) ;;
+    *) fail "Ubuntu/Debian required (yours: $ID)" ;;
+  esac
+
+  collect_inputs
+  print_summary
+  memory_guard
+  install_prereqs
+  setup_database
+  copy_source
+  build_backend
+  build_admin
+  build_frontend
+  create_services
+  setup_nginx
+  setup_https
+  setup_firewall
+  setup_backup
+  final_summary
 }
 
 main "$@"
