@@ -30,7 +30,8 @@ sudo DOMAIN=app.example.com CERT_EMAIL=admin@example.com DB_PASS='رمز_قوی'
 # هاست/نام/کاربر/رمز دیتابیس، نام برند (لاتین و فارسی)، نام‌کاربری/توکن ربات بله و
 # BALE_ADMIN_CHAT_ID، فعال‌سازی UFW، کرونِ بکاپ، و در پایان شماره/رمز یک حساب برای تست لاگین.
 # JWT_SECRET را اگر خالی بگذاری خودش ۴۸ کاراکتر تصادفی می‌سازد؛ هیچ توکن یا آی‌دی شخصی
-# در کد یا در فایل‌های نمونه وجود ندارد و همه‌چیز فقط در backend/.env می‌نشیند.
+# در کد یا در فایل‌های نمونه وجود ندارد و همه‌چیز فقط در .env روت می‌نشیند
+# (env-sync آن را به backend/.env و frontend-app/.env هم پخش می‌کند).
 ```
 
 ### بعد از هر تغییر کد: `scripts/update.sh`
@@ -196,28 +197,42 @@ mkdir -p /opt/vizitik && cd /opt/vizitik
 # یا کلون، یا پوشه‌های backend و frontend-app را با scp/copy منتقل کن.
 ```
 
-### ۳-الف) بک‌اند (NestJS)
+### ۳-الف) یک فایل .env روت برای همه‌ی سرویس‌ها
 ```bash
-cd /opt/vizitik/backend
-npm install --omit=dev
-npx prisma generate
+cd /opt/vizitik
+cp .env.example .env
 cat > .env <<EOF
 DATABASE_URL="mysql://${DB_USER}:${DBPASS}@localhost:3306/${DB_NAME}"
 JWT_SECRET="$(openssl rand -hex 32)"
 JWT_EXPIRES_IN="30d"
 PORT=3000
+BACKEND_PORT=3000
+BIND_HOST="127.0.0.1"
+NODE_ENV=production
 # نام نرم‌افزار — دلخواه؛ هر وقت خواستی عوض کن (در پیام‌های بله و خوش‌آمد اعمال می‌شود)
 APP_NAME_FA="ویزیتیک"
 APP_NAME_EN="Vizitik"
 BALE_BOT_USERNAME="Vizitik_bot"   # نام‌کاربری عمومی ربات، بدون @
 BALE_BOT_TOKEN="<توکنِ ربات خودت>"
 BALE_ADMIN_CHAT_ID="<آی‌دیِ چت ادمین>"
+ADMIN_PORT=3001
+VITE_API_URL="/api"
 EOF
+node scripts/env-sync.mjs
+# پخش: backend/.env (کپی کامل — API + Prisma CLI + پنل ادمین)
+#      frontend-app/.env (فقط VITE_* — بیلد PWA)
+```
+
+### ۳-ب) بک‌اند (NestJS)
+```bash
+cd /opt/vizitik/backend
+npm install --omit=dev
+npx prisma generate
 npx prisma db push     # سینک اسکیما با جداول موجود (ایمن)
 npm run build          # خروجی: dist/main.js
 ```
 
-### ۳-ب) فرانت PWA (Vite)
+### ۳-پ) فرانت PWA (Vite)
 ```bash
 cd /opt/vizitik/frontend-app
 npm install

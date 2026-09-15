@@ -25,6 +25,26 @@
 set -euo pipefail
 
 # ------------------------------------------------------------------
+# 0) the unified root .env (see .env.example) - a value that is already
+#    set in the real environment keeps precedence; values from the file
+#    act as the defaults for everything below
+# ------------------------------------------------------------------
+ROOT_ENV="${ROOT_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.env}"
+if [[ -f "$ROOT_ENV" ]]; then
+  while IFS= read -r line; do
+    line="${line%%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"   # ltrim
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    key="${line%%=*}"
+    key="${key//[[:space:]]/}"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    val="${line#*=}"
+    val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
+    if [[ -z "${!key:-}" ]]; then export "$key=$val"; fi
+  done < "$ROOT_ENV"
+fi
+
+# ------------------------------------------------------------------
 # 1) configuration variables (override here or via environment)
 # ------------------------------------------------------------------
 
@@ -357,7 +377,7 @@ collect_inputs() {
     fi
     if [[ -n "$ADMIN_DOMAIN" && -z "$ADMIN_TOKEN" ]]; then
       ADMIN_TOKEN="$(openssl rand -hex 24)"
-      log "a fresh ADMIN_TOKEN was generated (you can change it in backend/.env later)"
+      log "a fresh ADMIN_TOKEN was generated (you can change it in $INSTALL_DIR/.env later)"
     fi
   fi
 
@@ -425,7 +445,7 @@ collect_inputs() {
 
   if [[ -z "$JWT_SECRET" ]]; then
     JWT_SECRET="$(gen_secret)"
-    ok "generated a fresh JWT secret - it is written to $INSTALL_DIR/backend/.env"
+    ok "generated a fresh JWT secret - it is written to $INSTALL_DIR/.env"
   fi
 
   ask_yes ENABLE_UFW "enable the UFW firewall (SSH and Nginx get allowed)" 1
@@ -581,7 +601,10 @@ build_backend() {
   local DB_PASS_URL
   DB_PASS_URL="$(urlencode "$DB_PASS")"
 
-  cat > .env <<EOF
+  # one unified .env at the install root; scripts/env-sync.mjs distributes it
+  # to backend/.env (this service, Prisma, the admin panel) and to
+  # frontend-app/.env (VITE_* only)
+  cat > "$INSTALL_DIR/.env" <<EOF
 DATABASE_URL="mysql://${DB_USER}:${DB_PASS_URL}@${DB_HOST}:3306/${DB_NAME}"
 NODE_ENV=production
 JWT_SECRET="${JWT_SECRET}"
@@ -597,9 +620,12 @@ ADMIN_PORT=${ADMIN_PORT}
 ADMIN_TOKEN="${ADMIN_TOKEN}"
 ADMIN_STATIC_DIR="${INSTALL_DIR}/admin"
 ADMIN_FONTS_DIR="${INSTALL_DIR}/landing/fonts"
+VITE_API_URL="/api"
 EOF
+  run_here "env sync" node "$INSTALL_DIR/scripts/env-sync.mjs" || warn "env-sync failed; backend/.env may be stale"
+  [[ -f .env ]] || cp "$INSTALL_DIR/.env" .env
   if [[ -z "$BALE_BOT_TOKEN" ]]; then
-    warn "BALE_BOT_TOKEN is empty; the bot will not send messages (fill it in .env and restart the service)"
+    warn "BALE_BOT_TOKEN is empty; the bot will not send messages (fill it in $INSTALL_DIR/.env and restart the service)"
   fi
   npx prisma db push --skip-generate || warn "prisma db push failed; check the tables manually"
   run_here "backend build (tsc)" npm run build
@@ -630,10 +656,9 @@ build_frontend() {
   log "installing and building the PWA frontend"
   cd "$INSTALL_DIR/frontend-app"
   npm_install_in "$INSTALL_DIR/frontend-app"
-  # only VITE_* is exposed to the browser; the app name is fixed in vite.config.js
-  cat > .env <<EOF
-VITE_API_URL="/api"
-EOF
+  # the unified .env was already synced into frontend-app/.env by env-sync
+  # (VITE_* only); keep a fallback for manual installs
+  [[ -f .env ]] || printf 'VITE_API_URL="/api"\n' > .env
   run_here "PWA build (vite)" npm run build
   ok "PWA built ($INSTALL_DIR/frontend-app/dist)"
 }

@@ -333,13 +333,48 @@ sync_source() {  # refresh the sources in the install; node_modules and dist sta
       rm -rf "$be/src" "$be/prisma"
       cp -a "$src/src" "$be/src" || exit 1
       [[ -d "$src/prisma" ]] && cp -a "$src/prisma" "$be/prisma"
-      for f in package.json package-lock.json tsconfig.json tsconfig.build.json nest-cli.json .env.example documents; do
+      for f in package.json package-lock.json tsconfig.json tsconfig.build.json nest-cli.json documents; do
         [[ -e "$src/$f" ]] && cp -a "$src/$f" "$be/"
       done
       ok "backend sources refreshed"
     fi
   fi
   if [[ "$DO_FRONTEND" == "1" ]]; then skip "the PWA is built in a temporary copy, so the live dist is untouched until the build succeeds"; fi
+}
+
+sync_env_files() {
+  # the root .env is the single source of truth; distribute it to the apps
+  # (backend/.env full copy, frontend-app/.env VITE_* only). Without a root
+  # .env nothing is touched - an older install that only has backend/.env
+  # keeps working exactly as before. The .env is gitignored, so its changes
+  # never show up in the git diff: when a generated copy actually changes,
+  # the affected side is added to CHANGED so it still gets rebuilt.
+  local root_env="$INSTALL_DIR/.env"
+  if [[ ! -f "$root_env" ]]; then
+    if [[ -f "$INSTALL_DIR/backend/.env" ]]; then
+      skip "no $root_env yet - backend/.env stays in use (create it: cp .env.example .env, then: node scripts/env-sync.mjs)"
+    fi
+    return 0
+  fi
+  if ! have node; then warn "node not found - cannot run scripts/env-sync.mjs"; return 0; fi
+  if [[ "$CHECK" == "1" ]]; then skip "would refresh backend/.env and frontend-app/.env from $root_env"; return 0; fi
+  local bb="" bf="" ab="" af=""
+  [[ -f "$INSTALL_DIR/backend/.env" ]] && bb="$(md5sum "$INSTALL_DIR/backend/.env" | cut -d' ' -f1)"
+  [[ -f "$INSTALL_DIR/frontend-app/.env" ]] && bf="$(md5sum "$INSTALL_DIR/frontend-app/.env" | cut -d' ' -f1)"
+  if ! run "env sync" bash -c "cd '$INSTALL_DIR' && node scripts/env-sync.mjs"; then
+    warn "env-sync failed - the previous backend/.env and frontend-app/.env stay in place"
+    return 0
+  fi
+  [[ -f "$INSTALL_DIR/backend/.env" ]] && ab="$(md5sum "$INSTALL_DIR/backend/.env" | cut -d' ' -f1)"
+  [[ -f "$INSTALL_DIR/frontend-app/.env" ]] && af="$(md5sum "$INSTALL_DIR/frontend-app/.env" | cut -d' ' -f1)"
+  if [[ "$ab" != "$bb" ]]; then
+    info "backend/.env changed - the backend service will be rebuilt and restarted"
+    CHANGED="$CHANGED backend"
+  fi
+  if [[ "$af" != "$bf" ]]; then
+    info "frontend-app/.env changed - the PWA will be rebuilt"
+    CHANGED="$CHANGED frontend"
+  fi
 }
 
 needs_deps() { [[ "$FORCE_DEPS" == "1" ]] || [[ " $CHANGED " == *" deps "* ]]; }
@@ -407,7 +442,7 @@ update_frontend() {
   # tar instead of cp so node_modules and the live dist are left out of the copy,
   # then the installed node_modules is reused through a symlink
   run "copy sources" bash -c "tar -C '$SRC_DIR/frontend-app' --exclude=./node_modules --exclude=./dist -cf - . | tar -C '$tmp' -xf -"
-  run "env file" bash -c "[[ -f '$fe/.env' ]] && cp '$fe/.env' '$tmp/.env' || printf 'VITE_API_URL=\"/api\"\n' > '$tmp/.env'"
+  run "env file" bash -c "node '$SRC_DIR/scripts/env-sync.mjs' >/dev/null 2>&1 || true; { [[ -f '$fe/.env' ]] && cp '$fe/.env' '$tmp/.env'; } || printf 'VITE_API_URL=\"/api\"\n' > '$tmp/.env'"
   npm_install_in "$tmp" || exit 1
   if ! run "vite build" bash -c "cd '$tmp' && npm run build"; then
     err "PWA build failed - the served site is untouched"
@@ -451,7 +486,9 @@ admin_node_bin() {
 }
 
 ensure_admin_env() {  # the admin panel refuses to start without ADMIN_TOKEN
-  local envf="$INSTALL_DIR/backend/.env" key tok
+  # prefer the unified root .env; fall back to the legacy backend/.env
+  local envf="$INSTALL_DIR/.env" key tok
+  [[ -f "$envf" ]] || envf="$INSTALL_DIR/backend/.env"
   if [[ ! -f "$envf" ]]; then
     err "no $envf - the admin panel cannot get its settings"
     return 1
@@ -479,6 +516,10 @@ ensure_admin_env() {  # the admin panel refuses to start without ADMIN_TOKEN
     [[ -n "$tok" ]] || tok="$(date +%s%N | sha256sum | cut -c1-48)"
     run "fill empty ADMIN_TOKEN" sed -i "s|^ADMIN_TOKEN=.*|ADMIN_TOKEN=\"$tok\"|" "$envf"
     ok "ADMIN_TOKEN was empty - it was filled in; the token is: $tok"
+  fi
+  # when the root file changed, refresh the generated app copies too
+  if [[ "$envf" == "$INSTALL_DIR/.env" && "$CHECK" != "1" ]]; then
+    run "env sync after admin env" bash -c "cd '$INSTALL_DIR' && node scripts/env-sync.mjs" || true
   fi
   return 0
 }
@@ -824,6 +865,9 @@ main() {
     restart_service || exit 1
     verify; exit $?
   fi
+  # the root .env is gitignored, so its changes never appear in the git diff -
+  # sync first and let it add backend/frontend to CHANGED when a copy changed
+  sync_env_files
   if [[ "$CHANGED" == "none" && "$FORCE_DEPS" == "0" && "$REVISION" == "" ]]; then
     log "nothing relevant changed"
     ok "the server already runs $(git_at rev-parse --short HEAD 2>/dev/null)"

@@ -118,9 +118,14 @@ cd backend
 # ۲. نصب پکیج‌ها
 npm install
 
-# ۳. تنظیم فایل متغیرهای محیطی (.env)
+# ۳. تنظیم متغیرهای محیطی — یک فایل .env در روت برای همه‌ی سرویس‌ها
+cd ..
 cp .env.example .env
-# مقادیر DATABASE_URL، JWT_SECRET و BALE_BOT_TOKEN را در .env تنظیم کنید
+# DATABASE_URL، JWT_SECRET، ADMIN_TOKEN و BALE_BOT_TOKEN را در .env روت پر کنید، بعد پخشش کنید:
+node scripts/env-sync.mjs
+#   → backend/.env        کپی کامل (API + Prisma CLI + پنل ادمین)
+#   → frontend-app/.env   فقط VITE_* (بیلد PWA)
+cd backend
 
 # ۴. اجرای مایگریشن‌های پریزما و ساخت جداول
 npx prisma db push
@@ -133,15 +138,10 @@ npm run start:dev
 # سرور بر روی پورت 3000 اجرا می‌شود: http://localhost:3000
 ```
 
-#### نمونه فایل `.env` بک‌اند:
-```env
-PORT=3000
-DATABASE_URL="mysql://root:password@localhost:3306/vizitik_db"
-JWT_SECRET="vizitik_super_secure_jwt_secret_key_2026"
-JWT_EXPIRES_IN="30d"
-BALE_BOT_TOKEN="<توکنِ ربات خودت>"
-BALE_ADMIN_CHAT_ID="<آی‌دیِ چت ادمین>"
-```
+#### متغیرهای `.env` روت
+نمونه‌ی کامل با توضیحِ تک‌تک متغیرها در [`.env.example`](.env.example) هست؛ همه‌چیز آنجاست:
+دیتابیس (`DATABASE_URL`)، بک‌اند (`PORT`، `BIND_HOST`، `JWT_SECRET`، برند)، ربات بله،
+پنل ادمین (`ADMIN_TOKEN`، `ADMIN_PORT`) و بیلد PWA (`VITE_API_URL`).
 
 ---
 

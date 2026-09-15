@@ -18,6 +18,38 @@ const path = require('path');
 const crypto = require('crypto');
 const { PrismaClient } = require('@prisma/client');
 
+// ------------------------------------------------------------------
+// Environment: the root .env is the single source of truth (see
+// .env.example); backend/.env - the copy scripts/env-sync.mjs keeps
+// aligned - fills in anything the root file does not define. Values
+// already set (systemd EnvironmentFile, shell) always win.
+// ------------------------------------------------------------------
+function loadEnvFile(file) {
+  let lines = [];
+  try { lines = fs.readFileSync(file, 'utf8').split(/\r?\n/); } catch { return; }
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || process.env[key] !== undefined) continue;
+    let val = line.slice(eq + 1).trim();
+    if (val.length > 1 && ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'")))) val = val.slice(1, -1);
+    process.env[key] = val;
+  }
+}
+// the script runs from admin/ in a checkout and from backend/admin/ on the
+// server - look for the unified .env at both depths, then let the backend
+// copy fill anything missing
+const rootEnv = [
+  path.join(__dirname, '..', '.env'),
+  path.join(__dirname, '..', '..', '.env'),
+].find((f) => fs.existsSync(f)) || path.join(__dirname, '..', '.env');
+const rootDir = path.dirname(rootEnv);
+loadEnvFile(rootEnv);
+loadEnvFile(path.join(rootDir, 'backend', '.env'));
+
 const PORT = parseInt(process.env.ADMIN_PORT || '3001', 10);
 const TOKEN = process.env.ADMIN_TOKEN || '';
 const STATIC_DIR = process.env.ADMIN_STATIC_DIR || __dirname;
