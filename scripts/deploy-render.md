@@ -19,7 +19,7 @@ https://app.دامنه‌ی‌شما           https://admin.دامنه‌ی‌�
 │  └───────────────────────┘  │   └────────┬─────────┘   └──────────────────┘
 └──────────────┬──────────────┘            │
                ▼                           ▼
-        MySQL (خارجی روی VPS یا خود Render)
+        PostgreSQL (رایگان با Supabase — بخش ۴)
 ```
 
 نکته‌های مهم:
@@ -44,12 +44,13 @@ https://app.دامنه‌ی‌شما           https://admin.دامنه‌ی‌�
 |---|---|
 | حساب Render | [render.com](https://render.com) — برای پلن‌های پولی کارت اعتباری لازم است |
 | ریپوی GitHub | کد با آخرین تغییرات push شده باشد |
-| یک MySQL | یا روی VPS خودت (مربوط به ۴-۱) یا روی خود Render (مربوط به ۴-۲) |
+| یک دیتابیس PostgreSQL | رایگان با Supabase (مربوط به ۴-۱) یا Postgres روی Render (مربوط به ۴-۲) |
 | یک دامنه | هر TLD (`.ir` / `.com` / ...) — فقط باید DNS آن را کنترل کنی |
 
-> Render **دیتابیس MySQL مدیریت‌شده ندارد** (پستگرس و Mongo دارد).
-> بک‌اند ویزیتیک روی MySQL/ماریا‌دی‌بی است، پس دیتابیس باید یا روی VPS
-> خودت باشد یا به‌صورت Docker روی Render (بخش ۴). اسکیما را **دست نزن**.
+> دیتابیس ویزیتیک حالا **PostgreSQL** است — ساده‌ترین گزینه رایگان
+> یک پروژهٔ Supabase است (بخش ۴). بک‌اند و پنل ادمین مستقیم با
+> `DATABASE_URL` وصل می‌شوند؛ نسخهٔ PHP هم فقط از API استفاده می‌کند و
+> تغییری نمی‌خواهد.
 
 ---
 
@@ -86,8 +87,8 @@ https://app.دامنه‌ی‌شما           https://admin.دامنه‌ی‌�
    cd backend
    npx prisma db push
    ```
-   اگر MySQL خالی است، جداول ساخته می‌شوند. اگر دیتای قبلی (دُمپ
-   `documents/hesabchin.sql`) را هم می‌خواهی، بعد از `db push` آن را وارد کن
+   اگر دیتابیس خالی است، جداول ساخته می‌شوند. اگر دیتای قبلی (دُمپ
+   MySQL قدیمی) را هم می‌خواهی، باید یک‌بار دستی منتقلش کنی (بخش ۴-۱).
    (بخش ۴-۱).
 7. وارد پنل ادمین شو (`https://vizitik-admin.onrender.com`) با
    `ADMIN_TOKEN` (از تب Environment همان سرویس) و یک حساب تست بساز
@@ -151,56 +152,41 @@ https://app.دامنه‌ی‌شما           https://admin.دامنه‌ی‌�
 
 ---
 
-## ۴) دیتابیس MySQL
+## ۴) دیتابیس (PostgreSQL — رایگان با Supabase)
 
-### ۴-۱ MySQL روی VPS خودت (توصیه‌شده اگر قبلاً داری)
+اسکیما از MySQL به PostgreSQL منتقل شد؛ یعنی `DATABASE_URL` باید یک
+آدرس **Postgres** باشد. ساده‌ترین راه رایگان، **Supabase** است.
 
-بک‌اند از Render باید بتواند به MySQL وصل شود، یعنی:
+### ۴-۱ Supabase (توصیه‌شده — رایگان)
 
-1. کاربر/دیتابیس مجزا بساز:
-   ```sql
-   CREATE DATABASE vizitik_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-   CREATE USER 'vizitik'@'%' IDENTIFIED BY 'یک_رمز_بلند_تصادفی';
-   GRANT ALL PRIVILEGES ON vizitik_db.* TO 'vizitik'@'%';
+1. در [supabase.com](https://supabase.com) ثبت‌نام کن و یک **New Project**
+   بساز (پلن free: ۵۰MB دیتابیس).
+2. مسیر: **Project Settings → Database → Connection string**
+   → زیر **Session Mode (5432)** دکمهٔ **Connect → URI** → کپی:
    ```
-2. `my.cnf` → `bind-address = 0.0.0.0` (یا `*`) و ری‌استارت ماریا/مای‌اس‌کیو‌اِل.
-3. فایروال: پورت ۳۳۶ فقط برای Render باز باشد. Render لیست IP ثابت
-   ندارد، پس عملاً باید ۳۳۰۶ به همه باز باشد — **رمز را قوی بگیر** و ترجیحاً
-   روی سرور خودت UFW را طوری تنظیم کن که ۳۳۰۶ فقط از IPهای موردنظر بیاید
-   (اگر Render در شبکهٔ خصوصی‌ات نبود، گزینهٔ ۴-۲ تمیزتر است).
-4. `DATABASE_URL` (در هر دو سرویس):
+   postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?pgbouncer=true&connection_limit=1
    ```
-   mysql://vizitik:رمز@آی‌پی_یا_دامنه_VPS:3306/vizitik_db
-   ```
-   (کاراکترهای خاص رمز — `@ : / # %` — را URL-encode کن.)
+   (پلن free فقط Session Mode/پورت ۵۴۲ را دارد؛ ۵۴۳ مخصوص پلن پولی است.)
+3. این رشته را به‌عنوان `DATABASE_URL` در **هر دو** سرویس app و admin بگذار
+   (تب Environment).
+4. **تمام:** build سرویس `vizitik-app` خودش `prisma db push` را می‌زند و
+   جداول را در اولین دیپلوی در دیتابیس می‌سازد.
+   (دستی هم می‌شود: در پوشهٔ `backend` از ریپو:
+   `DATABASE_URL="..." npx prisma db push`)
+5. پلن رایگان Supabase پروژه را بعد از **۷ روز بی‌کارایی pause** می‌کند؛
+   اسکریپت keep-alive (بخش ۸-۱) هر ۱۰ دقیقه `SELECT 1` می‌زند، پس پروژه
+   نمی‌خوابد.
 
-**دیتای قبلی:** اول `npx prisma db push` (ساخت جداول) و بعد دُمپ را
-وارد کن: `mysql -h ... vizitik_db < documents/hesabchin.sql`.
-اگر دیتابیس جدید و خالی است فقط `db push` کافی است.
+### ۴-۲ پستگرس روی خود Render (اگر نمی‌خواهی Supabase داشته باشی)
 
-### ۴-۲ MySQL روی خود Render (اگر MySQL نداری)
+Render Postgres رایگان **۳۰ روز بعد حذف می‌شود** (برای تولید مناسب نیست).
+اگر می‌خواهی، ارزان‌ترین پلن پولی `0.1c-256mb` (~۶ دلار/ماه) است و رشتهٔ
+اتصال از **Postgres → Connection Details → Connection String (direct)** کپی
+می‌شود.
 
-ساده‌ترین حالت: از [تمپلیت رسمی MySQL](https://render.com/templates/mysql)
-یک سرویس بساز (یک‌کلیک؛ دیسک دائمی و شبکهٔ خصوصی را خودکار می‌گذارد).
-دستی هم می‌شود:
-
-1. **New → Web Service → Existing Image** → `mysql:8.0`
-2. **Environment:**
-   ```
-   MYSQL_ROOT_PASSWORD=...   MYSQL_DATABASE=vizitik_db
-   MYSQL_USER=vizitik        MYSQL_PASSWORD=...
-   ```
-3. **Attach Disk:** حداقل ۱ گیگ، مسیر mount = `/var/lib/mysql`
-   (بدون دیسک، دیتا با هر دیپلوی پاک می‌شود!)
-4. **Networking:** Public Port را **خاموش** کن و Private Networking را روشن.
-5. حالا در همان سرویس، **Internal URL/Hostname** را کپی کن و بساز:
-   ```
-   mysql://vizitik:رمز@<hostname_درونی>:3306/vizitik_db
-   ```
-   این آدرس فقط از سرویس‌های هم‌حساب Render قابل دسترسی است — امن‌تر از ۴-۱.
-6. `prisma db push` را از Shellِ `vizitik-app` بزن (مربوط به ۲-۶).
-
-> هر دو سرویسِ app و admin باید به همان `DATABASE_URL` بچسبند.
+> نکته برای پنل ادمین: تب «مرور جداول» (`SHOW COLUMNS`) برای MySQL طراحی
+> شده بود؛ روی Postgres همان‌جا از پنل SQL استفاده کن:
+> `SELECT * FROM information_schema.columns WHERE table_name='users' ORDER BY ordinal_position;`
 
 ---
 
@@ -342,7 +328,7 @@ journalctl -u keep-alive -f   # دیدن پینگ‌ها
 | نشانه | علت / راه‌حل |
 |---|---|
 | build روی Render شکست با خطای حافظه | پلن free فقط 512MB دارد؛ اگر build سنگین شد، `starter` بگیر یا build را به دو سرویس جدا بسپار |
-| `P1001: Can't reach database server` | `DATABASE_URL` اشتباه/نارسیه، پورت ۳۳۶ بسته، یا `bind-address` MySQL روی `127.0.0.1` مانده |
+| `P1001: Can't reach database server` | `DATABASE_URL` اشتباه است (باید `postgresql://...` باشد)، پورت pooler Supabase بسته، یا پروژهٔ Supabase در حالت paused است |
 | `prisma db push` در Shell خطا می‌دهد | اول `npx prisma generate` و بعد `npx prisma db push --skip-generate` |
 | پنل ادمین: `@prisma/client did not initialize yet` | build command پنل ناقص است — بخش ۳-۲ (کپی `node_modules/.prisma` جا نیفتد) |
 | صفحه می‌آید ولی `/api` خطای CORS/404 | مطمئن شو PWA از همان سرویسِ API لود شده (هم‌ریشه)؛ اگر PWA را Static Site جدا کردی، `VITE_API_URL` را هنگام build روی آدرس مطلق API بگذار و دوباره build کن |
@@ -358,7 +344,7 @@ journalctl -u keep-alive -f   # دیدن پینگ‌ها
 
 | متغیر | کجا | لازم؟ | توضیح |
 |---|---|---|---|
-| `DATABASE_URL` | app و admin | ✅ | `mysql://user:pass@host:3306/db` |
+| `DATABASE_URL` | app و admin | ✅ | `postgresql://...` (URI از Supabase — بخش ۴-۱) |
 | `JWT_SECRET` | app | ✅ | Render خودکار می‌سازد (`generateValue`) |
 | `JWT_EXPIRES_IN` | app | نه | پیش‌فرض `30d` |
 | `NODE_ENV` | app و admin | نه | `production` |
@@ -379,8 +365,8 @@ journalctl -u keep-alive -f   # دیدن پینگ‌ها
 | `vizitik-app` starter | ۷ دلار/ماه (free: ۰ — با خواب ۱۵ دقیقه‌ای) |
 | `vizitik-admin` starter | ۷ دلار/ماه (free: ۰) |
 | `vizitik-landing` static | ۰ |
-| MySQL روی Render + دیسک ۱۰GB | حدود ۷-۲۰ دلار/ماه (اگر MySQL روی VPS داری: ۰) |
+| دیتابیس | Supabase free: ۰ (Postgres پولی روی Render: ~۶ دلار/ماه) |
 | دامنه‌های شخصی | ۲ تایشما رایگان، بعدی‌ها ۰/۲۵ دلار/هردام |
 
-**حداقل عملی:** app(starter) + MySQL(روی VPS) ≈ ۷ دلار/ماه
-**حداقل رایگان:** همه روی free (فقط برای تست؛ ربات بله در خواب قطع می‌شود)
+**حداقل عملی:** app(starter) + Supabase free ≈ ۷ دلار/ماه
+**حداقل رایگان:** همه روی free + Supabase free = ۰ دلار (با اسکریپت keep-alive سرویس‌ها نمی‌خوابند)
