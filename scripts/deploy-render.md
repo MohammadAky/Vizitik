@@ -105,8 +105,8 @@ https://app.دامنه‌ی‌شما           https://admin.دامنه‌ی‌�
 - **Runtime:** Node · **Region:** هرکدام (نزدیک‌ترین به کاربران)
 - **Build Command:**
   ```bash
-  cd frontend-app && npm install --no-audit --no-fund && npm run build &&
-  cd ../backend && npm install --no-audit --no-fund && npx prisma generate && npm run build
+  cd frontend-app && npm install --no-audit --no-fund --production=false && npm run build &&
+  cd ../backend && npm install --no-audit --no-fund --production=false && npx prisma generate && npx prisma db push && npm run build
   ```
 - **Start Command:**
   ```bash
@@ -122,8 +122,8 @@ https://app.دامنه‌ی‌شما           https://admin.دامنه‌ی‌�
 - **Build Command** (کلاینت Prisma را از همان اسکیمای بک‌اند می‌سازد):
   ```bash
   cd .. &&
-  (cd backend && npm install --no-audit --no-fund && npx prisma generate) &&
-  cd admin && npm install --no-audit --no-fund &&
+  (cd backend && npm install --no-audit --no-fund --production=false && npx prisma generate) &&
+  cd admin && npm install --no-audit --no-fund --production=false &&
   rm -rf node_modules/@prisma/client node_modules/.prisma &&
   cp -r ../backend/node_modules/@prisma/client node_modules/@prisma/client &&
   cp -r ../backend/node_modules/.prisma node_modules/.prisma
@@ -331,6 +331,7 @@ journalctl -u keep-alive -f   # دیدن پینگ‌ها
 
 | نشانه | علت / راه‌حل |
 |---|---|
+| `vite: not found` یا «command not found» برای ابزار build | Render پیش‌فرض `NODE_ENV=production` می‌گذارد و `devDependencies` نصب نمی‌شوند — در Build Command از `npm install --production=false` استفاده کن (در بلوپرینت تنظیم است) |
 | build روی Render شکست با خطای حافظه | پلن free فقط 512MB دارد؛ اگر build سنگین شد، `starter` بگیر یا build را به دو سرویس جدا بسپار |
 | `P1001: Can't reach database server` | `DATABASE_URL` اشتباه است (باید `postgresql://...` باشد)، پورت pooler Supabase بسته، یا پروژهٔ Supabase در حالت paused است |
 | `prisma db push` در Shell خطا می‌دهد | اول `npx prisma generate` و بعد `npx prisma db push --skip-generate` |
@@ -355,6 +356,7 @@ journalctl -u keep-alive -f   # دیدن پینگ‌ها
 | `HOST` | admin | نه | روی Render `0.0.0.0` (در blueprint هست) |
 | `ADMIN_TOKEN` | admin | ✅ | Render خودکار می‌سازد |
 | `BALE_BOT_USERNAME` / `BALE_BOT_TOKEN` / `BALE_ADMIN_CHAT_ID` | app | اختیاری | ربات بله |
+| `NODE_VERSION` | app و admin | نه | `"20"` (نسخهٔ تست‌شده — در بلوپرینت تنظیم است) |
 | `PORT` / `BIND_HOST` | — | — | خود Render `PORT` را می‌گذارد؛ بک‌اند خودش `0.0.0.0` گوش می‌دهد |
 
 > نام نرم‌افزار (ویزیتیک / Vizitik) **هاردکد** است و متغیر محیطی ندارد —

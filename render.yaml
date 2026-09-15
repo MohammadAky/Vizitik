@@ -27,12 +27,15 @@ services:
     runtime: node
     plan: free               # always-on? use: starter (~$7/mo)
     buildCommand: |
-      cd frontend-app && npm install --no-audit --no-fund && npm run build &&
-      cd ../backend && npm install --no-audit --no-fund && npx prisma generate &&
+      cd frontend-app && npm install --no-audit --no-fund --production=false && npm run build &&
+      cd ../backend && npm install --no-audit --no-fund --production=false && npx prisma generate &&
       npx prisma db push && npm run build
     startCommand: cd backend && node dist/main.js
     healthCheckPath: /
     envVars:
+      # match the tested environment (vite/bcrypt prebuilds, prisma CLI)
+      - key: NODE_VERSION
+        value: "20"
       - key: NODE_ENV
         value: production
       - key: JWT_SECRET
@@ -62,14 +65,16 @@ services:
     plan: free               # always-on? use: starter
     buildCommand: |
       cd .. &&
-      (cd backend && npm install --no-audit --no-fund && npx prisma generate) &&
-      cd admin && npm install --no-audit --no-fund &&
+      (cd backend && npm install --no-audit --no-fund --production=false && npx prisma generate) &&
+      cd admin && npm install --no-audit --no-fund --production=false &&
       rm -rf node_modules/@prisma/client node_modules/.prisma &&
       cp -r ../backend/node_modules/@prisma/client node_modules/@prisma/client &&
       cp -r ../backend/node_modules/.prisma node_modules/.prisma
     startCommand: node server.js
     healthCheckPath: /api/health
     envVars:
+      - key: NODE_VERSION
+        value: "20"
       - key: NODE_ENV
         value: production
       - key: HOST
