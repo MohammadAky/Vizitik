@@ -6,6 +6,7 @@ import { VanInventoryModule } from './van-inventory/van-inventory.module';
 import { OrdersModule } from './orders/orders.module';
 import { ReportsModule } from './reports/reports.module';
 import { BaleModule } from './bale/bale.module';
+import { HealthController } from './health/health.controller';
 import { PrismaService } from './prisma.service';
 
 @Module({
@@ -18,6 +19,7 @@ import { PrismaService } from './prisma.service';
     ReportsModule,
     BaleModule,
   ],
+  controllers: [HealthController],
   providers: [PrismaService],
 })
 export class AppModule {}

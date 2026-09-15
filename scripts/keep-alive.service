@@ -1,0 +1,23 @@
+# Vizitik — keep Render free web services awake (pings every 10 minutes).
+#
+# Install:
+#   1) copy this file and scripts/keep-alive.sh to the server
+#   2) fix ExecStart below to the real path of keep-alive.sh
+#   3) sudo systemctl daemon-reload
+#      sudo systemctl enable --now keep-alive
+#   4) journalctl -u keep-alive -f   (watch the pings)
+[Unit]
+Description=Vizitik Render keep-alive pinger
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# change this path to wherever the repo lives on the server
+ExecStart=/usr/bin/bash /opt/vizitik/scripts/keep-alive.sh
+Restart=always
+RestartSec=30
+# no special user is required; curl only
+
+[Install]
+WantedBy=multi-user.target

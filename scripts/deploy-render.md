@@ -310,6 +310,31 @@ https://app.دامنه‌ی‌شما           https://admin.دامنه‌ی‌�
 ربات بله — سرویس `vizitik-app` (و بهتر است admin هم) را `starter` بگذار.
 Static Site (لندینگ) در هر دو حالت رایگان است.
 
+### ۸-۱ نگه‌داشتن سرویس free بیدار (بدون پلن پولی)
+
+اگر free نگه داشتی، اسکریپت `scripts/keep-alive.sh` هر ۱۰ دقیقه (کمتر از
+حد ۱۵ دقیقه‌ای Render) به `/api/health` سرویس پینگ می‌زند تا خواب نرود.
+روی هر ماشینی که همیشه روشن است اجرا کن — مثلاً VPS خودت:
+
+```bash
+# روش ۱ — ساده (nohup)
+nohup bash scripts/keep-alive.sh > /var/log/vizitik-keep-alive.log 2>&1 &
+
+# روش ۲ — systemd (توصیه‌شده؛ با ریستارت سرور هم زنده می‌ماند)
+sudo cp scripts/keep-alive.service /etc/systemd/system/
+# مسیر keep-alive.sh داخل فایل service را با مسیر واقعی‌ات تنظیم کن
+sudo systemctl daemon-reload && sudo systemctl enable --now keep-alive
+journalctl -u keep-alive -f   # دیدن پینگ‌ها
+
+# روش ۳ — فقط یک خط crontab (بدون اسکریپت)
+*/10 * * * * curl -s -m 90 -o /dev/null https://vizitik-app.onrender.com/api/health
+```
+
+نکات:
+- اولین پینگ بعد از خواب ~۱ دقیقه طول می‌کشد (Render سرویس را بیدار می‌کند)؛ اسکریپت تا ۹۰ ثانیه صبر می‌کند و این طبیعی است.
+- پینگ هر ۱۰ دقیقه به‌عنوان عادت، دیتابیس رایگان Supabase را هم از pause (۷ روز بی‌کارایی) در امان نگه می‌دارد.
+- لندینگ (Static Site) روی CDN است و اصلاً نمی‌خوابد — نیازی به پینگ ندارد.
+
 ---
 
 ## ۹) عیب‌یابی
