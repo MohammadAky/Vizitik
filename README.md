@@ -198,6 +198,18 @@ sudo bash scripts/deploy.sh --only-clean   # بستن اجراهای قبلی، 
 - گرفتن گواهی SSL از مسیر کلودفلر (رکوردها، توکن API، حالت SSL، عیب‌یابی ۵۲۱/۵۲۲/۵۲۵):
   `docs/CLOUDFLARE-SSL.md`
 
+## 🚀 استقرار روی Render (با دامنهٔ شخصی)
+مجموعه‌ای از سرویس‌ها از همین ریپو با یک `render.yaml` (بلوپرینت) ساخته می‌شود:
+بک‌اند + PWA **هم‌ریشه** (بک‌اند خودِ بیلد PWA را سرو می‌کند، مثل Nginx روی VPS)،
+پنل ادمین، و لندینگ به‌عنوان Static Site. دیتابیس MySQL باید خارج از Render
+باشد (VPS خودت یا MySQL به‌صورت Docker روی Render) — Render MySQL مدیریت‌شده
+ندارد و اسکیما MySQL باید دست‌نخورده بماند.
+```bash
+# Blueprint: Render → New → Blueprint → اتصال ریپو → تنظیم DATABASE_URL → prisma db push
+```
+- راهنمای کامل (دیپلوی، دیتابیس، ربات بله، **اتصال دامنهٔ شخصی** و DNS، عیب‌یابی):
+  `scripts/deploy-render.md`
+
 ## 🤖 یکپارچه‌سازی با ربات بله (Bale Messenger Bot)
 ### مسیر درستِ کد تایید (ثبت‌نام و بازیابی رمز)
 کد فقط به گفتگوی بلهٔ **همان شماره** می‌رود؛ هرگز به‌صورت پیش‌فرض به چت مدیر کپی نمی‌شود
@@ -266,6 +278,10 @@ vizitik/
 │   ├── about.php                  # درباره سیستم
 │   └── help.php                   # راهنما و پشتیبانی
 │
+├── admin/                         # پنل ادمین (Node + Prisma): SQL، کاتالوگ، قیمت‌ها
+├── landing/                       # صفحهٔ معرفی (استاتیک)
+├── scripts/deploy-render.md       # راهنمای کامل Render + دامنهٔ شخصی
+├── render.yaml                    # بلوپرینت Render (app + admin + landing)
 └── README.md                      # مستندات جامع پروژه
 ```
 

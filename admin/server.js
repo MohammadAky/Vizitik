@@ -50,7 +50,10 @@ const rootDir = path.dirname(rootEnv);
 loadEnvFile(rootEnv);
 loadEnvFile(path.join(rootDir, 'backend', '.env'));
 
-const PORT = parseInt(process.env.ADMIN_PORT || '3001', 10);
+// Render injects PORT (10000); on a VPS the panel uses ADMIN_PORT (3001).
+const PORT = parseInt(process.env.PORT || process.env.ADMIN_PORT || '3001', 10);
+// VPS: stays 127.0.0.1 (only nginx may reach it). Render: HOST=0.0.0.0.
+const HOST = process.env.HOST || '127.0.0.1';
 const TOKEN = process.env.ADMIN_TOKEN || '';
 const STATIC_DIR = process.env.ADMIN_STATIC_DIR || __dirname;
 const FONTS_DIR = process.env.ADMIN_FONTS_DIR || path.join(__dirname, '..', 'landing', 'fonts');
@@ -894,6 +897,6 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`vizitik admin listening on http://127.0.0.1:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`vizitik admin listening on http://${HOST}:${PORT}`);
 });

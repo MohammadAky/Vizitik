@@ -58,9 +58,6 @@ DB_USER="${DB_USER:-vizitik}"
 DB_PASS="${DB_PASS:-CHANGE_ME_STRONG_PASSWORD}"
 DB_HOST="localhost"
 
-APP_NAME_FA="${APP_NAME_FA:-ویزیتیک}"
-APP_NAME_EN="${APP_NAME_EN:-Vizitik}"
-
 BALE_BOT_TOKEN="${BALE_BOT_TOKEN:-}"
 BALE_BOT_USERNAME="${BALE_BOT_USERNAME:-}"
 BALE_ADMIN_CHAT_ID="${BALE_ADMIN_CHAT_ID:-}"
@@ -333,7 +330,6 @@ print_config_summary() {
   echo "  database    : ${DB_USER}@${DB_HOST}/${DB_NAME} (password: $dbpass_state)"
   echo "  jwt secret  : ${#JWT_SECRET} characters"
   echo "  bale bot    : ${BALE_BOT_USERNAME:-<disabled>} token: $tok_state admin chat: ${BALE_ADMIN_CHAT_ID:-<none>}"
-  echo "  brand       : ${APP_NAME_EN} / ${APP_NAME_FA}"
   echo "  firewall    : $ENABLE_UFW   nightly backup: $ENABLE_BACKUP"
   echo "  smoke test  : $test_state"
   local mt; mt=($(memory_totals))
@@ -424,8 +420,6 @@ collect_inputs() {
   if [[ "$DB_PASS" == CHANGE_ME* ]]; then fail "DB_PASS still contains the CHANGE_ME placeholder"; fi
   if (( ${#DB_PASS} < 8 )); then warn "the database password is short - 8 characters or more is better"; fi
 
-  ask APP_NAME_EN "brand name (latin, used by the API and the logs)" "Vizitik"
-  ask APP_NAME_FA "brand name (persian, shown in bot messages)" ""
   ask BALE_BOT_USERNAME "Bale bot username without @ (empty = bot stays off)" ""
   if [[ -n "$BALE_BOT_USERNAME" ]]; then
     if ! ask_secret BALE_BOT_TOKEN "Bale bot token (the one from BotFather)"; then BALE_BOT_TOKEN=""; fi
@@ -477,7 +471,7 @@ environment overrides:
   INSTALL_DIR SRC_DIR DOMAIN APP_DOMAIN ADMIN_DOMAIN ADMIN_TOKEN ADMIN_PORT CERT_EMAIL BACKEND_PORT
   WITH_WWW HTTPS_MODE CF_API_TOKEN
   MIN_TOTAL_MB CREATE_SWAP SWAP_FILE SWAP_MB NODE_HEAP_MB
-  DB_HOST DB_NAME DB_USER DB_PASS APP_NAME_FA APP_NAME_EN
+  DB_HOST DB_NAME DB_USER DB_PASS
   BALE_BOT_USERNAME BALE_BOT_TOKEN BALE_ADMIN_CHAT_ID JWT_SECRET
   ENABLE_HTTPS ENABLE_UFW ENABLE_BACKUP TEST_PHONE TEST_PASSWORD
 TXT
@@ -611,8 +605,6 @@ JWT_SECRET="${JWT_SECRET}"
 JWT_EXPIRES_IN="30d"
 PORT=${BACKEND_PORT}
 BIND_HOST=127.0.0.1
-APP_NAME_FA="${APP_NAME_FA}"
-APP_NAME_EN="${APP_NAME_EN}"
 BALE_BOT_USERNAME="${BALE_BOT_USERNAME}"
 BALE_BOT_TOKEN="${BALE_BOT_TOKEN}"
 BALE_ADMIN_CHAT_ID="${BALE_ADMIN_CHAT_ID}"
@@ -672,7 +664,7 @@ create_service() {
   local unit="/etc/systemd/system/vizitik-backend.service"
   cat > "$unit" <<EOF
 [Unit]
-Description=${APP_NAME_EN} NestJS Backend (API + Bale bot)
+Description=Vizitik NestJS Backend (API + Bale bot)
 After=network.target mariadb.service
 
 [Service]
@@ -698,7 +690,7 @@ EOF
     local aunit="/etc/systemd/system/vizitik-admin.service"
     cat > "$aunit" <<EOF
 [Unit]
-Description=${APP_NAME_EN} Admin SQL Panel (read-only)
+Description=Vizitik Admin SQL Panel (read-only)
 After=network.target mariadb.service vizitik-backend.service
 
 [Service]

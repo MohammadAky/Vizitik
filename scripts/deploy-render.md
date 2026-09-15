@@ -1,276 +1,351 @@
-# Vizitik - Render Deployment with Supabase
+# استقرار ویزیتیک روی Render + اتصال دامنهٔ شخصی
 
-This guide walks you through deploying Vizitik on [Render](https://render.com) with [Supabase](https://supabase.com) as the database.
+این راهنما مسیر کامل را می‌پوشاند: از اولین دیپلوی تا وصل شدن
+`app.دامنه‌ی‌شما` / `admin.دامنه‌ی‌شما` / دامنهٔ ریشه با SSL.
 
-## Prerequisites
+---
 
-1. A [Render](https://render.com) account (free tier works for testing)
-2. A [Supabase](https://supabase.com) account (free tier includes 500MB database)
-3. Your Vizitik code pushed to GitHub
+## ۰) معماری — چه چیزی روی Render بالا می‌آید
 
-## Step 1: Set Up Supabase Database
-
-1. Go to [Supabase](https://supabase.com) and create a new project
-2. Choose a region close to your users (e.g., `ap-south-1` for Iran/India)
-3. Wait for the project to be ready (1-2 minutes)
-4. Go to **Settings** → **Database** and copy the **Connection string** (URI format)
-5. It looks like: `postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres`
-
-### Enable Prisma Extensions (Recommended)
-
-Supabase works best with Prisma using the `pgbouncer` connection string (port 6543) for serverless deployments.
-
-## Step 2: Configure Environment Variables on Render
-
-Create a **Blueprint** or **Web Service** on Render and set these environment variables:
-
-```bash
-# Database (Supabase)
-DATABASE_URL=postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
-
-# Backend
-NODE_ENV=production
-PORT=3000
-BIND_HOST=0.0.0.0
-JWT_SECRET=<generate with: openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48>
-JWT_EXPIRES_IN=30d
-
-# Branding
-APP_NAME_FA=ویزیتیک
-APP_NAME_EN=Vizitik
-
-# Bale Bot (optional)
-BALE_BOT_TOKEN=
-BALE_BOT_USERNAME=
-BALE_ADMIN_CHAT_ID=
-
-# Frontend
-VITE_API_URL=/api
+```
+https://app.دامنه‌ی‌شما           https://admin.دامنه‌ی‌شما     https://دامنه‌ی‌شما
+        │                                  │                        │
+        ▼                                  ▼                        ▼
+┌─────────────────────────────┐   ┌──────────────────┐   ┌──────────────────┐
+│  vizitik-app (Web Service)  │   │ vizitik-admin    │   │ vizitik-landing  │
+│  ┌───────────────────────┐  │   │ (Web Service)    │   │ (Static Site)    │
+│  │ NestJS API  →  /api/* │  │   │ پنل SQL / کاتالوگ│   │ صفحهٔ معرفی     │
+│  │ PWA (بیلد Vite) → /   │  │   │                  │   │                  │
+│  └───────────────────────┘  │   └────────┬─────────┘   └──────────────────┘
+└──────────────┬──────────────┘            │
+               ▼                           ▼
+        MySQL (خارجی روی VPS یا خود Render)
 ```
 
-### Generate JWT_SECRET
+نکته‌های مهم:
 
-Run this command to generate a secure JWT secret:
-```bash
-openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 48
-```
+- **PWA و API هم‌ریشه‌اند.** بک‌اند وقتی بیلد PWA (`frontend-app/dist`)
+  را ببیند، خودش آن را سرو می‌کند — دقیقاً همان کاری که Nginx روی سرور
+  VPS انجام می‌دهد (`docs/DEPLOY-UBUNTU.md`، بخش ۵). بنابراین PWA با مسیر
+  نسبی `/api/...` صحبت می‌کند، کش آفلاینِ workbox درست کار می‌کند و
+  دامنهٔ شخصی‌ات فقط **یک** سرویس می‌خواهد.
+- **پنل ادمین** سرویس جدا است (روی سرور VPS همان‌طور پشت Nginx است، اینجا
+  خود Render پروکسی می‌کند).
+- **لندینگ** Static Site است (رایگان).
+- **فرانتِ PHP (`frontend/`) روی Render نمی‌آید.** Render ران‌تایم PHP
+  ندارد و PWA (frontend-app) پورت کاملِ سمتِ کلاینت همان صفحات PHP است —
+  نسخهٔ PHP را روی سرور VPS خودت نگه دار؛ برای کار روزمره نیازی به آن نیست.
 
-## Step 3: Update Prisma Schema for PostgreSQL
+---
 
-The default schema uses MySQL. For Supabase (PostgreSQL), make these changes in `backend/prisma/schema.prisma`:
+## ۱) پیش‌نیازها
 
-```prisma
-generator client {
-  provider = "prisma-client-js"
-}
+| مورد | توضیح |
+|---|---|
+| حساب Render | [render.com](https://render.com) — برای پلن‌های پولی کارت اعتباری لازم است |
+| ریپوی GitHub | کد با آخرین تغییرات push شده باشد |
+| یک MySQL | یا روی VPS خودت (مربوط به ۴-۱) یا روی خود Render (مربوط به ۴-۲) |
+| یک دامنه | هر TLD (`.ir` / `.com` / ...) — فقط باید DNS آن را کنترل کنی |
 
-datasource db {
-  provider = "postgresql"  // Change from mysql
-  url      = env("DATABASE_URL")
-}
+> Render **دیتابیس MySQL مدیریت‌شده ندارد** (پستگرس و Mongo دارد).
+> بک‌اند ویزیتیک روی MySQL/ماریا‌دی‌بی است، پس دیتابیس باید یا روی VPS
+> خودت باشد یا به‌صورت Docker روی Render (بخش ۴). اسکیما را **دست نزن**.
 
-// ... rest of schema remains the same
-```
+---
 
-## Step 4: Deploy to Render
+## ۲) دیپلوی با Blueprint (توصیه‌شده)
 
-### Option A: Using render.yaml (Recommended)
+فایل `render.yaml` در ریشهٔ ریپو سه سرویس را تعریف می‌کند:
 
-1. Create a `render.yaml` file in your repo root:
+| سرویس | نوع | پلن پیش‌فرض |
+|---|---|---|
+| `vizitik-app` | Web Service (Node) — API + PWA | `starter` (برای تست: `free`) |
+| `vizitik-admin` | Web Service (Node) — پنل ادمین | `starter` (برای تست: `free`) |
+| `vizitik-landing` | Static Site | `free` (همیشه رایگان) |
 
-```yaml
-services:
-  - type: web
-    name: vizitik-backend
-    runtime: node
-    plan: free
-    buildCommand: cd backend && npm install && npx prisma generate && npm run build
-    startCommand: cd backend && node dist/main.js
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        sync: false  # Set manually in Render dashboard
-      - key: JWT_SECRET
-        generateValue: true
-      - key: JWT_EXPIRES_IN
-        value: 30d
-      - key: PORT
-        value: 3000
-      - key: BIND_HOST
-        value: 0.0.0.0
-      - key: APP_NAME_FA
-        value: ویزیتیک
-      - key: APP_NAME_EN
-        value: Vizitik
-```
+مراحل:
 
-2. Go to Render Dashboard → **New** → **Blueprint**
-3. Connect your GitHub repo
-4. Render will detect `render.yaml` and set up the service
-5. Add the `DATABASE_URL` manually in the environment variables
-
-### Option B: Manual Setup
-
-1. Go to Render Dashboard → **New** → **Web Service**
-2. Connect your GitHub repo
-3. Configure:
-   - **Name**: `vizitik-backend`
-   - **Runtime**: Node
-   - **Plan**: Free (or Starter for production)
-   - **Build Command**:
-     ```bash
-     cd backend && npm install && npx prisma generate && npm run build
-     ```
-   - **Start Command**:
-     ```bash
-     cd backend && node dist/main.js
-     ```
-4. Add all environment variables from Step 2
-5. Click **Create Web Service**
-
-## Step 5: Run Database Migrations
-
-After the first deploy, you need to push the schema to Supabase:
-
-### Option 1: Render Shell
-
-1. Go to your Render service → **Shell**
-2. Run:
+1. تغییرات را push کن:
+   ```bash
+   git add -A && git commit -m "render deploy" && git push
+   ```
+2. در [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint**
+3. ریپوی GitHub خودت را وصل کن و **Create Blueprint** بزن.
+   سه سرویس ساخته می‌شود؛ `DATABASE_URL` هنوز خالی است (عمداً در فایل نیست).
+4. روی هر دو سرویسِ `vizitik-app` و `vizitik-admin` برو:
+   **Environment** تب → `DATABASE_URL` را با مقدار بخش ۴ وارد کن.
+   (سایر متغیرها — `JWT_SECRET`، `ADMIN_TOKEN` — خودکار ساخته می‌شوند.)
+5. بگذار build تمام شود و صفحه را باز کن:
+   ```bash
+   curl -I https://vizitik-app.onrender.com/            # باید 200 و html بدهد
+   curl https://vizitik-app.onrender.com/api/bale/status  # باید JSON بدهد
+   ```
+6. **سینک جداول** (یک‌بار، بعد از اولین دیپلوی موفق) — روی سرویس
+   `vizitik-app` تب **Shell** را باز کن:
    ```bash
    cd backend
    npx prisma db push
    ```
+   اگر MySQL خالی است، جداول ساخته می‌شوند. اگر دیتای قبلی (دُمپ
+   `documents/hesabchin.sql`) را هم می‌خواهی، بعد از `db push` آن را وارد کن
+   (بخش ۴-۱).
+7. وارد پنل ادمین شو (`https://vizitik-admin.onrender.com`) با
+   `ADMIN_TOKEN` (از تب Environment همان سرویس) و یک حساب تست بساز
+   (مثل بخش ۱۰ راهنمای VPS یا با یک کوئری INSERT ساده).
 
-### Option 2: Local Command
+---
 
-Run this from your local machine (make sure `DATABASE_URL` points to Supabase):
-```bash
-cd backend
-npx prisma db push
-```
+## ۳) تنظیم دستی (اگر Blueprint نمی‌خواهی)
 
-## Step 6: Deploy Frontend (Optional)
+اگر ترجیح می‌دهی سرویس‌ها را دستی بسازی، این مقادیر **دقیقاً** همان چیزی
+اند که `render.yaml` می‌گذارد:
 
-If you want to serve the frontend from Render too:
+### ۳-۱ سرویس اصلی — `vizitik-app`
+- **Runtime:** Node · **Region:** هرکدام (نزدیک‌ترین به کاربران)
+- **Build Command:**
+  ```bash
+  cd frontend-app && npm install --no-audit --no-fund && npm run build &&
+  cd ../backend && npm install --no-audit --no-fund && npx prisma generate && npm run build
+  ```
+- **Start Command:**
+  ```bash
+  cd backend && node dist/main.js
+  ```
+- **Health Check Path:** `/`
+- **Environment:** `NODE_ENV=production`، `JWT_EXPIRES_IN=30d`،
+  `JWT_SECRET` (تصادفی ۴۸ کاراکتر)، `DATABASE_URL` (مربوط به ۴)، و در
+  صورت نیاز `BALE_BOT_USERNAME` / `BALE_BOT_TOKEN` / `BALE_ADMIN_CHAT_ID`.
 
-1. Create another **Web Service** or use **Static Site**
-2. Build command:
-   ```bash
-   cd frontend-app && npm install && npm run build
+### ۳-۲ سرویس پنل ادمین — `vizitik-admin`
+- **Runtime:** Node · **Root Directory:** `admin`
+- **Build Command** (کلاینت Prisma را از همان اسکیمای بک‌اند می‌سازد):
+  ```bash
+  cd .. &&
+  (cd backend && npm install --no-audit --no-fund && npx prisma generate) &&
+  cd admin && npm install --no-audit --no-fund &&
+  rm -rf node_modules/@prisma/client node_modules/.prisma &&
+  cp -r ../backend/node_modules/@prisma/client node_modules/@prisma/client &&
+  cp -r ../backend/node_modules/.prisma node_modules/.prisma
+  ```
+- **Start Command:** `node server.js`
+- **Health Check Path:** `/api/health`
+- **Environment:** `HOST=0.0.0.0`، `ADMIN_TOKEN` (تصادفی بلند)، `DATABASE_URL`.
+
+> ⚠️ کپیِ `node_modules/.prisma` را جا ننداز — بدون آن پنل با خطای
+> `@prisma/client did not initialize yet` بالا نمی‌آید.
+
+### ۳-۳ لندینگ — `vizitik-landing`
+- **Static Site** · **Root Directory:** `landing` · بدون Build Command.
+- قبل از دیپلوی، `appUrl` در `landing/js/config.js` را روی دامنهٔ اپ
+  خودت (`https://app.دامنه‌ی‌شما`) بگذار تا دکمه‌ها درست لینک بزنند.
+
+---
+
+## ۴) دیتابیس MySQL
+
+### ۴-۱ MySQL روی VPS خودت (توصیه‌شده اگر قبلاً داری)
+
+بک‌اند از Render باید بتواند به MySQL وصل شود، یعنی:
+
+1. کاربر/دیتابیس مجزا بساز:
+   ```sql
+   CREATE DATABASE vizitik_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   CREATE USER 'vizitik'@'%' IDENTIFIED BY 'یک_رمز_بلند_تصادفی';
+   GRANT ALL PRIVILEGES ON vizitik_db.* TO 'vizitik'@'%';
    ```
-3. Start command: `npx serve frontend-app/dist` (for static) or configure as needed
-4. Set `VITE_API_URL` to your backend URL (e.g., `https://vizitik-backend.onrender.com/api`)
-
-**Note**: The free tier spins down after inactivity. First request may take 30-60 seconds.
-
-## Step 7: Custom Domain (Optional)
-
-1. In Render dashboard, go to **Settings** → **Custom Domains**
-2. Add your domain (e.g., `app.vizitik.ir`)
-3. Update your DNS:
-   - Add a CNAME record pointing to `vizitik-backend.onrender.com`
-4. SSL is automatic with Render
-
-## Step 8: Initial Data Setup
-
-After deployment, you'll need to create an admin user. Use the Render Shell:
-
-```bash
-cd backend
-node -e "
-const { PrismaClient } = require('@prisma/client');
-const bcrypt = require('bcrypt');
-const prisma = new PrismaClient();
-
-async function main() {
-  const hash = await bcrypt.hash('admin123', 10);
-  const user = await prisma.user.create({
-    data: {
-      firstName: 'Admin',
-      lastName: 'User',
-      phone: '09120000000',
-      passwordHash: hash,
-      role: 'ADMIN',
-    },
-  });
-  console.log('Admin user created:', user.id);
-}
-
-main()
-  .catch(console.error)
-  .finally(() => prisma.\$disconnect());
-"
-```
-
-## Troubleshooting
-
-### Build Fails with Memory Error
-
-Render free tier has 512MB RAM. If build fails:
-
-1. Upgrade to Starter plan (512MB → 2GB)
-2. Or optimize build:
-   ```bash
-   NODE_OPTIONS="--max-old-space-size=384" npm run build
+2. `my.cnf` → `bind-address = 0.0.0.0` (یا `*`) و ری‌استارت ماریا/مای‌اس‌کیو‌اِل.
+3. فایروال: پورت ۳۳۶ فقط برای Render باز باشد. Render لیست IP ثابت
+   ندارد، پس عملاً باید ۳۳۰۶ به همه باز باشد — **رمز را قوی بگیر** و ترجیحاً
+   روی سرور خودت UFW را طوری تنظیم کن که ۳۳۰۶ فقط از IPهای موردنظر بیاید
+   (اگر Render در شبکهٔ خصوصی‌ات نبود، گزینهٔ ۴-۲ تمیزتر است).
+4. `DATABASE_URL` (در هر دو سرویس):
    ```
+   mysql://vizitik:رمز@آی‌پی_یا_دامنه_VPS:3306/vizitik_db
+   ```
+   (کاراکترهای خاص رمز — `@ : / # %` — را URL-encode کن.)
 
-### Database Connection Errors
+**دیتای قبلی:** اول `npx prisma db push` (ساخت جداول) و بعد دُمپ را
+وارد کن: `mysql -h ... vizitik_db < documents/hesabchin.sql`.
+اگر دیتابیس جدید و خالی است فقط `db push` کافی است.
 
-- Ensure `DATABASE_URL` uses the pooler port (6543), not direct (5432)
-- Check Supabase dashboard for connection limits
-- Free tier: 60 concurrent connections
+### ۴-۲ MySQL روی خود Render (اگر MySQL نداری)
 
-### Prisma Push Fails
+ساده‌ترین حالت: از [تمپلیت رسمی MySQL](https://render.com/templates/mysql)
+یک سرویس بساز (یک‌کلیک؛ دیسک دائمی و شبکهٔ خصوصی را خودکار می‌گذارد).
+دستی هم می‌شود:
 
-If `prisma db push` fails on Render Shell, try:
-```bash
-cd backend
-npx prisma generate
-npx prisma db push --skip-generate
-```
+1. **New → Web Service → Existing Image** → `mysql:8.0`
+2. **Environment:**
+   ```
+   MYSQL_ROOT_PASSWORD=...   MYSQL_DATABASE=vizitik_db
+   MYSQL_USER=vizitik        MYSQL_PASSWORD=...
+   ```
+3. **Attach Disk:** حداقل ۱ گیگ، مسیر mount = `/var/lib/mysql`
+   (بدون دیسک، دیتا با هر دیپلوی پاک می‌شود!)
+4. **Networking:** Public Port را **خاموش** کن و Private Networking را روشن.
+5. حالا در همان سرویس، **Internal URL/Hostname** را کپی کن و بساز:
+   ```
+   mysql://vizitik:رمز@<hostname_درونی>:3306/vizitik_db
+   ```
+   این آدرس فقط از سرویس‌های هم‌حساب Render قابل دسترسی است — امن‌تر از ۴-۱.
+6. `prisma db push` را از Shellِ `vizitik-app` بزن (مربوط به ۲-۶).
 
-### Cold Start (Free Tier)
+> هر دو سرویسِ app و admin باید به همان `DATABASE_URL` بچسبند.
 
-Free tier spins down after 15 minutes of inactivity. First request takes 30-60 seconds. Solutions:
-1. Upgrade to Starter plan ($7/month)
-2. Use a cron pinger (e.g., UptimeRobot) to keep it awake
+---
 
-## Production Recommendations
+## ۵) ربات بله (اختیاری)
 
-1. **Upgrade to Starter Plan** ($7/month): No spin-down, better performance
-2. **Use Connection Pooling**: Supabase pooler (port 6543) handles this automatically
-3. **Enable Backups**: Supabase free tier includes daily backups
-4. **Set Up Monitoring**: Use Render's built-in metrics or external tools
-5. **Custom Domain**: Essential for PWA installation and professional appearance
+در Environment سرویس `vizitik-app` این سه تا را بگذار (خالی = ربات خاموش):
 
-## Environment Variables Reference
+| متغیر | مقدار |
+|---|---|
+| `BALE_BOT_USERNAME` | نام‌کاربری ربات بدون `@` (مثلاً `Vizitik_bot`) |
+| `BALE_BOT_TOKEN` | توکن از BotFather بله |
+| `BALE_ADMIN_CHAT_ID` | آی‌دی چت ادمین برای هشدارها |
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | Yes | Supabase PostgreSQL connection string |
-| `JWT_SECRET` | Yes | Secret for JWT tokens (generate with openssl) |
-| `NODE_ENV` | Yes | Set to `production` |
-| `PORT` | Yes | Port for the backend (3000) |
-| `BIND_HOST` | Yes | Set to `0.0.0.0` for Render |
-| `APP_NAME_EN` | No | App name in English (default: Vizitik) |
-| `APP_NAME_FA` | No | App name in Persian (default: ویزیتیک) |
-| `BALE_BOT_TOKEN` | No | Bale bot token for notifications |
-| `BALE_BOT_USERNAME` | No | Bale bot username |
-| `VITE_API_URL` | For frontend | API URL for frontend build |
+⚠️ در پلن **free** سرویس بعد از ۱۵ دقیقه بی‌ترافیک خواب می‌رود؛ در خواب،
+پیام‌های بله ارسال نمی‌شوند. اگر ربات برایت جدی است، سرویس app را روی
+`starter` بگذار (بخش ۸).
 
-## Cost Estimate
+---
 
-- **Supabase Free Tier**: 500MB database, 50K monthly active users
-- **Render Free Tier**: 750 hours/month, spins down after inactivity
-- **Render Starter**: $7/month, no spin-down, better performance
+## ۶) اتصال دامنهٔ شخصی (بخش اصلی)
 
-**Total**: $0-7/month depending on tier choices
+### ۶-۱ تقسیم دامنه‌ها
 
-## Next Steps
+| دامنه | سرویس Render | چه چیزی سرو می‌کند |
+|---|---|---|
+| `app.دامنه‌ی‌شما` | `vizitik-app` | PWA + API (نصب روی گوشی از همین‌جا) |
+| `admin.دامنه‌ی‌شما` | `vizitik-admin` | پنل ادمین |
+| `دامنه‌ی‌شما` (ریشه) | `vizitik-landing` | لندینگ |
 
-1. Set up automatic deployments from GitHub
-2. Configure backups
-3. Set up monitoring and alerts
-4. Add custom domain and SSL
-5. Deploy frontend separately or use a CDN
+اگر لندینگ نمی‌خواهی، می‌توانی ریشه را مستقیم به `vizitik-app` بچسبانی
+(در آن صورت PWA روی ریشه بالا می‌آید).
+
+### ۶-۲ مراحل (برای هر دامنه، سه قدم)
+
+1. **افزودن در Render:** سرویس را انتخاب کن → **Settings** →
+   **Custom Domains** → `+ Add Custom Domain` → دامنه را بنویس → Save.
+   (پلن رایگان/Hobby دو دامنه شامل می‌شود؛ اضافه به ازای هردام ۰/۲۵ دلار.)
+2. **DNS:** در پنل دامنهٔ خودت رکوردهای بخش ۶-۳ را بزن.
+3. **Verify:** برگرد به Render → دکمهٔ **Verify** کنار دامنه. بعد از موفق
+   شدن، Render خودکار گواهی TLS می‌سازد و HTTP را به HTTPS می‌اندازد.
+
+### ۶-۳ رکوردهای DNS
+
+**ساب‌دامنه‌ها** (`app.` / `admin.`) — همیشه CNAME:
+
+| Type | Name | Value |
+|---|---|---|
+| `CNAME` | `app` | `vizitik-app.onrender.com` |
+| `CNAME` | `admin` | `vizitik-admin.onrender.com` |
+| `CNAME` | `www` (اختیاری) | `vizitik-landing.onrender.com` |
+
+> مقدار CNAME دقیقاً همان آدرسِ `*.onrender.com` آن سرویس است (از صفحهٔ
+> سرویس کپی کن).
+
+**دامنهٔ ریشه** (`دامنه‌ی‌شما`) — CNAME در ریشه وجود ندارد؛ یکی از این دو:
+
+- اگر DNS-providerت **ALIAS/ANAME** را می‌شناسد (Cloudflare، DNSimple،
+  Name.com و...): یک رکورد `ALIAS` با همان مقدار `vizitik-landing.onrender.com`.
+- وگرنه **رکورد A** با آدرس لودبالنسر Render:
+  `216.24.57.1` (ریشه → `vizitik-landing.onrender.com`).
+
+نکات:
+
+- **Cloudflare:** حتماً از CNAME استفاده کن (نه A) و پراکسی (Orange Cloud)
+  را هم می‌توانی روشن بگذاری.
+- اگر رکورد **AAAA** (IPv6) برای همان زیردامنه داری، **حذفش کن** — Render
+  IPv4 است.
+- **دامنه‌های `.ir`:** از پنل IRNIC یا همان DNS-hosting که دامنه را با آن
+  می‌زنی، رکوردهای A و CNAME را می‌زنی (فرمت بالا همان است). اگر DNS را
+  جایی مثل اربان‌دی‌ان‌اس می‌زنی، مسیر DNS همین‌جا است.
+- انتشار DNS معمولاً چند دقیقه تا حداکثر ۲۴ ساعت طول می‌کشد؛ با
+  `dig app.دامنه‌ی‌شما` یا [dnschecker.org](https://dnschecker.org) چک کن.
+  اگر چند مقدار مختلف دیدی، فورواردینگ/پارکینگ پیش‌فرض provider را خاموش کن.
+
+### ۶-۴ بعد از Verify
+
+- `https://app.دامنه‌ی‌شما/` باید PWA را نشان دهد؛ در گوشی، «Add to Home
+  Screen» بزن — نصب PWA فقط با HTTPS معتبر می‌شود (Render خودکار دارد).
+- `https://app.دامنه‌ی‌شما/api/bale/status` باید JSON بدهد (API هم‌ریشه است).
+- **لندینگ:** قبل از دیپلویِ landing، `appUrl` در `landing/js/config.js`
+  را روی `https://app.دامنه‌ی‌شما` بگذار (و `termsUrl`/`supportUrl` در صورت
+  نیاز) تا دکمه‌های «شروع کار» درست لینک بزنند.
+- (اختیاری) زیردامنه‌های `onrender.com` را خاموش کن تا دامنه فقط از
+  دامنهٔ تو در دسترس باشد: Settings → Custom Domains → **Render Subdomain
+  → Disabled** (در render.yaml: `renderSubdomainPolicy: disabled`).
+
+---
+
+## ۷) آپدیت بعد از تغییرات
+
+روی Render خودکار است: هر `git push` به `main` یک build و deploy تازه
+می‌سازد. اگر اسکیما (Prisma) را هم عوض کرده باشی، بعد از دیپلوی دوباره
+`npx prisma db push` را از Shell بزن.
+
+---
+
+## ۸) پلن free یا starter؟
+
+| | free | starter (۷ دلار/ماه) |
+|---|---|---|
+| خواب بعد از ۱۵ دقیقه بی‌ترافیک | ✅ (اولین درخواست ۳۰-۶۰ ثانیه) | ❌ همیشه روشن |
+| RAM / CPU | 512MB / 0.1 | 512MB / 0.5 |
+| ساعات ماهانه | ۷۵ ساعت مشترک بین همهٔ سرویس‌های free | نامحدود |
+| دامنهٔ شخصی + SSL | ✅ | ✅ |
+
+**توصیه:** برای تست با free شروع کن؛ برای استفادهٔ واقعی — به‌ویژه با
+ربات بله — سرویس `vizitik-app` (و بهتر است admin هم) را `starter` بگذار.
+Static Site (لندینگ) در هر دو حالت رایگان است.
+
+---
+
+## ۹) عیب‌یابی
+
+| نشانه | علت / راه‌حل |
+|---|---|
+| build روی Render شکست با خطای حافظه | پلن free فقط 512MB دارد؛ اگر build سنگین شد، `starter` بگیر یا build را به دو سرویس جدا بسپار |
+| `P1001: Can't reach database server` | `DATABASE_URL` اشتباه/نارسیه، پورت ۳۳۶ بسته، یا `bind-address` MySQL روی `127.0.0.1` مانده |
+| `prisma db push` در Shell خطا می‌دهد | اول `npx prisma generate` و بعد `npx prisma db push --skip-generate` |
+| پنل ادمین: `@prisma/client did not initialize yet` | build command پنل ناقص است — بخش ۳-۲ (کپی `node_modules/.prisma` جا نیفتد) |
+| صفحه می‌آید ولی `/api` خطای CORS/404 | مطمئن شو PWA از همان سرویسِ API لود شده (هم‌ریشه)؛ اگر PWA را Static Site جدا کردی، `VITE_API_URL` را هنگام build روی آدرس مطلق API بگذار و دوباره build کن |
+| 502 بعد از Verify دامنه | چند دقیقه صبر کن (روترینگ Render هنوز به‌روز می‌شود) |
+| دامنه Verify نمی‌شود | DNS هنوز منتشر نشده / AAAA مانده / FWD پیش‌فرض provider فعال است / مقدار CNAME دقیقاً `*.onrender.com` نباشد |
+| PWA آپدیت نمی‌شود | کش مرورگر: devtools → Application → Service Workers → Unregister، یا کش را پاک کن (سرور `sw.js` را no-cache می‌فرستد؛ مشکل معمولاً سمت مرورگر است) |
+| ربات بله پیام نمی‌فرستد | سرویس در پلن free خواب است (بخش ۸) یا متغیرهای BALE_* خالی‌اند |
+| `JWT_SECRET is not set` | در Environment سرویس، `JWT_SECRET` با مقدار بلند تصادفی بگذار |
+
+---
+
+## ۱۰) خلاصهٔ متغیرهای محیطی
+
+| متغیر | کجا | لازم؟ | توضیح |
+|---|---|---|---|
+| `DATABASE_URL` | app و admin | ✅ | `mysql://user:pass@host:3306/db` |
+| `JWT_SECRET` | app | ✅ | Render خودکار می‌سازد (`generateValue`) |
+| `JWT_EXPIRES_IN` | app | نه | پیش‌فرض `30d` |
+| `NODE_ENV` | app و admin | نه | `production` |
+| `HOST` | admin | نه | روی Render `0.0.0.0` (در blueprint هست) |
+| `ADMIN_TOKEN` | admin | ✅ | Render خودکار می‌سازد |
+| `BALE_BOT_USERNAME` / `BALE_BOT_TOKEN` / `BALE_ADMIN_CHAT_ID` | app | اختیاری | ربات بله |
+| `PORT` / `BIND_HOST` | — | — | خود Render `PORT` را می‌گذارد؛ بک‌اند خودش `0.0.0.0` گوش می‌دهد |
+
+> نام نرم‌افزار (ویزیتیک / Vizitik) **هاردکد** است و متغیر محیطی ندارد —
+> `backend/src/app.config.ts` و `frontend-app/src/lib/brand.js`.
+
+---
+
+## ۱۱) هزینه
+
+| قلم | هزینه |
+|---|---|
+| `vizitik-app` starter | ۷ دلار/ماه (free: ۰ — با خواب ۱۵ دقیقه‌ای) |
+| `vizitik-admin` starter | ۷ دلار/ماه (free: ۰) |
+| `vizitik-landing` static | ۰ |
+| MySQL روی Render + دیسک ۱۰GB | حدود ۷-۲۰ دلار/ماه (اگر MySQL روی VPS داری: ۰) |
+| دامنه‌های شخصی | ۲ تایشما رایگان، بعدی‌ها ۰/۲۵ دلار/هردام |
+
+**حداقل عملی:** app(starter) + MySQL(روی VPS) ≈ ۷ دلار/ماه
+**حداقل رایگان:** همه روی free (فقط برای تست؛ ربات بله در خواب قطع می‌شود)

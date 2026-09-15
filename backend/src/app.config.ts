@@ -1,17 +1,20 @@
 /**
- * تنظیمات مرکزی اپلیکیشن (برند/هویت) — خوانده‌شده از .env با پیش‌فرضِ فعلی.
+ * تنظیمات مرکزی اپلیکیشن (برند/هویت) — نام نرم‌افزار ثابت و هاردکد است.
  *
- * اگر بعداً خواستی نام نرم‌افزار را عوض کنی، فقط همین مقادیر را در .env تغییر بده:
- *   APP_NAME_FA="نام جدید فارسی"
- *   APP_NAME_EN="NewName"
- *   BALE_BOT_USERNAME="نام‌کاربری ربات بله"
+ * نام نرم‌افزار دیگر از .env خوانده نمی‌شود (متغیرهای APP_NAME_FA /
+ * APP_NAME_EN حذف شده‌اند). اگر روزی نیاز به تغییر نام بود، همین ثابت‌ها و
+ * معادل‌هایشان را در کل ریپو جست‌و‌جو و عوض کن:
+ *   - PWA:    frontend-app/src/lib/brand.js و frontend-app/vite.config.js
+ *   - API:    همین فایل
+ *   - لینک‌ها و titleها: admin/، frontend/ (PHP)، landing/
+ * (گشتن: grep -rn "ویزیتیک" و grep -rn "Vizitik")
  */
 
 export const APP = {
   /** نام نمایشی فارسی نرم‌افزار (مثلاً در پیام‌های بله و رابط) */
-  nameFa: process.env.APP_NAME_FA || 'ویزیتیک',
+  nameFa: 'ویزیتیک',
   /** نام انگلیسی نرم‌افزار */
-  nameEn: process.env.APP_NAME_EN || 'Vizitik',
+  nameEn: 'Vizitik',
 };
 
 export const BOT = {

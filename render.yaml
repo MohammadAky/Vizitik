@@ -1,0 +1,86 @@
+# ============================================================================
+#  Vizitik - Render Blueprint
+# ============================================================================
+#  Render Dashboard → New → Blueprint → connect this repo.
+#  Three services are created:
+#    vizitik-app      Node Web Service: NestJS API + the built PWA (same origin)
+#    vizitik-admin    Node Web Service: admin SQL/catalog panel
+#    vizitik-landing  Static Site: landing page (free)
+#
+#  DATABASE_URL is NOT in this file on purpose - set it in the Render
+#  dashboard (each service: Environment tab). It must point to a MySQL:
+#    mysql://user:password@HOST:3306/vizitik_db
+#
+#  Full step-by-step guide (Persian): scripts/deploy-render.md
+# ============================================================================
+services:
+  # --------------------------------------------------------------------------
+  # 1) main service: API + PWA from one origin
+  #    /            → PWA (SPA, offline-first)
+  #    /api/*       → NestJS API
+  # --------------------------------------------------------------------------
+  - type: web
+    name: vizitik-app
+    runtime: node
+    plan: starter            # for tests you can use: free (spins down after 15 min)
+    buildCommand: |
+      cd frontend-app && npm install --no-audit --no-fund && npm run build &&
+      cd ../backend && npm install --no-audit --no-fund && npx prisma generate && npm run build
+    startCommand: cd backend && node dist/main.js
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 30d
+      # MySQL connection - set manually in the dashboard (required):
+      - key: DATABASE_URL
+        sync: false
+      # Bale bot (optional - the bot stays silent while these are empty):
+      - key: BALE_BOT_USERNAME
+        sync: false
+      - key: BALE_BOT_TOKEN
+        sync: false
+      - key: BALE_ADMIN_CHAT_ID
+        sync: false
+
+  # --------------------------------------------------------------------------
+  # 2) admin panel (SQL queries, product catalog, users, customers)
+  #    build: generates the Prisma client from the backend schema and copies
+  #    it into this service's node_modules (same schema, same versions)
+  # --------------------------------------------------------------------------
+  - type: web
+    name: vizitik-admin
+    runtime: node
+    rootDir: admin
+    plan: starter            # for tests: free
+    buildCommand: |
+      cd .. &&
+      (cd backend && npm install --no-audit --no-fund && npx prisma generate) &&
+      cd admin && npm install --no-audit --no-fund &&
+      rm -rf node_modules/@prisma/client node_modules/.prisma &&
+      cp -r ../backend/node_modules/@prisma/client node_modules/@prisma/client &&
+      cp -r ../backend/node_modules/.prisma node_modules/.prisma
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      # the panel refuses to start without it - Render generates a strong one:
+      - key: ADMIN_TOKEN
+        generateValue: true
+      # same MySQL as the app service:
+      - key: DATABASE_URL
+        sync: false
+
+  # --------------------------------------------------------------------------
+  # 3) landing page (static - free)
+  #    before deploying, edit appUrl in landing/js/config.js to your app domain
+  # --------------------------------------------------------------------------
+  - type: static
+    name: vizitik-landing
+    rootDir: landing
