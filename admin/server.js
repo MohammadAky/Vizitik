@@ -20,12 +20,21 @@ const { PrismaClient } = require('@prisma/client');
 
 const PORT = parseInt(process.env.ADMIN_PORT || '3001', 10);
 const TOKEN = process.env.ADMIN_TOKEN || '';
-const STATIC_DIR = process.env.ADMIN_STATIC_DIR || path.join(__dirname, 'static');
-const FONTS_DIR = process.env.ADMIN_FONTS_DIR || path.join(__dirname, '..', '..', 'landing', 'fonts');
+const STATIC_DIR = process.env.ADMIN_STATIC_DIR || __dirname;
+const FONTS_DIR = process.env.ADMIN_FONTS_DIR || path.join(__dirname, '..', 'landing', 'fonts');
 const MAX_LIMIT = 500;
-const MAX_ROWS_WRITE = 1000; // Safety limit for write operations
+// Under nginx proxy_read_timeout (60s) so we answer with a clean JSON error
+// before the gateway times the request out (nginx 504 / Cloudflare 524).
+const QUERY_TIMEOUT_MS = Math.max(1000, parseInt(process.env.ADMIN_QUERY_TIMEOUT_MS || '55000', 10));
+const MAX_BODY_QUERY = 2 * 1024 * 1024; // SQL payloads (bulk INSERT/UPDATE)
+const MAX_BODY_JSON = 64 * 1024;        // structured JSON endpoints
 
 const prisma = new PrismaClient();
+
+// A stray async error must never kill the process - when node exits mid-request
+// nginx reports "502 Bad Gateway" for the request that was in flight.
+process.on('uncaughtException', (err) => console.error('[admin] uncaughtException:', err));
+process.on('unhandledRejection', (err) => console.error('[admin] unhandledRejection:', err));
 
 // In-memory storage for query history and bookmarks
 const queryHistory = [];
@@ -45,6 +54,12 @@ const MIME = {
 // ============================================================ Utility Functions
 
 function sendJson(res, code, obj) {
+  if (res.headersSent) {
+    // Never attempt a second writeHead - that throws ERR_HTTP_HEADERS_SENT
+    // inside the error handler and would crash the service.
+    try { res.end(); } catch { /* socket already gone */ }
+    return;
+  }
   res.writeHead(code, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
@@ -62,15 +77,19 @@ function authorized(req) {
 }
 
 function readBody(req, max) {
+  // Reads the whole body and reports it. An oversized body is *drained*, not
+  // destroyed: destroying the socket mid-request makes nginx answer
+  // "502 Bad Gateway" instead of delivering our 413 JSON to the client.
   return new Promise((resolve, reject) => {
     let size = 0;
+    let tooLarge = false;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > max) { reject(new Error('body too large')); req.destroy(); return; }
-      chunks.push(c);
+      if (size > max) tooLarge = true;
+      else chunks.push(c);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('end', () => resolve({ body: Buffer.concat(chunks).toString('utf8'), tooLarge }));
     req.on('error', reject);
   });
 }
@@ -105,6 +124,20 @@ function addToHistory(sql, success, rowCount, ms) {
   if (queryHistory.length > MAX_HISTORY) {
     queryHistory.pop();
   }
+}
+
+function timeoutError(what) {
+  const e = new Error(`اجرای ${what} بیش از ${Math.round(QUERY_TIMEOUT_MS / 1000)} ثانیه طول کشید و لغو شد (محدودیت سرور)` );
+  e.code = 'ADMIN_TIMEOUT';
+  return e;
+}
+
+function withTimeout(promise, what) {
+  let timer;
+  const gate = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(timeoutError(what)), QUERY_TIMEOUT_MS);
+  });
+  return Promise.race([promise, gate]).finally(() => clearTimeout(timer));
 }
 
 // ============================================================ SQL Guard
@@ -218,25 +251,17 @@ async function getTableSchema(tableName) {
 }
 
 async function getDatabaseStats() {
-  const tables = await prisma.$queryRawUnsafe('SHOW TABLES');
-  const key = tables.length ? Object.keys(tables[0])[0] : null;
-  const stats = { tables: 0, totalRows: 0, details: [] };
-
-  for (const r of tables) {
-    const name = r[key];
-    if (!/^[A-Za-z0-9_]+$/.test(name)) continue;
-    try {
-      const c = await prisma.$queryRawUnsafe(`SELECT COUNT(*) AS n FROM \`${name}\``);
-      const rowCount = Number(c[0].n);
-      stats.tables++;
-      stats.totalRows += rowCount;
-      stats.details.push({ name, rows: rowCount });
-    } catch {
-      stats.details.push({ name, rows: null, error: true });
-    }
-  }
-
-  return stats;
+  const rows = await prisma.$queryRawUnsafe(
+    'SELECT TABLE_NAME AS name, TABLE_ROWS AS rowCount FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME'
+  );
+  const details = rows
+    .filter((r) => /^[A-Za-z0-9_]+$/.test(r.name))
+    .map((r) => ({ name: r.name, rows: Number(r.rowCount) || 0 }));
+  return {
+    tables: details.length,
+    totalRows: details.reduce((sum, d) => sum + d.rows, 0),
+    details,
+  };
 }
 
 // ============================================================ Products CRUD
@@ -447,7 +472,7 @@ async function listOrders(filters = {}) {
       payments: true,
     },
     orderBy: { createdAt: 'desc' },
-    take: Number.isInteger(filters.limit) ? Math.max(1, Math.min(filters.limit, MAX_LIMIT)) : 100,
+    take: Math.min(Math.max(parseInt(filters.limit, 10) || 100, 1), MAX_LIMIT),
   });
 
   return rows.map((o) => ({
@@ -481,20 +506,15 @@ async function listOrders(filters = {}) {
 // ============================================================ Tables
 
 async function listTables() {
-  const rows = await prisma.$queryRawUnsafe('SHOW TABLES');
-  const key = rows.length ? Object.keys(rows[0])[0] : null;
-  const out = [];
-  for (const r of rows) {
-    const name = r[key];
-    if (!/^[A-Za-z0-9_]+$/.test(name)) continue;
-    try {
-      const c = await prisma.$queryRawUnsafe(`SELECT COUNT(*) AS n FROM \`${name}\``);
-      out.push({ name, rows: Number(c[0].n) });
-    } catch {
-      out.push({ name, rows: null });
-    }
-  }
-  return out;
+  // یک رفت‌وبرگشت به information_schema به‌جای COUNT(*) برای تک‌تک جدول‌ها —
+  // بارگذاری اولیه‌ی پنل روی دیتابیس بزرگ کند نمی‌شود.
+  // تعداد ردیف‌ها تخمین InnoDB است (همان که phpMyAdmin نشان می‌دهد).
+  const rows = await prisma.$queryRawUnsafe(
+    'SELECT TABLE_NAME AS name, TABLE_ROWS AS rowCount FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME'
+  );
+  return rows
+    .filter((r) => /^[A-Za-z0-9_]+$/.test(r.name))
+    .map((r) => ({ name: r.name, rows: Number(r.rowCount) || 0 }));
 }
 
 // ============================================================ Static Files
@@ -530,11 +550,15 @@ function serveStatic(res, urlPath) {
 const server = http.createServer(async (req, res) => {
   let urlPath, query;
   try {
+    // Parsed inside try: a malformed URL (bad %-escapes) must answer with a
+    // JSON error instead of throwing out of the handler and killing the
+    // service (which nginx would report as 502 for in-flight requests).
     urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
     query = new URL(req.url || '/', 'http://localhost').searchParams;
   } catch { return sendJson(res, 400, { error: 'Invalid URL' }); }
 
   try {
+
     // Health check (no auth)
     if (urlPath === '/api/health') return sendJson(res, 200, { ok: true });
 
@@ -567,7 +591,8 @@ const server = http.createServer(async (req, res) => {
 
     // Execute SQL query
     if (urlPath === '/api/query' && req.method === 'POST') {
-      const raw = await readBody(req, 32 * 1024);
+      const { body: raw, tooLarge } = await readBody(req, MAX_BODY_QUERY);
+      if (tooLarge) return sendJson(res, 413, { error: 'کوئری بیش از حد بزرگ است (حداکثر ۲ مگابایت)' });
       let payload;
       try { payload = JSON.parse(raw || '{}'); }
       catch { return sendJson(res, 400, { error: 'بدنه‌ی درخواست JSON نیست' }); }
@@ -580,7 +605,7 @@ const server = http.createServer(async (req, res) => {
       let result;
 
       if (guarded.type === 'SELECT' || guarded.type === 'SHOW' || guarded.type === 'DESCRIBE' || guarded.type === 'EXPLAIN') {
-        const rows = await prisma.$queryRawUnsafe(guarded.sql);
+        const rows = await withTimeout(prisma.$queryRawUnsafe(guarded.sql), 'کوئری');
         const clean = (rows || []).map((r) => plain(r));
         result = {
           columns: clean.length ? Object.keys(clean[0]) : [],
@@ -593,7 +618,7 @@ const server = http.createServer(async (req, res) => {
         };
       } else {
         // Write operation
-        const affected = await prisma.$executeRawUnsafe(guarded.sql);
+        const affected = await withTimeout(prisma.$executeRawUnsafe(guarded.sql), 'عملیات نوشتن');
         result = {
           affectedRows: affected,
           ms: Date.now() - t0,
@@ -626,7 +651,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (urlPath === '/api/query-bookmarks' && req.method === 'POST') {
-      const raw = await readBody(req, 32 * 1024);
+      const { body: raw, tooLarge } = await readBody(req, MAX_BODY_JSON);
+      if (tooLarge) return sendJson(res, 413, { error: 'بدنه‌ی درخواست بیش از حد بزرگ است' });
       const payload = JSON.parse(raw || '{}');
       if (!payload.sql || !payload.name) {
         return sendJson(res, 400, { error: 'نام و کوئری الزامی است' });
@@ -661,7 +687,9 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (!id && req.method === 'POST') {
-        const payload = JSON.parse((await readBody(req, 64 * 1024)) || '{}');
+        const { body: rawBody, tooLarge } = await readBody(req, MAX_BODY_JSON);
+        if (tooLarge) return sendJson(res, 413, { error: 'بدنه‌ی درخواست بیش از حد بزرگ است' });
+        const payload = JSON.parse(rawBody || '{}');
         const v = validateProductBody(payload, { partial: false });
         if (!v.ok) return sendJson(res, 400, { error: v.error });
         const product = await prisma.product.create({
@@ -674,7 +702,9 @@ const server = http.createServer(async (req, res) => {
       if (id && req.method === 'PUT') {
         const existing = await prisma.product.findUnique({ where: { id } });
         if (!existing) return sendJson(res, 404, { error: 'محصول یافت نشد' });
-        const payload = JSON.parse((await readBody(req, 64 * 1024)) || '{}');
+        const { body: rawBody, tooLarge } = await readBody(req, MAX_BODY_JSON);
+        if (tooLarge) return sendJson(res, 413, { error: 'بدنه‌ی درخواست بیش از حد بزرگ است' });
+        const payload = JSON.parse(rawBody || '{}');
         const v = validateProductBody(payload, { partial: true, currentUnits: existing.unitsPerCartonDefault });
         if (!v.ok) return sendJson(res, 400, { error: v.error });
         if (!Object.keys(v.data).length) return sendJson(res, 400, { error: 'چیزی برای تغییر ارسال نشده است' });
@@ -727,7 +757,9 @@ const server = http.createServer(async (req, res) => {
         ]);
         if (!user) return sendJson(res, 404, { error: 'ویزیتور یافت نشد' });
         if (!product) return sendJson(res, 404, { error: 'محصول یافت نشد' });
-        const payload = JSON.parse((await readBody(req, 32 * 1024)) || '{}');
+        const { body: rawBody, tooLarge } = await readBody(req, MAX_BODY_JSON);
+        if (tooLarge) return sendJson(res, 413, { error: 'بدنه‌ی درخواست بیش از حد بزرگ است' });
+        const payload = JSON.parse(rawBody || '{}');
         const v = validateUserProductBody(payload);
         if (!v.ok) return sendJson(res, 400, { error: v.error });
         if (!Object.keys(v.data).length) return sendJson(res, 400, { error: 'چیزی برای تغییر ارسال نشده است' });
@@ -771,7 +803,8 @@ const server = http.createServer(async (req, res) => {
     // ============================================================ Export
 
     if (urlPath === '/api/export' && req.method === 'POST') {
-      const raw = await readBody(req, 32 * 1024);
+      const { body: raw, tooLarge } = await readBody(req, MAX_BODY_QUERY);
+      if (tooLarge) return sendJson(res, 413, { error: 'کوئری بیش از حد بزرگ است (حداکثر ۲ مگابایت)' });
       const payload = JSON.parse(raw || '{}');
 
       if (!payload.sql) return sendJson(res, 400, { error: 'کوئری الزامی است' });
@@ -780,7 +813,7 @@ const server = http.createServer(async (req, res) => {
       if (!guarded.ok) return sendJson(res, 400, { error: guarded.error });
 
       const format = payload.format || 'csv';
-      const rows = await prisma.$queryRawUnsafe(guarded.sql);
+      const rows = await withTimeout(prisma.$queryRawUnsafe(guarded.sql), 'خروجی‌گیری');
       const clean = (rows || []).map((r) => plain(r));
 
       if (clean.length === 0) {
@@ -819,6 +852,7 @@ const server = http.createServer(async (req, res) => {
 
   } catch (err) {
     console.error('Server error:', err);
+    if (err && err.code === 'ADMIN_TIMEOUT') return sendJson(res, 504, { error: err.message });
     return sendJson(res, err.status || 500, { error: (err && err.message) || 'خطای ناشناخته' });
   }
 });
