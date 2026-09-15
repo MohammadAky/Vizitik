@@ -135,7 +135,17 @@ https://app.دامنه‌ی‌شما           https://admin.دامنه‌ی‌�
 > `@prisma/client did not initialize yet` بالا نمی‌آید.
 
 ### ۳-۳ لندینگ — `vizitik-landing`
-- **Static Site** · **Root Directory:** `landing` · بدون Build Command.
+- **Static Site** (در بلوپرینت: `type: web` + `runtime: static`)
+- **`staticPublishPath`:** `landing` (مسیر ریشهٔ فایل‌های استاتیک، نسبت به ریشهٔ ریپو)
+- بدون Build Command (فایل‌ها همان‌جا سرو می‌شوند):
+  ```yaml
+  - type: web
+    name: vizitik-landing
+    runtime: static
+    rootDir: landing
+    buildCommand: true
+    staticPublishPath: landing
+  ```
 - قبل از دیپلوی، `appUrl` در `landing/js/config.js` را روی دامنهٔ اپ
   خودت (`https://app.دامنه‌ی‌شما`) بگذار تا دکمه‌ها درست لینک بزنند.
 

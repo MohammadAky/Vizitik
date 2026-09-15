@@ -79,8 +79,13 @@ services:
 
   # --------------------------------------------------------------------------
   # 3) landing page (static - free)
+  #    static sites in a Blueprint are: type: web + runtime: static +
+  #    staticPublishPath (repo-root relative). No build step needed.
   #    before deploying, edit appUrl in landing/js/config.js to your app domain
   # --------------------------------------------------------------------------
-  - type: static
+  - type: web
     name: vizitik-landing
+    runtime: static
     rootDir: landing
+    buildCommand: true
+    staticPublishPath: landing
