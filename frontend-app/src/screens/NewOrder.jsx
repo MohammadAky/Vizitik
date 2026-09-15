@@ -5,7 +5,9 @@ import { usePhpPage } from "../lib/usePhpPage.js";
 import { showToast } from "../components/AppToast.jsx";
 
 // انتخاب مشتری جدا از پیش‌نویس سفارش نگه داشته می‌شود تا روی vizitik_current_order نیفتد
-const CUST_KEY = "vizitik_order_customer";
+// (این کلید مشترک است: صفحهٔ مشتریان مشتری انتخاب‌شده را همین‌جا می‌گذارد)
+export const ORDER_CUSTOMER_KEY = "vizitik_order_customer";
+const CUST_KEY = ORDER_CUSTOMER_KEY;
 const DRAFT_KEY = "vizitik_current_order";
 
 /**
@@ -20,6 +22,7 @@ export default function NewOrder({ go }) {
   const { customers, inventory } = useLocalData();
   const [custId, setCustId] = useState(() => sessionStorage.getItem(CUST_KEY) || "");
   const [picker, setPicker] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState("");
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("ALL");
   const [qty, setQty] = useState({});
@@ -52,6 +55,18 @@ export default function NewOrder({ go }) {
         }),
     [bar, search, cat, qty],
   );
+
+  // لیست شیت انتخاب مشتری با جستجو (نام/تلفن/آدرس)
+  const pickerCustomers = useMemo(() => {
+    const q = (pickerSearch || "").trim().toLowerCase();
+    return (customers || []).filter(
+      (c) =>
+        !q ||
+        (c.name || "").toLowerCase().includes(q) ||
+        (c.phone || "").toLowerCase().includes(q) ||
+        (c.address || "").toLowerCase().includes(q),
+    );
+  }, [customers, pickerSearch]);
 
   const chosen = lines.filter((l) => l.cartonCount > 0 || l.unitCount > 0);
   // new-order.js → recalculateOrder: جمع خط‌به‌خط اقلام انتخابی
@@ -167,7 +182,7 @@ export default function NewOrder({ go }) {
         </div>
 
         {/* کارت انتخاب مشتری */}
-        <div className="customer-select-card" onClick={() => setPicker(true)}>
+        <div className="customer-select-card" onClick={() => { setPickerSearch(""); setPicker(true); }}>
           <div className="customer-info-preview">
             <div className="cust-avatar-mini">
               <span className="material-symbols-outlined">storefront</span>
@@ -234,6 +249,14 @@ export default function NewOrder({ go }) {
             {lines.map((p) => (
               <div className="product-order-card" key={p.productId}>
                 <div className="prod-card-top">
+                  {/* جای عکس محصول — فعلاً آیکون بستنی (تا عکسی در دیتابیس نباشد) */}
+                  <div className="prod-icon-wrap">
+                    {p.imageUrl ? (
+                      <img src={p.imageUrl} alt={p.productName} />
+                    ) : (
+                      <span className="material-symbols-outlined">{p.isCustomUserProduct ? "star" : "icecream"}</span>
+                    )}
+                  </div>
                   <div className="prod-main-meta">
                     <div className="prod-title-line">
                       <span className="prod-title">{p.productName}</span>
@@ -357,24 +380,38 @@ export default function NewOrder({ go }) {
           <h3 style={{ fontSize: "14px", fontWeight: 800, marginBottom: "10px" }}>
             انتخاب فروشگاه
           </h3>
+          {/* جستجوی مشتری — مثل فیلدر جستجوی new-order.php */}
+          <input
+            type="text"
+            className="picker-search-input"
+            placeholder="جستجوی نام یا تلفن مشتری..."
+            value={pickerSearch}
+            onChange={(e) => setPickerSearch(e.target.value)}
+          />
           <div className="picker-cust-list">
-            {(customers || []).map((c) => (
-              <div
-                key={c.id}
-                className="picker-cust-item"
-                onClick={() => {
-                  setCustId(c.id);
-                  setPicker(false);
-                }}>
-                <div>
-                  <div className="cust-name">{c.name}</div>
-                  <span style={{ color: "var(--text-muted)" }}>{c.address || ""}</span>
-                </div>
-                <span className={`badge ${c.currentDebt > 0 ? "danger" : "success"}`}>
-                  {formatPrice(c.currentDebt || 0)} ت
-                </span>
+            {pickerCustomers.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "12px 0", fontSize: "12px", color: "var(--text-muted)" }}>
+                مشتری‌ای با این مشخصات یافت نشد.
               </div>
-            ))}
+            ) : (
+              pickerCustomers.map((c) => (
+                <div
+                  key={c.id}
+                  className="picker-cust-item"
+                  onClick={() => {
+                    setCustId(c.id);
+                    setPicker(false);
+                  }}>
+                  <div>
+                    <div className="cust-name">{c.name}</div>
+                    <span style={{ color: "var(--text-muted)" }}>{c.address || ""}</span>
+                  </div>
+                  <span className={`badge ${c.currentDebt > 0 ? "danger" : "success"}`}>
+                    {formatPrice(c.currentDebt || 0)} ت
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

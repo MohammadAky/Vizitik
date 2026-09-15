@@ -89,6 +89,9 @@ $productsCatalog = (!empty($apiProducts) && is_array($apiProducts)) ? $apiProduc
                         if ($remainingCredit > 0) {
                             $payTags[] = '<span class="pay-tag credit">نسیه: ' . toPersianNum(number_format($remainingCredit)) . ' ت</span>';
                         }
+                        if (($ord['status'] ?? '') === 'CANCELLED') {
+                            $payTags[] = '<span class="pay-tag cancelled">✕ ابطال شده</span>';
+                        }
                     ?>
                         <article class="order-card"
                             id="orderCard_<?php echo $ordId; ?>"
@@ -313,6 +316,14 @@ $productsCatalog = (!empty($apiProducts) && is_array($apiProducts)) ? $apiProduc
                     </button>
                     <button type="button" class="confirm-cancel-btn" style="height: 36px;" onclick="closeFullEditOrderModal()">
                         انصراف
+                    </button>
+                </div>
+
+                <!-- ابطال کامل فاکتور — وقتی مشتری کلا منصرف شده (JS بر اساس وضعیت فاکتور نمایش می‌دهد) -->
+                <div id="cancelOrderBtnWrap" style="display: none; margin-top: 10px;">
+                    <button type="button" class="modal-delete-btn" onclick="cancelCurrentOrder()">
+                        <span class="material-symbols-outlined" style="font-size: 16px;">delete_forever</span>
+                        <span>ابطال فاکتور و بازگشت کالاها به خودرو</span>
                     </button>
                 </div>
             </div>

@@ -324,6 +324,99 @@ export class OrdersService {
     return invoice;
   }
 
+  /**
+   * ابطال کامل فاکتور (مثلاً وقتی مشتری کلا منصرف شده):
+   *  ۱) اقلام فاکتور به موجودی خودرو (ون) بازمی‌گردند
+   *  ۲) خالص فاکتور در دفتر حساب مشتری معکوس می‌شود (یک سورتکس ADJUSTMENT/PAYMENT_CREDIT)
+   *  ۳) وضعیت فاکتور CANCELLED می‌شود — خود فاکتور و سوابقش باقی می‌ماند (تاریخ‌ساز)
+   *
+   * نکته: پرداخت نقد/پوز در لحظهٔ ثبت، اعتبار (PAYMENT_CREDIT) زده به حساب مشتری
+   * کرده است؛ پس خالصِ فاکتور = مبلغ نهایی - (نقد + پوز). چک تسویه‌شده به‌صورت
+   * خودکار دست‌نخورده می‌ماند و در صورت نیاز از بخش وصول مطالبات مدیریت می‌شود.
+   */
+  async cancelOrder(visitorId: string, orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        customer: {
+          include: { ledgerEntries: { orderBy: { createdAt: 'desc' }, take: 1 } },
+        },
+        items: true,
+        payments: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('فاکتور یافت نشد');
+    }
+    if (order.visitorId !== visitorId) {
+      throw new ForbiddenException('دسترسی غیرمجاز');
+    }
+    if (order.status === 'CANCELLED') {
+      throw new BadRequestException('این فاکتور قبلاً ابطال شده است');
+    }
+
+    const finalAmount = Number(order.finalAmount);
+    const creditedPayments = order.payments
+      .filter((p) => p.method === 'CASH' || p.method === 'CARD')
+      .reduce((sum, p) => sum + Number(p.amount), 0);
+    const netDebt = finalAmount - creditedPayments;
+
+    await this.prisma.$transaction(async (tx) => {
+      // ۱) بازمغردانی اقلام به موجودی خودرو
+      for (const item of order.items) {
+        if (!item.cartonCount && !item.unitCount) continue;
+        await tx.vanInventory.upsert({
+          where: {
+            userId_productId: {
+              userId: visitorId,
+              productId: item.productId,
+            },
+          },
+          create: {
+            userId: visitorId,
+            productId: item.productId,
+            quantityCartons: item.cartonCount || 0,
+            quantityUnits: item.unitCount || 0,
+          },
+          update: {
+            quantityCartons: { increment: item.cartonCount || 0 },
+            quantityUnits: { increment: item.unitCount || 0 },
+          },
+        });
+      }
+
+      // ۲) معکوس‌سازی خالص فاکتور در دفتر حساب مشتری
+      if (netDebt !== 0) {
+        const lastBalance =
+          order.customer.ledgerEntries.length > 0
+            ? Number(order.customer.ledgerEntries[0].balanceAfter)
+            : 0;
+        const newBalance = Math.max(0, lastBalance - netDebt);
+        await tx.customerLedger.create({
+          data: {
+            customerId: order.customer.id,
+            type: netDebt > 0 ? 'PAYMENT_CREDIT' : 'ADJUSTMENT',
+            relatedOrderId: order.id,
+            amount: -netDebt,
+            balanceAfter: newBalance,
+          },
+        });
+      }
+
+      // ۳) ابطال فاکتور
+      await tx.order.update({
+        where: { id: order.id },
+        data: { status: 'CANCELLED' },
+      });
+    });
+
+    return {
+      ok: true,
+      message: 'فاکتور ابطال شد، اقلام به موجودی خودرو بازمگرداند و حساب مشتری اصلاح شد.',
+    };
+  }
+
 
 
   async getOrderInvoice(visitorId: string, orderId: string) {

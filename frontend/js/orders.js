@@ -6,6 +6,7 @@ let currentEditOrderId = null;
 let editOrderState = {
     orderId: null,
     customerName: '',
+    status: '',
     items: [],
     discountPercentages: [],
     fixedDiscountAmount: 0,
@@ -13,6 +14,9 @@ let editOrderState = {
     totalDiscount: 0,
     finalAmount: 0,
 };
+
+// مثل بقیهٔ صفحات: از مرورگر به API همان دامنه (پشت نگینکس) — نه localhost
+const API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://localhost:3000/api' : '/api';
 
 function toPersianNum(num) {
     if (num === null || num === undefined) return '';
@@ -79,6 +83,13 @@ async function openFullEditOrderModal(orderId) {
 
         editOrderState.orderId = orderId;
         editOrderState.customerName = invoice.customer?.name || 'مشتری';
+        editOrderState.status = invoice.status || '';
+
+        // دکمهٔ ابطال فقط برای فاکتورهای فعال نمایش داده می‌شود
+        const cancelWrap = document.getElementById('cancelOrderBtnWrap');
+        if (cancelWrap) {
+            cancelWrap.style.display = (editOrderState.status === 'CANCELLED') ? 'none' : 'block';
+        }
         editOrderState.items = (invoice.items || []).map(i => ({
             productId: i.productId,
             productName: i.productName,
@@ -131,6 +142,29 @@ async function openFullEditOrderModal(orderId) {
 
 function closeFullEditOrderModal() {
     document.getElementById('editFullOrderModal').style.display = 'none';
+}
+
+// ابطال کامل فاکتور (مشتری منصرف شده): بک‌اند اقلام را به ون برمی‌گرداند و حساب مشتری را اصلاح می‌کند
+async function cancelCurrentOrder() {
+    if (!currentEditOrderId) return;
+    if (!confirm('فاکتور ابطال شود؟ (اقلام به موجودی خودرو بازمی‌گردند و خالص این فاکتور از حساب مشتری کسر می‌شود)')) return;
+    try {
+        const res = await fetch(`${API_BASE}/orders/${currentEditOrderId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${API_TOKEN}` }
+        });
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            alert(errData.message || 'خطا در ابطال فاکتور.');
+            return;
+        }
+        closeFullEditOrderModal();
+        alert('فاکتور ابطال شد، اقلام به موجودی خودرو بازمگرداند و حساب مشتری اصلاح شد.');
+        location.reload();
+    } catch (e) {
+        console.error(e);
+        alert('خطا در ارتباط با سرور.');
+    }
 }
 
 // ============================================================

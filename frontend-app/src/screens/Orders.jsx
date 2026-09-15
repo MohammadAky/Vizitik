@@ -69,6 +69,7 @@ export default function Orders({ go }) {
         invNo,
         invDigits: digits(invNo),
         custName: (ord.customer && ord.customer.name) || 'مشتری',
+        status: ord.status,
         subtotal,
         discount,
         finalAmount,
@@ -98,6 +99,7 @@ export default function Orders({ go }) {
       orderId,
       invoice: inv,
       customerName: ord.customer?.name || 'مشتری',
+      status: ord.status,
       invoiceNumber: inv.invoiceNumber || ord.invoiceNumber || '',
       items: (inv.items || []).map((i) => ({
         productId: i.productId,
@@ -225,6 +227,24 @@ export default function Orders({ go }) {
     }
   }
 
+  // ابطال کامل فاکتور (مشتری منصرف شده): اقلام به ون برمی‌گردند و حساب مشتری اصلاح می‌شود
+  async function cancelCurrentOrder() {
+    if (!edit || edit.status === 'CANCELLED') return;
+    if (!window.confirm('فاکتور ابطال شود؟ (اقلام به موجودی خودرو بازمی‌گردند و خالص این فاکتور از حساب مشتری کسر می‌شود)')) return;
+    setSaving(true);
+    try {
+      const res = await api(`/orders/${edit.orderId}`, { method: 'DELETE', timeout: 20000 });
+      showToast((res && res.message) || 'فاکتور ابطال شد.', 'success');
+      setEdit(null);
+      await refresh();
+      await reload({ sync: true });
+    } catch (err) {
+      showToast(err.message || 'خطا در ابطال فاکتور.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   /* ================= چاپ مجدد و ارسال به بله ================= */
   async function fetchAndPrintInvoice(orderId) {
     const inv = await apiSilent(`/orders/${orderId}/invoice`);
@@ -325,6 +345,12 @@ export default function Orders({ go }) {
 
                 {/* وضعیت تسویه */}
                 <div className="order-payments-tags">
+                  {ord.status === 'CANCELLED' && (
+                    <span className="pay-tag cancelled">
+                      <span className="material-symbols-outlined" style={{ fontSize: '11px', verticalAlign: 'middle' }}>block</span>
+                      {' '}ابطال شده
+                    </span>
+                  )}
                   {ord.tags.map((t, i) => (
                     <span key={i} className={`pay-tag ${t.cls}`}>
                       {t.text}
@@ -726,6 +752,21 @@ export default function Orders({ go }) {
                 انصراف
               </button>
             </div>
+
+            {/* ابطال کامل فاکتور — وقتی مشتری کلا منصرف شده */}
+            {edit.status !== 'CANCELLED' && (
+              <div style={{ marginTop: '10px' }}>
+                <button
+                  type="button"
+                  className="modal-delete-btn"
+                  disabled={saving}
+                  onClick={cancelCurrentOrder}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>delete_forever</span>
+                  <span>ابطال فاکتور و بازگشت کالاها به خودرو</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

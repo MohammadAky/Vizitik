@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param, Query, UseGuards, Inject } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Inject } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto, UpdateOrderDto } from './orders.dto';
@@ -50,5 +50,14 @@ export class OrdersController {
     @Body() dto: { payments: { method: string; amount: number; checkDetails?: any }[] },
   ) {
     return this.ordersService.updateOrderPayments(visitorId, orderId, dto);
+  }
+
+  /**
+   * ابطال کامل فاکتور (مشتری منصرف شده): اقلام به موجودی خودرو برمی‌گردند،
+   * خالص فاکتور در دفتر حساب مشتری معکوس می‌شود و وضعیت CANCELLED ثبت می‌شود.
+   */
+  @Delete(':id')
+  cancelOrder(@GetUser('id') visitorId: string, @Param('id') orderId: string) {
+    return this.ordersService.cancelOrder(visitorId, orderId);
   }
 }

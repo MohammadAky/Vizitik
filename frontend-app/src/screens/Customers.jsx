@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { api, apiSilent } from '../lib/api.js';
+import { ORDER_CUSTOMER_KEY } from './NewOrder.jsx';
 import { kv } from '../lib/db.js';
 import { useLocalData } from '../lib/data.js';
 import { toPersianNum, onlyDigits, parseFaNumber } from '../lib/format.js';
@@ -77,6 +78,9 @@ export default function Customers({ go }) {
   function triggerInvoiceForCurrentCustomer() {
     if (!sheet) return;
     const name = sheet.customer.name;
+    const id = sheet.customer.id;
+    // مشتری انتخاب‌شده را برای صفحهٔ فاکتور نگه می‌داریم (مثل ?customerId= در نسخهٔ PHP)
+    sessionStorage.setItem(ORDER_CUSTOMER_KEY, id);
     closeSheet();
     showToast(`هدایت به صدور فاکتور برای «${name}»...`, 'success');
     setTimeout(() => go('order'), 400);
