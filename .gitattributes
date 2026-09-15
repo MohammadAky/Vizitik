@@ -1,0 +1,24 @@
+# Normalize all text files to LF in the repo and in working trees on every OS.
+# Keeps .sh scripts runnable on the Linux server and ends the CRLF churn and
+# the "LF will be replaced by CRLF" warnings for good.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets - never let git guess these as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.otf binary
+*.zip binary
+*.pdf binary
+*.mp4 binary
