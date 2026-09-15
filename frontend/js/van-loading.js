@@ -237,13 +237,6 @@ function applyAllFilters() {
         // ۳. کالاهای کاتالوگ آماده شرکتی فقط و فقط اگر کاتالوگ آن برند توسط ویزیتور در صفحه کالاها دانلود شده باشد نمایش داده می‌شوند.
         const isCatalogActive = isCustom || isLoaded || (isGlobal && downloadedCatalogs.includes(brand));
 
-        if (!isCatalogActive) {
-            card.style.display = 'none';
-            return;
-        }
-
-        totalEligibleCount++;
-
         // شرط فیلتر برند یا فقط بارگیری‌شده‌ها
         let matchBrand = false;
         if (selectedBrand === 'ALL') {
@@ -262,13 +255,22 @@ function applyAllFilters() {
             brand.toLowerCase().includes(searchQuery) || 
             category.toLowerCase().includes(searchQuery));
 
-        if (matchBrand && matchCategory && matchSearch) {
+        // کارت‌ها از سمت سرور پنهان رندر شده‌اند؛ فقط خود JS مجوز نمایش دارد
+        // تا هیچ کالای global بدون کاتالوگ دریافت‌شده (بایپس) دیده نشود.
+        if (isCatalogActive) totalEligibleCount++;
+        if (isCatalogActive && matchBrand && matchCategory && matchSearch) {
             card.style.display = '';
             visibleCount++;
         } else {
             card.style.display = 'none';
         }
     });
+
+    // اگر هیچ کالای واجد شرایطی نیست، راهنمای دریافت کاتالوگ را نشان بده
+    const noEligible = document.getElementById('noEligibleProducts');
+    if (noEligible) {
+        noEligible.style.display = (totalEligibleCount === 0 && cards.length > 0) ? 'flex' : 'none';
+    }
 
     if (noInventoryFound) {
         noInventoryFound.style.display = (visibleCount === 0 && cards.length > 0) ? 'flex' : 'none';

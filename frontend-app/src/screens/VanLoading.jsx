@@ -88,21 +88,23 @@ export default function VanLoading({ go }) {
     [inventory, rows]
   );
 
-  const brands = useMemo(() => Array.from(new Set(items.map((i) => i.brand))).sort(), [items]);
-  // van-loading.php: the chip list is the product data, and falls back to
-  // $defaultCategories when nothing is loaded yet - otherwise the chips vanish
-  const categories = useMemo(() => {
-    const fromData = Array.from(new Set(items.map((i) => i.category))).sort();
-    return fromData.length ? fromData : DEFAULT_CATEGORIES;
-  }, [items]);
-
   const downloaded = useMemo(() => downloadedBrands(), []);
 
   // فیلتر اولیه: فقط کالاهایی که کاربر اضافه کرده (سفارشی) یا از کاتالوگ دانلود کرده
+  // — هیچ کالای global بدون کاتالوگ دریافت‌شده نباید در این صفحه باشد (بایپس نباشد)
   const eligible = useMemo(
     () => items.filter((p) => p.isCustom || downloaded.includes(p.brand)),
     [items, downloaded]
   );
+
+  // چیپ‌ها از کالاهای واجد شرایط ساخته می‌شوند، نه از کل دیتابیس
+  const brands = useMemo(() => Array.from(new Set(eligible.map((i) => i.brand))).sort(), [eligible]);
+  // van-loading.php: the chip list is the product data, and falls back to
+  // $defaultCategories when nothing is loaded yet - otherwise the chips vanish
+  const categories = useMemo(() => {
+    const fromData = Array.from(new Set(eligible.map((i) => i.category))).sort();
+    return fromData.length ? fromData : DEFAULT_CATEGORIES;
+  }, [eligible]);
 
   const visible = useMemo(() => {
     const q = (search || '').trim().toLowerCase();
@@ -295,12 +297,12 @@ export default function VanLoading({ go }) {
 
       {/* محتوای لیست کالاها و استپرهای بارگیری */}
       <main className="van-content" id="inventoryList">
-        {items.length === 0 ? (
+        {items.length === 0 || eligible.length === 0 ? (
           <div className="empty-inventory-state">
             <div className="empty-icon-box">
               <span className="material-symbols-outlined">local_shipping</span>
             </div>
-            <h3>کالایی در سیستم یافت نشد</h3>
+            <h3>{items.length === 0 ? 'کالایی در سیستم یافت نشد' : 'کالای فعالی برای بارگیری نیست'}</h3>
             <p>ابتدا از بخش کاتالوگ کالاها، محصولات را به لیست خود اضافه کنید.</p>
             <a href="#/products" className="empty-action-btn" onClick={(e) => { e.preventDefault(); go('products'); }}>
               <span className="material-symbols-outlined">inventory_2</span>

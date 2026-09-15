@@ -127,6 +127,20 @@ if (empty($categories)) {
                     </a>
                 </div>
             <?php else: ?>
+                <!-- تا وقتی JS محصولات واجد شرایط (کالای من/کاتالوگ دریافت‌شده/بارگیری‌شده) را
+                     نشان ندهد، همهٔ کارت‌ها پنهان می‌مانند — مسیر بایپسِ نمایش کالاهای global
+                     بدون دانلود کاتالوگ همین‌جا بسته شده است. -->
+                <div class="empty-inventory-state" id="noEligibleProducts" style="display: none;">
+                    <div class="empty-icon-box">
+                        <span class="material-symbols-outlined">local_shipping</span>
+                    </div>
+                    <h3>کالای فعالی برای بارگیری نیست</h3>
+                    <p>کاتالوگ برند موردنظرتان را در صفحهٔ «کالاهای من» دریافت کنید یا کالای اختصاصی بسازید.</p>
+                    <a href="products.php" class="empty-action-btn">
+                        <span class="material-symbols-outlined">inventory_2</span>
+                        <span>رفتن به کاتالوگ کالاها</span>
+                    </a>
+                </div>
                 <?php foreach ($inventory as $i => $item): ?>
                     <?php
                     $prodId = $item['productId'] ?? ('p' . $i);
@@ -155,7 +169,7 @@ if (empty($categories)) {
                         data-isglobal="<?php echo $isGlobal ? 'true' : 'false'; ?>"
                         data-cartons="<?php echo $cartons; ?>"
                         data-units="<?php echo $units; ?>"
-                        style="animation-delay: <?php echo min($i * 0.02, 0.4); ?>s">
+                        style="display: none; animation-delay: <?php echo min($i * 0.02, 0.4); ?>s">
 
                         <!-- ردیف بالای کارت: مشخصات و قیمت -->
                         <div class="van-card-top">
