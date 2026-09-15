@@ -23,7 +23,7 @@ function getBrandClass(brand) {
   }
 }
 
-function downloadedIds() {
+function downloadedBrands() {
   try {
     const raw = localStorage.getItem(CATALOGS_KEY);
     const list = raw ? JSON.parse(raw) : [];
@@ -96,41 +96,47 @@ export default function VanLoading({ go }) {
     return fromData.length ? fromData : DEFAULT_CATEGORIES;
   }, [items]);
 
-  const myIds = useMemo(() => downloadedIds(), []);
+  const downloaded = useMemo(() => downloadedBrands(), []);
+
+  // فیلتر اولیه: فقط کالاهایی که کاربر اضافه کرده (سفارشی) یا از کاتالوگ دانلود کرده
+  const eligible = useMemo(
+    () => items.filter((p) => p.isCustom || downloaded.includes(p.brand)),
+    [items, downloaded]
+  );
 
   const visible = useMemo(() => {
     const q = (search || '').trim().toLowerCase();
     const showLoadedOnly = brand === 'LOADED_ONLY';
-    return items.filter((c) => {
+    return eligible.filter((c) => {
       const matchSearch =
         !q ||
         c.name.toLowerCase().includes(q) ||
         c.brand.toLowerCase().includes(q) ||
         c.category.toLowerCase().includes(q);
       let matchBrand = true;
-      if (brand === 'MY_PRODUCTS') matchBrand = c.isCustom || myIds.includes(c.id);
+      if (brand === 'MY_PRODUCTS') matchBrand = c.isCustom;
       else if (brand === 'ALL' || brand === 'LOADED_ONLY') matchBrand = true;
       else matchBrand = c.brand === brand;
       const matchCat = category === 'ALL' || c.category === category;
       const matchLoaded = !showLoadedOnly || c.cartons > 0 || c.units > 0;
       return matchSearch && matchBrand && matchCat && matchLoaded;
     });
-  }, [items, search, brand, category, myIds]);
+  }, [eligible, search, brand, category]);
 
-  // updateGlobalSummary() در js/van-loading.js — روی «همه» کارت‌ها، نه فقط دیده‌شده‌ها
+  // updateGlobalSummary() در js/van-loading.js — روی کالاهای واجد شرایط
   const summary = useMemo(() => {
     let totalCartons = 0;
     let totalUnits = 0;
     let totalValue = 0;
-    items.forEach((c) => {
+    eligible.forEach((c) => {
       totalCartons += c.cartons;
       totalUnits += c.units;
       totalValue += c.cartons * c.cartonPrice + c.units * c.unitPrice;
     });
     return { totalCartons, totalUnits, totalValue };
-  }, [items]);
+  }, [eligible]);
 
-  const noFound = visible.length === 0 && items.length > 0;
+  const noFound = visible.length === 0 && eligible.length > 0;
 
   function setQty(id, type, val) {
     setRows((prev) => {
@@ -155,7 +161,7 @@ export default function VanLoading({ go }) {
     if (saving) return;
     setSaving(true);
     const payload = {
-      items: items.map((c) => ({
+      items: eligible.map((c) => ({
         productId: c.id,
         quantityCartons: c.cartons,
         quantityUnits: c.units

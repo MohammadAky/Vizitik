@@ -113,6 +113,26 @@ body {
   flex-direction: column;
 }
 
+/* اصلاح اسکرول در حالت PWA (standalone) */
+@media (display-mode: standalone) {
+  .app {
+    height: 100vh;
+    max-height: 100dvh;
+    border-radius: 0;
+    width: 100vw;
+    box-shadow: none;
+  }
+
+  .app-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 65px;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+}
+
 /* =========================
    APP TOAST (GLOBAL IN-CONTAINER)
 ========================= */
@@ -341,6 +361,10 @@ body {
   gap: 10px;
   min-height: fit-content;
   padding-bottom: 20px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .login-header {

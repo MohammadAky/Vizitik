@@ -90,7 +90,7 @@
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 14px 16px 85px 16px;
+  padding: 14px 16px 130px 16px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -130,7 +130,8 @@
 }
 
 /* لیست بدهکاران و چک‌ها */
-.debtors-list, .checks-list {
+.debtors-list,
+.checks-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -438,6 +439,10 @@
 }
 
 @keyframes slideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
