@@ -664,7 +664,7 @@ create_service() {
   local unit="/etc/systemd/system/vizitik-backend.service"
   cat > "$unit" <<EOF
 [Unit]
-Description=Vizitik NestJS Backend (API + Bale bot)
+Description=NestJS Backend (API + Bale bot)
 After=network.target mariadb.service
 
 [Service]
@@ -690,7 +690,7 @@ EOF
     local aunit="/etc/systemd/system/vizitik-admin.service"
     cat > "$aunit" <<EOF
 [Unit]
-Description=Vizitik Admin SQL Panel (read-only)
+Description=Admin SQL Panel (read-only)
 After=network.target mariadb.service vizitik-backend.service
 
 [Service]

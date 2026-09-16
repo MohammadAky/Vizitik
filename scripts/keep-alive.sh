@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Vizitik — keep-alive pinger for Render free web services
+# Keep-alive pinger for Render free web services
 # ============================================================================
 # Render spins DOWN a free web service after 15 minutes without inbound
 # traffic (cold start ~1 min on the next request). This script pings the

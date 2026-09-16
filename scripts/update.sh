@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Vizitik - Update existing deployment
+# Update existing deployment
 #
 # Pulls the newest commits and rebuilds only what changed.
 #
@@ -292,7 +292,7 @@ main() {
     exit 1
   fi
 
-  log "Vizitik update - $(date '+%Y-%m-%d %H:%M')"
+  log "Update - $(date '+%Y-%m-%d %H:%M')"
   update_checkout
   classify_changes
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Vizitik - First-time VPS deployment script
+# First-time VPS deployment script
 #
-# This script deploys Vizitik to a fresh Ubuntu/Debian VPS:
+# This script deploys the app to a fresh Ubuntu/Debian VPS:
 #   1) Installs prerequisites (Nginx, Node, MariaDB, certbot)
 #   2) Sets up MariaDB database
 #   3) Builds NestJS backend
@@ -21,12 +21,6 @@
 # The app is served on app.$DOMAIN; override with APP_DOMAIN=app.example.com
 #
 set -euo pipefail
-
-# ------------------------------------------------------------------
-# Vizitik branding - hardcoded
-# ------------------------------------------------------------------
-APP_NAME_EN="Vizitik"
-APP_NAME_FA="ویزیتیک"
 
 # ------------------------------------------------------------------
 # Configuration (override via environment or edit here)
@@ -247,7 +241,7 @@ ask_yes() {
 # Collect inputs
 # ------------------------------------------------------------------
 collect_inputs() {
-  log "Vizitik deployment - press Enter to keep the value in brackets"
+  log "Deployment - press Enter to keep the value in brackets"
 
   ask INSTALL_DIR "install directory" "/opt/vizitik"
   ask DOMAIN "public domain (empty = no https)" ""
@@ -306,7 +300,6 @@ collect_inputs() {
 
 print_summary() {
   echo
-  echo "  App:         $APP_NAME_EN / $APP_NAME_FA"
   echo "  Install dir: $INSTALL_DIR"
   echo "  Domain:      ${DOMAIN:-<none>} | App: ${APP_DOMAIN:-<same>} | Admin: ${ADMIN_DOMAIN:-<none>}"
   echo "  HTTPS:       $ENABLE_HTTPS (mode: ${HTTPS_MODE:-http})"
@@ -449,7 +442,7 @@ create_services() {
 
   cat > /etc/systemd/system/vizitik-backend.service <<EOF
 [Unit]
-Description=${APP_NAME_EN} Backend API
+Description=Backend API
 After=network.target mariadb.service
 
 [Service]
@@ -468,7 +461,7 @@ EOF
   if [[ -n "$ADMIN_DOMAIN" && -f "$INSTALL_DIR/backend/admin/server.js" ]]; then
     cat > /etc/systemd/system/vizitik-admin.service <<EOF
 [Unit]
-Description=${APP_NAME_EN} Admin Panel
+Description=Admin Panel
 After=network.target mariadb.service vizitik-backend.service
 
 [Service]
@@ -660,12 +653,12 @@ EOF
 # Summary
 # ------------------------------------------------------------------
 final_summary() {
-  log "Vizitik deployed successfully!"
+  log "Deployment completed successfully!"
   local url="http://localhost"
   [[ -n "$DOMAIN" ]] && url="https://$DOMAIN"
 
   echo -e "\n\033[1;32m======================================================\033[0m"
-  echo -e "\033[1;32m  $APP_NAME_EN deployment complete! \033[0m"
+  echo -e "\033[1;32m  Deployment complete! \033[0m"
   echo -e "\033[1;32m  Site:  $url\033[0m"
   echo -e "\033[1;32m  API:   $url/api\033[0m"
   [[ -n "$ADMIN_DOMAIN" ]] && echo -e "\033[1;32m  Admin: https://$ADMIN_DOMAIN\033[0m"
