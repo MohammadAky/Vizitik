@@ -79,7 +79,16 @@ done
 
 run() {
   local label="$1"; shift
-  [[ "$CHECK" == "1" ]] && { echo "      would run: $*"; return 0; }
+  if [[ "$CHECK" == "1" ]]; then
+    # keep the preview readable: shell snippets are printed as their label only
+    local cmd="$*"
+    if [[ "$cmd" == *$'\n'* ]]; then
+      echo "      would run: $label"
+    else
+      echo "      would run: $cmd"
+    fi
+    return 0
+  fi
   "$@"
 }
 
@@ -243,20 +252,29 @@ sync_trees() {
       continue
     fi
     local dest="$INSTALL_DIR/$t"
-    [[ -d "$dest" ]] || mkdir -p "$dest"
+    if [[ "$CHECK" == "1" ]]; then
+      # --check promises to change nothing, so do not create directories here
+      [[ -d "$dest" ]] || echo "      would create: $dest"
+    else
+      [[ -d "$dest" ]] || mkdir -p "$dest"
+    fi
 
     # preserve the live .env, node_modules and built dist while replacing the
     # rest of the tree with the fresh source
+    # (the dist backups from update_backend - backend.dist.*.tgz - are kept too,
+    #  otherwise the rollback copy would be wiped by every sync)
     run "clean+copy" bash -c "
       d='$dest'; s='$SRC_DIR/$t';
       [[ -d \"\$d/node_modules\" ]] && mv \"\$d/node_modules\" \"\$d/.nm.keep\" 2>/dev/null || true;
       [[ -f \"\$d/.env\" ]] && cp \"\$d/.env\" \"\$d/.env.keep\" 2>/dev/null || true;
       [[ -d \"\$d/dist\" ]] && mv \"\$d/dist\" \"\$d/.dist.keep\" 2>/dev/null || true;
-      find \"\$d\" -mindepth 1 -maxdepth 1 ! -name '.nm.keep' ! -name '.env.keep' ! -name '.dist.keep' -exec rm -rf {} + 2>/dev/null;
+      for a in \"\$d\"/backend.dist.*.tgz; do [[ -e \"\$a\" ]] && mv \"\$a\" \"\$a.keep\" 2>/dev/null; done;
+      find \"\$d\" -mindepth 1 -maxdepth 1 ! -name '.nm.keep' ! -name '.env.keep' ! -name '.dist.keep' ! -name '*.tgz.keep' -exec rm -rf {} + 2>/dev/null;
       cp -r \"\$s/.\" \"\$d/\";
       [[ -f \"\$d/.env.keep\" ]] && { mv \"\$d/.env.keep\" \"\$d/.env\"; } || rm -f \"\$d/.env.keep\";
       [[ -d \"\$d/.nm.keep\" ]] && { mv \"\$d/.nm.keep\" \"\$d/node_modules\"; rm -rf \"\$d/node_modules/.vite\"; } || true;
       [[ -d \"\$d/.dist.keep\" ]] && mv \"\$d/.dist.keep\" \"\$d/dist\" || true;
+      for a in \"\$d\"/*.tgz.keep; do [[ -e \"\$a\" ]] && mv \"\$a\" \"\${a%.keep}\" 2>/dev/null; done;
       true
     "
     [[ "$CHECK" == "1" ]] || ok "$t synced"
@@ -300,6 +318,43 @@ npm_install_in() {
   fi
 }
 
+# `nest build` deletes dist/ before it starts compiling (deleteOutDir in
+# nest-cli.json), so a type error would leave the install without anything to
+# start. Keep the last good build and put it back when the new one fails.
+archive_backend_dist() {
+  local be="$1"
+  [[ -d "$be/dist" ]] || return 0
+  if [[ "$CHECK" == "1" ]]; then
+    echo "      would keep a copy of $be/dist"
+    return 0
+  fi
+  local stamp
+  stamp="$(date +%s)"
+  if tar -C "$be" -czf "$be/backend.dist.$stamp.tgz" dist >/dev/null 2>&1; then
+    info "kept a copy of the current build (backend.dist.$stamp.tgz)"
+  else
+    warn "could not archive $be/dist (continuing without a rollback copy)"
+    return 0
+  fi
+  # keep only the three newest archives
+  local old
+  ls -1t "$be"/backend.dist.*.tgz 2>/dev/null | tail -n +4 | while read -r old; do
+    rm -f "$old"
+  done
+}
+
+restore_backend_dist() {
+  local be="$1" newest
+  newest="$(ls -1t "$be"/backend.dist.*.tgz 2>/dev/null | head -1)"
+  [[ -n "$newest" ]] || return 1
+  rm -rf "$be/dist"
+  if tar -C "$be" -xzf "$newest" >/dev/null 2>&1 && [[ -f "$be/dist/main.js" ]]; then
+    warn "backend build failed - restored the previous build from $(basename "$newest")"
+    return 0
+  fi
+  return 1
+}
+
 update_backend() {
   [[ "$DO_BACKEND" == "1" ]] || return 0
   log "backend"
@@ -313,8 +368,24 @@ update_backend() {
     run "prisma db push" bash -c "cd '$be' && npx prisma db push --skip-generate"
   fi
 
+  archive_backend_dist "$be"
   if ! run "build" bash -c "cd '$be' && npm run build"; then
     err "backend build failed"
+    if restore_backend_dist "$be"; then
+      if have systemctl && systemctl list-unit-files "$SETUP_SVC.service" >/dev/null 2>&1; then
+        run systemctl restart "$SETUP_SVC"
+        sleep 2
+        if systemctl is-active --quiet "$SETUP_SVC"; then
+          ok "$SETUP_SVC is serving the previous build again"
+        else
+          warn "$SETUP_SVC did not come back up - check: journalctl -u $SETUP_SVC -n 30"
+        fi
+      fi
+      echo "      the TypeScript errors above are the cause; fix them and run update.sh again"
+    else
+      err "no previous build to restore - the API stays down until the build succeeds"
+      echo "      rebuild manually:  cd $be && npm run build"
+    fi
     exit 1
   fi
   ok "backend built"
@@ -351,10 +422,17 @@ update_frontend() {
 # 5) Service restart
 # ------------------------------------------------------------------
 restart_service() {
+  # --check must not touch services: it only previews what would happen
   local need_restart=0
   [[ "$RESTART_ONLY" == "1" || "$DO_BACKEND" == "1" ]] && need_restart=1
   [[ " $CHANGED " == *" admin "* ]] && need_restart=1
   [[ "$need_restart" == "1" ]] || return 0
+  if [[ "$CHECK" == "1" ]]; then
+    log "restarting services"
+    [[ "$DO_BACKEND" == "1" || "$RESTART_ONLY" == "1" ]] && echo "      would run: systemctl restart $SETUP_SVC"
+    [[ "$RESTART_ONLY" == "1" ]] && echo "      would run: systemctl restart $ADMIN_SVC"
+    return 0
+  fi
   log "restarting services"
 
   if have systemctl; then
