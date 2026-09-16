@@ -243,7 +243,12 @@ sync_trees() {
       continue
     fi
     local dest="$INSTALL_DIR/$t"
-    [[ -d "$dest" ]] || mkdir -p "$dest"
+    if [[ "$CHECK" == "1" ]]; then
+      # --check promises to change nothing, so do not create directories here
+      [[ -d "$dest" ]] || echo "      would create: $dest"
+    else
+      [[ -d "$dest" ]] || mkdir -p "$dest"
+    fi
 
     # preserve the live .env, node_modules and built dist while replacing the
     # rest of the tree with the fresh source

@@ -87,12 +87,20 @@ services:
   # --------------------------------------------------------------------------
   # 3) landing page (static - free)
   #    static sites in a Blueprint are: type: web + runtime: static +
-  #    staticPublishPath (repo-root relative). No build step needed.
+  #    staticPublishPath. No build step needed.
+  #
+  #    Two gotchas that make the deploy fail with "publish directory not found":
+  #      * staticPublishPath is resolved relative to rootDir when rootDir is
+  #        set (Render docs, Monorepo Support), so `rootDir: landing` +
+  #        `staticPublishPath: landing` points at landing/landing and fails.
+  #        That is why this service sets no rootDir and spells the publish
+  #        directory relative to the repo root.
+  #      * `buildCommand: true` (unquoted) is a YAML boolean, and Render
+  #        validates the field as a string. Keep the quotes.
   #    before deploying, edit appUrl in landing/js/config.js to your app domain
   # --------------------------------------------------------------------------
   - type: web
     name: vizitik-landing
     runtime: static
-    rootDir: landing
-    buildCommand: true
-    staticPublishPath: landing
+    buildCommand: 'true'
+    staticPublishPath: ./landing

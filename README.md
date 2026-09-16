@@ -119,11 +119,11 @@ cd backend
 npm install
 
 # ۳. تنظیم متغیرهای محیطی — یک فایل .env در پوشهٔ بک‌اند
-cd backend
+#    (همین‌جا داخل backend/ هستیم؛ دیگر لازم نیست دوباره cd بزنی)
 cp .env.example .env
 # DATABASE_URL، JWT_SECRET، ADMIN_TOKEN و BALE_BOT_TOKEN را در backend/.env پر کنید
-# (متغیرهای بیلد PWA مثل VITE_API_URL جدا، در frontend-app/.env هستند)
-cd backend
+# (متغیرهای بیلد PWA مثل VITE_API_URL جدا، در frontend-app/.env هستند؛
+#  نمونه‌اش: frontend-app/.env.example)
 
 # ۴. اجرای مایگریشن‌های پریزما و ساخت جداول
 npx prisma db push
@@ -154,13 +154,24 @@ php -S localhost:8000
 # http://localhost:8000
 ```
 
-> برای ورود، نخست یک حساب از مسیر «ثبت‌نام» بساز (یا با `prisma` کاربر بساز و رمز را bcrypt کن).
+> برای ورود، نخست یک حساب از مسیر «ثبت‌نام» بساز (یا با `prisma` کاربر بساز و رمز را با
+> `bcryptjs` هش کن — همان الگوریتم `bcrypt`، ولی خالصِ جاوااسکریپت و بدون کامپایل نِیتیو).
 > هیچ حساب پیش‌فرض یا لاگین خودکاری در کد وجود ندارد.
+
+> **اگر `npm install` یا `prisma generate` روی شبکه‌ای محدود (مثلاً هاست ایران) گیر کرد:**
+> پروژه هیچ وابستگیِ نِیتیو ندارد (رمزها با `bcryptjs` هش می‌شوند، پس gcc/python/node-gyp
+> لازم نیست). فقط Prisma برای `generate`/`db push` موتورهایش را از `binaries.prisma.sh`
+> می‌گیرد؛ اگر آن آدرس باز نبود:
+> ```bash
+> PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma npx prisma generate
+> ```
+> و اگر این هم جواب نداد، یک‌بار با پروکسی/VPN همان دستور را بزن (موتورها در
+> `node_modules/.prisma/client` کش می‌شوند و بعد از آن آفلاین هم کار می‌کند).
 
 ---
 
 ## 🧰 اسکریپت‌های مخزن
-هر پنج اسکریپت قابل اجرا از ریشهٔ مخزن‌اند و متن کنسولشان انگلیسی/ASCII است:
+هر سه اسکریپت قابل اجرا از ریشهٔ مخزن‌اند و متن کنسولشان انگلیسی/ASCII است:
 
 | فایل | چه کار می‌کند | کِی اجرا می‌شود |
 |---|---|---|
@@ -183,9 +194,10 @@ sudo bash scripts/update.sh --force-deps # اگر package-lock تغییر کرد
 را صدا می‌کند (نصب MariaDB، بیلد بک‌اند و PWA، سرویس systemd، نگینکس، گواهی SSL،
 UFW و بکاپ شبانه):
 ```bash
-sudo bash scripts/deploy.sh                # تعاملی؛ تک‌تک مقدارها را می‌پرسد
-bash scripts/deploy.sh --dry-run           # فقط نشان بده چه چیزی را می‌بندد
-sudo bash scripts/deploy.sh --only-clean   # بستن اجراهای قبلی، بدون deploy
+sudo bash scripts/deploy.sh                    # تعاملی؛ تک‌تک مقدارها را می‌پرسد
+bash scripts/deploy.sh --dry-run               # (بدون root) فقط گزارش: چه چیزی بسته می‌شود و چه تنظیمی اعمال می‌شود
+sudo bash scripts/deploy.sh --only-clean       # بستن اجراهای قبلی، بدون deploy
+sudo bash scripts/deploy.sh --yes --full-reset # + پاک‌کردن /opt/vizitik و vhost (دیتابیس و گواهی می‌مانند)
 ```
 - راهنمای کامل: `docs/DEPLOY-UBUNTU.md`
 - گرفتن گواهی SSL از مسیر کلودفلر (رکوردها، توکن API، حالت SSL، عیب‌یابی ۵۲۱/۵۲۲/۵۲۵):
@@ -200,6 +212,16 @@ sudo bash scripts/deploy.sh --only-clean   # بستن اجراهای قبلی، 
 ```bash
 # Blueprint: Render → New → Blueprint → اتصال ریپو → تنظیم DATABASE_URL → prisma db push
 ```
+> **اگر ساختِ بلوپرینت روی Render خطا داد، این سه مورد را چک کن:**
+> - `buildCommand must be a string` → مقدار `true` باید در کوتیشن باشد (`'true'`)، وگرنه YAML
+>   آن را بولین می‌خواند و Render رد می‌کند.
+> - `Publish directory … does not exist` → Render مسیر `staticPublishPath` را **نسبت به
+>   `rootDir`** تفسیر می‌کند؛ پس `rootDir: landing` + `staticPublishPath: landing` به
+>   `landing/landing` اشاره می‌کند. در `render.yaml` همین ریپو برای لندینگ عمداً `rootDir`
+>   نگذاشته شده و `staticPublishPath: ./landing` است.
+> - خطای `prisma db push` در مرحلهٔ بیلد → `DATABASE_URL` را برای **هر دو** سرویس
+>   (`vizitik-app` و `vizitik-admin`) در داشبورد ست کن؛ دیتابیس باید MySQL بیرونی باشد
+>   (Render دیتابیس مدیریت‌شدهٔ MySQL ندارد) و اتصال از IP عمومی برقرار می‌شود.
 
 ## 🤖 یکپارچه‌سازی با ربات بله (Bale Messenger Bot)
 ### مسیر درستِ کد تایید (ثبت‌نام و بازیابی رمز)
