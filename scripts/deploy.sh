@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# Vizitik - Personal VPS Deployment
+# Vizitik - Personal System Deployment
 #
-# Deploys frontend + backend together on a single VPS.
+# Simple deployment for running frontend + backend together.
 # The backend serves the PWA frontend static files.
 #
 # Usage:
-#   sudo bash scripts/deploy.sh
+#   bash scripts/deploy.sh
 #
 set -euo pipefail
 
@@ -24,10 +24,6 @@ DB_HOST="localhost"
 PORT="${PORT:-3000}"
 JWT_SECRET="${JWT_SECRET:-}"
 NODEJS_MAJOR=20
-
-# Memory (1GB servers need swap for builds)
-MIN_TOTAL_MB="${MIN_TOTAL_MB:-1536}"
-SWAP_FILE="${SWAP_FILE:-/swapfile}"
 
 # App
 APP_NAME="Vizitik"
@@ -50,49 +46,6 @@ urlencode() {
 
 gen_secret() {
   head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48
-}
-
-# ------------------------------------------------------------------
-# Memory management for low-RAM servers
-# ------------------------------------------------------------------
-ensure_swap() {
-  local ram_mb swap_mb total_mb
-  ram_mb="$(awk '/^MemTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null)"
-  swap_mb="$(awk '/^SwapTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null)"
-  total_mb=$(( ram_mb + swap_mb ))
-
-  log "memory: ${ram_mb}MB RAM + ${swap_mb}MB swap = ${total_mb}MB total"
-
-  if (( total_mb >= MIN_TOTAL_MB )); then
-    ok "enough memory"
-    return 0
-  fi
-
-  if [[ -f "$SWAP_FILE" ]] && swapon --show | grep -q "$SWAP_FILE"; then
-    ok "swap already active"
-    return 0
-  fi
-
-  local need_mb=$(( MIN_TOTAL_MB - total_mb + 256 ))
-  log "creating ${need_mb}MB swap file"
-
-  if [[ ! -f "$SWAP_FILE" ]]; then
-    fallocate -l "${need_mb}M" "$SWAP_FILE" 2>/dev/null || \
-      dd if=/dev/zero of="$SWAP_FILE" bs=1M count="$need_mb" status=none
-    chmod 600 "$SWAP_FILE"
-    mkswap "$SWAP_FILE" >/dev/null 2>&1
-  fi
-
-  swapon "$SWAP_FILE" 2>/dev/null
-  if ! grep -qs "$SWAP_FILE" /etc/fstab; then
-    echo "$SWAP_FILE none swap sw 0 0" >> /etc/fstab
-  fi
-
-  ok "swap enabled: ${need_mb}MB"
-
-  # Limit Node heap for 1GB servers
-  export NODE_OPTIONS="--max-old-space-size=384"
-  info "node heap limited to 384MB"
 }
 
 # ------------------------------------------------------------------
@@ -163,24 +116,6 @@ SQL
 # ------------------------------------------------------------------
 # Build
 # ------------------------------------------------------------------
-npm_install_safe() {
-  local dir="$1"
-  local rc=0
-
-  if [[ -f "$dir/package-lock.json" ]]; then
-    (cd "$dir" && npm ci --no-audit --no-fund --no-progress --loglevel=error) || rc=$?
-  fi
-
-  if [[ "$rc" -ne 0 ]]; then
-    warn "npm ci failed, trying npm install..."
-    (cd "$dir" && npm install --no-audit --no-fund --no-progress --loglevel=error) || {
-      err "npm install failed"
-      return 1
-    }
-  fi
-  return 0
-}
-
 build_app() {
   log "building application"
 
@@ -189,9 +124,21 @@ build_app() {
   rm -rf "$INSTALL_DIR/backend" "$INSTALL_DIR/frontend-app"
   cp -r "$SRC_DIR/backend" "$SRC_DIR/frontend-app" "$INSTALL_DIR/"
 
-  # Create .env FIRST (needed for Prisma)
+  # Build frontend
+  log "building frontend"
+  cd "$INSTALL_DIR/frontend-app"
+  npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
+  printf 'VITE_API_URL="/api"\n' > .env
+  npm run build
+
+  # Build backend
+  log "building backend"
+  cd "$INSTALL_DIR/backend"
+  npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
+  npx prisma generate
+
+  # Create .env
   DB_PASS_URL="$(urlencode "$DB_PASS")"
-  mkdir -p "$INSTALL_DIR/backend"
   cat > "$INSTALL_DIR/backend/.env" <<EOF
 DATABASE_URL="mysql://${DB_USER}:${DB_PASS_URL}@${DB_HOST}:3306/${DB_NAME}"
 NODE_ENV=production
@@ -206,20 +153,14 @@ BALE_BOT_TOKEN="${BALE_BOT_TOKEN}"
 BALE_ADMIN_CHAT_ID="${BALE_ADMIN_CHAT_ID}"
 EOF
 
-  # Build frontend
-  log "building frontend"
-  cd "$INSTALL_DIR/frontend-app"
-  npm_install_safe "$INSTALL_DIR/frontend-app"
-  printf 'VITE_API_URL="/api"\n' > .env
+  # Push schema
+  npx prisma db push --skip-generate
+
+  # Build
   npm run build
 
-  # Build backend
-  log "building backend"
-  cd "$INSTALL_DIR/backend"
-  npm_install_safe "$INSTALL_DIR/backend"
-  npx prisma generate
-  npx prisma db push --skip-generate
-  npm run build
+  # Frontend is already at $INSTALL_DIR/frontend-app/dist
+  # Backend looks for it there automatically
 
   ok "application built"
 }
@@ -260,7 +201,6 @@ EOF
 setup_nginx() {
   log "configuring Nginx"
 
-  # Backend serves everything (API + frontend), Nginx just proxies
   cat > /etc/nginx/sites-available/vizitik <<EOF
 server {
     listen 80;
@@ -329,11 +269,10 @@ final_summary() {
 main() {
   for a in "$@"; do
     case "$a" in
-      -h|--help) echo "usage: sudo bash scripts/deploy.sh"; exit 0 ;;
+      -h|--help) echo "usage: bash scripts/deploy.sh"; exit 0 ;;
     esac
   done
 
-  [[ "$(id -u)" -ne 0 ]] && fail "run as root: sudo bash scripts/deploy.sh"
   . /etc/os-release 2>/dev/null || fail "unknown OS"
   case "$ID" in
     ubuntu|debian) ;;
@@ -342,7 +281,6 @@ main() {
 
   collect_inputs
   install_prereqs
-  ensure_swap
   setup_database
   build_app
   create_service
