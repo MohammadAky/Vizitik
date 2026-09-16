@@ -8,13 +8,11 @@
 #    vizitik-landing  Static Site: landing page (free)
 #
 #  DATABASE_URL is NOT in this file on purpose - set it in the Render
-#  dashboard (each service: Environment tab). It must point to a
-#  PostgreSQL database, e.g. a free Supabase project:
-#    postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?pgbouncer=true&connection_limit=1
+#  dashboard (each service: Environment tab). It must match the provider
+#  of backend/prisma/schema.prisma (currently MySQL):
+#    mysql://user:password@HOST:3306/vizitik_db
 #  The app's build runs `prisma db push`, so the schema is created in the
 #  database automatically on the first deploy.
-#
-#  Full step-by-step guide (Persian): scripts/deploy-render.md
 # ============================================================================
 services:
   # --------------------------------------------------------------------------
@@ -42,7 +40,7 @@ services:
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: 30d
-      # PostgreSQL connection - set manually in the dashboard (required):
+      # database connection - set manually in the dashboard (required):
       - key: DATABASE_URL
         sync: false
       # Bale bot (optional - the bot stays silent while these are empty):
@@ -82,7 +80,7 @@ services:
       # the panel refuses to start without it - Render generates a strong one:
       - key: ADMIN_TOKEN
         generateValue: true
-      # same PostgreSQL as the app service:
+      # same database as the app service:
       - key: DATABASE_URL
         sync: false
 
