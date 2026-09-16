@@ -77,12 +77,31 @@ export default function NewOrder({ go }) {
   const totalCartons = chosen.reduce((s, l) => s + l.cartonCount, 0);
   const totalUnits = chosen.reduce((s, l) => s + l.unitCount, 0);
 
-  function step(id, key, delta, max) {
+  // پورت ۱:۱ از new-order.js → updateCartonCount/updateUnitCount:
+  //  - دانه نمی‌تواند به یک کارتن کامل برسد (حداکثر unitsPerCarton - 1)
+  //  - مجموع انتخابی نمی‌تواند از موجودی کل خودرو (totalSingleUnits) بیشتر شود
+  function step(p, key, delta) {
+    const id = p.productId;
+    const upc = p.unitsPerCarton || 1;
+    const totalStock =
+      p.totalSingleUnits ?? (p.quantityCartons || 0) * upc + (p.quantityUnits || 0);
     setQty((prev) => {
       const cur = { c: 0, u: 0, ...(prev[id] || {}) };
-      const k = key === "cartonCount" ? "c" : "u";
-      const val = Math.max(0, Math.min(max ?? Infinity, (cur[k] || 0) + delta));
-      return { ...prev, [id]: { ...cur, [k]: val } };
+      let c = cur.c;
+      let u = cur.u;
+      if (key === "cartonCount") {
+        c = Math.max(0, c + delta);
+        if (totalStock > 0 && c * upc + u > totalStock) {
+          c = Math.max(0, Math.floor((totalStock - u) / upc));
+        }
+      } else {
+        u = Math.max(0, u + delta);
+        if (upc > 1 && u >= upc) u = upc - 1;
+        if (totalStock > 0 && c * upc + u > totalStock) {
+          u = Math.max(0, totalStock - c * upc);
+        }
+      }
+      return { ...prev, [id]: { ...cur, c, u } };
     });
   }
 
@@ -249,14 +268,6 @@ export default function NewOrder({ go }) {
             {lines.map((p) => (
               <div className="product-order-card" key={p.productId}>
                 <div className="prod-card-top">
-                  {/* جای عکس محصول — فعلاً آیکون بستنی (تا عکسی در دیتابیس نباشد) */}
-                  <div className="prod-icon-wrap">
-                    {p.imageUrl ? (
-                      <img src={p.imageUrl} alt={p.productName} />
-                    ) : (
-                      <span className="material-symbols-outlined">{p.isCustomUserProduct ? "star" : "icecream"}</span>
-                    )}
-                  </div>
                   <div className="prod-main-meta">
                     <div className="prod-title-line">
                       <span className="prod-title">{p.productName}</span>
@@ -288,7 +299,7 @@ export default function NewOrder({ go }) {
                         <button
                           type="button"
                           className="step-btn"
-                          onClick={() => step(p.productId, "cartonCount", -1)}>
+                          onClick={() => step(p, "cartonCount", -1)}>
                           -
                         </button>
                         <input
@@ -301,9 +312,7 @@ export default function NewOrder({ go }) {
                         <button
                           type="button"
                           className="step-btn"
-                          onClick={() =>
-                            step(p.productId, "cartonCount", 1, p.quantityCartons || 0)
-                          }>
+                          onClick={() => step(p, "cartonCount", 1)}>
                           +
                         </button>
                       </div>
@@ -317,7 +326,7 @@ export default function NewOrder({ go }) {
                         <button
                           type="button"
                           className="step-btn"
-                          onClick={() => step(p.productId, "unitCount", -1)}>
+                          onClick={() => step(p, "unitCount", -1)}>
                           -
                         </button>
                         <input
@@ -330,7 +339,7 @@ export default function NewOrder({ go }) {
                         <button
                           type="button"
                           className="step-btn"
-                          onClick={() => step(p.productId, "unitCount", 1, p.quantityUnits || 0)}>
+                          onClick={() => step(p, "unitCount", 1)}>
                           +
                         </button>
                       </div>
