@@ -399,7 +399,9 @@ EOF
 | CORS/توکن درخواست | همه از همان دامنه نسبی برو؛ اگر از IP جدا می‌زنی مسیر کامل بده |
 | `npm install` با `gyp ERR!` / `node-gyp` / `Failed to execute … configure` می‌شکند | یک وابستگیِ نِیتیو در نسخهٔ قدیمیِ کد بود (`bcrypt`). کد فعلی `bcryptjs` (خالص JS) دارد؛ `git pull` کن و `npm install` را دوباره بزن — نه gcc لازم است نه python نه دانلود از github |
 | `npx prisma generate` با `request to https://binaries.prisma.sh/… failed` می‌ماند | شبکه اجازهٔ دانلود موتور Prisma را نمی‌دهد. یا با پروکسی اجرا کن، یا با آینه: `PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma npx prisma generate` |
-| بعد از آن، `npm run build` با کلی `error TS2345: Argument of type 'unknown' …` می‌شکند | علتِ اصلی همان generateِ ناتمام است: بدون کلاینتِ تولیدشده، مدل‌های Prisma `unknown` می‌شوند. اول `prisma generate` را موفق کن، بعد بیلد |
+| بعد از آن، `npm run build` با کلی `error TS2345: Argument of type 'unknown' …` در `orders.service.ts` می‌شکند | کلاینت تولید نشده: بدون `prisma generate` مدل‌های Prisma `unknown` می‌شوند و `new Map(products.map(…))` تبدیل به `Map<unknown, unknown>` می‌شود. اول `prisma generate` را موفق کن، بعد بیلد |
+| دقیقاً دو خطا: `van-inventory.service.ts:136` و `:167` — `Argument of type 'unknown' is not assignable to parameter of type 'number'` | این یکی باگِ خودِ کد بود و در نسخهٔ فعلی رفع شده (نوعِ خروجی `unitsPerCartonMap` صریح `Map<string, number>` شده). `git pull` کن و `sudo bash scripts/update.sh` را دوباره بزن |
+| بیلد شکست ولی سرویس هنوز جواب می‌دهد / یا بعد از ری‌استارت سرویس بالا نمی‌آید | `nest build` قبل از کامپایل `dist/` را پاک می‌کند؛ `update.sh` حالا یک کپی از بیلد سالم قبلی (`backend/dist` → `backend.dist.<زمان>.tgz`) نگه می‌دارد و اگر بیلد جدید بشکند همان را برمی‌گرداند و سرویس را ری‌استارت می‌کند. سه نسخهٔ آخر نگه داشته می‌شوند |
 | `npm run build` → `nest: not found` | با `--omit=dev` نصب کرده‌ای؛ `npm install --production=false` بزن (prisma و @nestjs/cli روی devDependencies هستند) |
 ---
 
