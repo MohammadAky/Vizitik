@@ -47,8 +47,10 @@ const backendEnv = [
 ].find((f) => fs.existsSync(f));
 if (backendEnv) loadEnvFile(backendEnv);
 
-// Render injects PORT (10000); on a VPS the panel uses ADMIN_PORT (3001).
-const PORT = parseInt(process.env.PORT || process.env.ADMIN_PORT || '3001', 10);
+// Port: on the VPS the panel and the API share backend/.env, which contains
+// the API's PORT (3000) - so ADMIN_PORT must win over PORT there. On Render
+// ADMIN_PORT is not set, so the injected PORT (10000) is used instead.
+const PORT = parseInt(process.env.ADMIN_PORT || process.env.PORT || '3001', 10);
 // VPS: stays 127.0.0.1 (only nginx may reach it). Render: HOST=0.0.0.0.
 const HOST = process.env.HOST || '127.0.0.1';
 const TOKEN = process.env.ADMIN_TOKEN || '';
