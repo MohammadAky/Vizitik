@@ -118,30 +118,26 @@ cd backend
 # ۲. نصب پکیج‌ها
 npm install
 
-# ۳. تنظیم متغیرهای محیطی — یک فایل .env در روت برای همه‌ی سرویس‌ها
-cd ..
+# ۳. تنظیم متغیرهای محیطی — یک فایل .env در پوشهٔ بک‌اند
+cd backend
 cp .env.example .env
-# DATABASE_URL، JWT_SECRET، ADMIN_TOKEN و BALE_BOT_TOKEN را در .env روت پر کنید، بعد پخشش کنید:
-node scripts/env-sync.mjs
-#   → backend/.env        کپی کامل (API + Prisma CLI + پنل ادمین)
-#   → frontend-app/.env   فقط VITE_* (بیلد PWA)
+# DATABASE_URL، JWT_SECRET، ADMIN_TOKEN و BALE_BOT_TOKEN را در backend/.env پر کنید
+# (متغیرهای بیلد PWA مثل VITE_API_URL جدا، در frontend-app/.env هستند)
 cd backend
 
 # ۴. اجرای مایگریشن‌های پریزما و ساخت جداول
 npx prisma db push
 
-# ۵. بارگذاری داده‌های اولیه (کاربر پیش‌فرض، کاتالوگ کالاها و مشتریان)
-npx prisma db seed
-
-# ۶. اجرای سرور بک‌اند در حالت توسعه
+# ۵. اجرای سرور بک‌اند در حالت توسعه
 npm run start:dev
 # سرور بر روی پورت 3000 اجرا می‌شود: http://localhost:3000
 ```
 
-#### متغیرهای `.env` روت
-نمونه‌ی کامل با توضیحِ تک‌تک متغیرها در [`.env.example`](.env.example) هست؛ همه‌چیز آنجاست:
-دیتابیس (`DATABASE_URL`)، بک‌اند (`PORT`، `BIND_HOST`، `JWT_SECRET`، برند)، ربات بله،
-پنل ادمین (`ADMIN_TOKEN`، `ADMIN_PORT`) و بیلد PWA (`VITE_API_URL`).
+#### متغیرهای `backend/.env`
+نمونه‌ی کامل با توضیحِ تک‌تک متغیرها در [`backend/.env.example`](backend/.env.example) هست؛ همه‌چیز آنجاست:
+دیتابیس (`DATABASE_URL`)، بک‌اند (`PORT`، `BIND_HOST`، `JWT_SECRET`)، ربات بله و
+پنل ادمین (`ADMIN_TOKEN`، `ADMIN_PORT`). متغیرهای بیلد PWA (`VITE_API_URL`) در
+`frontend-app/.env` هستند (نمونه: `frontend-app/.env.example`).
 
 ---
 
