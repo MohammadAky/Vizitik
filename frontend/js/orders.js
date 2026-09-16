@@ -638,64 +638,271 @@ function renderThermalPaper(inv) {
     paper.insertAdjacentHTML('beforeend',
         '<div class="pdf-share-overlay" id="pdfShareOverlay" style="display:none;">' +
         '<span class="material-symbols-outlined pdf-share-spinner">progress_activity</span>' +
-        '<span>در حال ساخت نسخهٔ PDF…</span></div>');
+        '<span id="pdfShareOverlayLabel">در حال ساخت نسخهٔ PDF…</span></div>');
+
+    // قالب کامل فاکتور رسمی (A5) برای خروجی PDF هم آماده می‌شود
+    renderPdfInvoice(inv);
 }
 
-/* ساخت PDF از فاکتور + اشتراک‌گذاری (Web Share API با fallback دانلود) */
-async function shareReceiptPdf() {
-    const paper = document.getElementById('thermalReceiptPaper');
-    const btn = document.getElementById('shareReceiptBtn');
-    if (!paper || (btn && btn.disabled)) return;
-    const overlay = document.getElementById('pdfShareOverlay');
-    const icon = document.getElementById('shareReceiptIcon');
-    const label = document.getElementById('shareReceiptLabel');
-    if (btn) btn.disabled = true;
-    if (overlay) overlay.style.display = 'flex';
-    if (icon) icon.textContent = 'hourglass_top';
-    if (label) label.textContent = 'در حال ساخت PDF…';
-    try {
-        const canvas = await html2canvas(paper, { scale: 2, backgroundColor: '#ffffff' });
-        const imgData = canvas.toDataURL('image/png');
+// ============================================================
+// قالب رسمی فاکتور برای خروجی PDF (A5) — اطلاعات کامل فاکتور
+// ============================================================
+function renderPdfInvoice(inv) {
+    const host = document.getElementById('pdfInvoicePaper');
+    if (!host) return;
 
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-        const pageW = 210, pageH = 297, margin = 15;
-        const ratio = canvas.width / canvas.height;
-        let imgW = pageW - margin * 2;
-        let imgH = imgW / ratio;
-        if (imgH > pageH - margin * 2) {
-            imgH = pageH - margin * 2;
-            imgW = imgH * ratio;
+    const orderDate = new Date(inv.orderDate || Date.now());
+    const dateStr = toPersianNum(orderDate.toLocaleDateString('fa-IR'));
+    const timeStr = toPersianNum(orderDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }));
+
+    const custName = (inv.customer && inv.customer.name) || 'مشتری';
+    const custPhone = (inv.customer && inv.customer.phone) ? toPersianNum(inv.customer.phone) : '—';
+    const custAddress = (inv.customer && inv.customer.address) ? inv.customer.address : '—';
+    const visitorName = (inv.visitor && inv.visitor.name) || 'ویزیتور';
+    const visitorPhone = (inv.visitor && inv.visitor.phone) ? toPersianNum(inv.visitor.phone) : '—';
+
+    const num = (v) => toPersianNum(Math.round(v || 0).toLocaleString('en-US'));
+
+    // ردیف‌های جدول اقلام
+    let itemsRows = '';
+    (inv.items || []).forEach((item, idx) => {
+        let qtyText = '';
+        if (item.cartonCount > 0 && item.unitCount > 0) {
+            qtyText = `${toPersianNum(item.cartonCount)} کارتن + ${toPersianNum(item.unitCount)} دانه`;
+        } else if (item.cartonCount > 0) {
+            qtyText = `${toPersianNum(item.cartonCount)} کارتن`;
+        } else {
+            qtyText = `${toPersianNum(item.unitCount)} دانه`;
         }
-        pdf.addImage(imgData, 'PNG', (pageW - imgW) / 2, (pageH - imgH) / 2, imgW, imgH);
-        const blob = pdf.output('blob');
-        const invNo = (window._lastInvoice || {}).invoiceNumber || 'receipt';
-        const file = new File([blob], `vizitik-invoice-${invNo}.pdf`, { type: 'application/pdf' });
+        itemsRows += `
+            <tr>
+                <td class="pi-num">${toPersianNum(idx + 1)}</td>
+                <td>${item.productName}${item.brand ? ` <small>(${item.brand})</small>` : ''}</td>
+                <td class="pi-c">${qtyText}</td>
+                <td class="pi-c">${num(item.unitPrice)}<br><small>کارتن: ${num(item.cartonPrice)}</small></td>
+                <td class="pi-c"><strong>${num(item.lineTotal)}</strong></td>
+            </tr>
+        `;
+    });
+    if (!itemsRows) {
+        itemsRows = '<tr><td class="pi-c" colspan="5" style="color:#94a3b8;">قلمی ثبت نشده است.</td></tr>';
+    }
+
+    // خلاصه مالی (جمع ناخالص، پله‌های تخفیف، مبلغ نهایی)
+    let discountRowsHtml = '';
+    if (inv.pricing && inv.pricing.totalDiscount > 0) {
+        if (inv.pricing.discountSteps && inv.pricing.discountSteps.length > 0) {
+            inv.pricing.discountSteps.forEach((step, i) => {
+                const diff = (step.before || 0) - (step.after || 0);
+                discountRowsHtml += `
+                    <div class="pi-sum-row pi-discount">
+                        <span>تخفیف پله ${toPersianNum(i + 1)} (${toPersianNum(step.percent)}٪)</span>
+                        <span>-${num(diff)} تومان</span>
+                    </div>
+                `;
+            });
+        }
+        discountRowsHtml += `
+            <div class="pi-sum-row pi-discount" style="font-weight:800;">
+                <span>مجموع تخفیف‌ها</span>
+                <span>-${num(inv.pricing.totalDiscount)} تومان</span>
+            </div>
+        `;
+    }
+
+    // ریز تسویه (نقد/پوز/چک/نسیه)
+    let paymentsRowsHtml = '';
+    let totalPaid = 0;
+    (inv.payments || []).forEach(p => {
+        totalPaid += p.amount;
+        if (p.method === 'CASH') {
+            paymentsRowsHtml += `<div class="pi-pay-row"><span>نقدی</span><strong>${num(p.amount)} تومان</strong></div>`;
+        } else if (p.method === 'CARD') {
+            paymentsRowsHtml += `<div class="pi-pay-row"><span>کارتخوان / پوز</span><strong>${num(p.amount)} تومان</strong></div>`;
+        } else if (p.method === 'CHECK') {
+            const dueStr = p.check && p.check.dueDate ? toPersianNum(new Date(p.check.dueDate).toLocaleDateString('fa-IR')) : '—';
+            const checkNum = p.check && p.check.checkNumber ? toPersianNum(p.check.checkNumber) : '—';
+            paymentsRowsHtml += `
+                <div class="pi-pay-row">
+                    <span>چک صیادی ${p.check && p.check.bankName ? `(${p.check.bankName})` : ''}<br>
+                    <span class="pi-pay-sub">شناسه: ${checkNum} — سررسید: ${dueStr}</span></span>
+                    <strong>${num(p.amount)} تومان</strong>
+                </div>
+            `;
+        }
+    });
+    const finalAmount = inv.pricing ? inv.pricing.finalAmount : 0;
+    const remainingCredit = Math.max(0, finalAmount - totalPaid);
+    if (remainingCredit > 0) {
+        paymentsRowsHtml += `<div class="pi-pay-row pi-credit"><span>مانده در دفتر حساب (نسیه)</span><strong>${num(remainingCredit)} تومان</strong></div>`;
+    }
+    if (!paymentsRowsHtml) {
+        paymentsRowsHtml = '<div class="pi-pay-row"><span style="color:#94a3b8;">پرداختی ثبت نشده است.</span></div>';
+    }
+
+    host.innerHTML = `
+        <div class="pi-sheet">
+            <div class="pi-header">
+                <div class="pi-brand">
+                    <span class="pi-brand-name">ویزیتیک</span>
+                    <span class="pi-brand-sub">سامانه پخش مویرگی و ویزیتوری</span>
+                </div>
+                <div class="pi-invoice-chip">
+                    <small>فاکتور رسمی فروش</small>
+                    <strong>#${toPersianNum(inv.invoiceNumber || '')}</strong>
+                </div>
+            </div>
+
+            <div class="pi-meta-band">
+                <div class="pi-meta-box">
+                    <span class="pi-meta-title">اطلاعات فروشگاه</span>
+                    <div class="pi-meta-row"><span>نام:</span><strong>${custName}</strong></div>
+                    <div class="pi-meta-row"><span>تلفن:</span><strong>${custPhone}</strong></div>
+                    <div class="pi-meta-row"><span>آدرس:</span><strong>${custAddress}</strong></div>
+                </div>
+                <div class="pi-meta-box">
+                    <span class="pi-meta-title">اطلاعات ویزیتور و فاکتور</span>
+                    <div class="pi-meta-row"><span>ویزیتور:</span><strong>${visitorName}</strong></div>
+                    <div class="pi-meta-row"><span>تلفن:</span><strong>${visitorPhone}</strong></div>
+                    <div class="pi-meta-row"><span>تاریخ:</span><strong>${dateStr} — ${timeStr}</strong></div>
+                </div>
+            </div>
+
+            <div class="pi-section-title">اقلام فاکتور (تحویل داده شده)</div>
+            <table class="pi-items-table">
+                <thead>
+                    <tr>
+                        <th class="pi-num">ردیف</th>
+                        <th>نام کالا</th>
+                        <th class="pi-c">تعداد</th>
+                        <th class="pi-c">فی (تومان)</th>
+                        <th class="pi-c">مبلغ (تومان)</th>
+                    </tr>
+                </thead>
+                <tbody>${itemsRows}</tbody>
+            </table>
+
+            <div class="pi-summary">
+                <div class="pi-sum-row">
+                    <span>جمع ناخالص</span>
+                    <strong>${num(inv.pricing ? inv.pricing.subtotal : 0)} تومان</strong>
+                </div>
+                ${discountRowsHtml}
+                <div class="pi-sum-row pi-final">
+                    <span>مبلغ نهایی قابل پرداخت</span>
+                    <span>${num(finalAmount)} تومان</span>
+                </div>
+            </div>
+
+            <div class="pi-payments">
+                <div class="pi-sum-row" style="font-weight:900;color:#0f172a;">
+                    <span>ریز تسویه فاکتور</span>
+                    <span>${totalPaid > 0 ? num(totalPaid) + ' تومان دریافت شده' : ''}</span>
+                </div>
+                ${paymentsRowsHtml}
+            </div>
+
+            ${(inv.status === 'CANCELLED') ? '<div class="pi-cancelled">این فاکتور ابطال شده است</div>' : ''}
+
+            <div class="pi-footer">
+                از همراهی شما سپاسگزاریم — برگهٔ فاکتور به‌صورت خودکار توسط سامانهٔ ویزیتیک صادر شده است.
+            </div>
+        </div>
+    `;
+}
+
+/* نام فایل خروجی: نام مشتری + شماره فاکتور */
+function invoicePdfFilename(inv) {
+    const cust = (((inv && inv.customer) && inv.customer.name) || 'مشتری')
+        .trim().replace(/[\s]+/g, '_').replace(/[\\/:*?"<>|]/g, '');
+    const invNo = ((inv && inv.invoiceNumber) || 'receipt').toString();
+    return `${cust}-فاکتور-${invNo}.pdf`;
+}
+
+function downloadBlobAs(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+/* ساخت PDF از قالب کامل فاکتور (A5) — برمی‌گرداند {blob, filename} */
+async function buildInvoicePdf() {
+    const inv = window._lastInvoice;
+    const paper = document.getElementById('pdfInvoicePaper');
+    if (!inv || !paper || !paper.innerHTML) {
+        throw new Error('ابتدا فاکتور را برای نمایش باز کنید.');
+    }
+    // فونت وب باید آماده باشد تا html2canvas فونت پیش‌فرض نزند
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+
+    const canvas = await html2canvas(paper, { scale: 2, backgroundColor: '#ffffff' });
+    const imgData = canvas.toDataURL('image/png');
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+    const pageW = 210, pageH = 297, margin = 10;
+    const ratio = canvas.width / canvas.height;
+    let imgW = pageW - margin * 2;
+    let imgH = imgW / ratio;
+    if (imgH > pageH - margin * 2) {
+        imgH = pageH - margin * 2;
+        imgW = imgH * ratio;
+    }
+    pdf.addImage(imgData, 'PNG', (pageW - imgW) / 2, (pageH - imgH) / 2, imgW, imgH);
+    return { blob: pdf.output('blob'), filename: invoicePdfFilename(inv) };
+}
+
+function setPdfButtonsBusy(busy) {
+    const shareBtn = document.getElementById('shareReceiptBtn');
+    const dlBtn = document.getElementById('downloadReceiptBtn');
+    const overlay = document.getElementById('pdfShareOverlay');
+    [shareBtn, dlBtn].forEach(b => { if (b) b.disabled = busy; });
+    if (overlay) overlay.style.display = busy ? 'flex' : 'none';
+}
+
+/* اشتراک‌گذاری PDF — اگر مرورگر از اشتراک فایل پشتیبانی نکند، فایل دانلود می‌شود */
+async function shareReceiptPdf() {
+    if (!window._lastInvoice) return;
+    setPdfButtonsBusy(true);
+    try {
+        const { blob, filename } = await buildInvoicePdf();
+        const file = new File([blob], filename, { type: 'application/pdf' });
 
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: 'فاکتور ویزیتیک' });
+            await navigator.share({ files: [file], title: filename });
         } else {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `vizitik-invoice-${invNo}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 5000);
-            alert('اشتراک‌گذاری مستقیم در دسترس نیست؛ فایل PDF دانلود شد.');
+            downloadBlobAs(blob, filename);
+            alert('اشتراک‌گذاری مستقیم در این مرورگر پشتیبانی نمی‌شود؛ فایل PDF دانلود شد.');
         }
     } catch (err) {
         if (!/Abort/i.test(err && err.name)) {
             alert('ساخت PDF با خطا مواجه شد: ' + ((err && err.message) || err));
         }
     } finally {
-        if (btn) btn.disabled = false;
-        if (overlay) overlay.style.display = 'none';
-        if (icon) icon.textContent = 'ios_share';
-        if (label) label.textContent = 'اشتراک‌گذاری PDF';
+        setPdfButtonsBusy(false);
     }
 }
+
+/* دانلود مستقیم فایل PDF (بدون منوی اشتراک) */
+async function downloadReceiptPdf() {
+    if (!window._lastInvoice) return;
+    setPdfButtonsBusy(true);
+    try {
+        const { blob, filename } = await buildInvoicePdf();
+        downloadBlobAs(blob, filename);
+    } catch (err) {
+        alert('ساخت PDF با خطا مواجه شد: ' + ((err && err.message) || err));
+    } finally {
+        setPdfButtonsBusy(false);
+    }
+}
+
+
 
 function closeThermalReceiptModal() {
     document.getElementById('invoiceModal').style.display = 'none';
