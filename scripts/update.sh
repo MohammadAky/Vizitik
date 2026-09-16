@@ -2,7 +2,16 @@
 #
 # Update existing deployment
 #
-# Pulls the newest commits and rebuilds only what changed.
+# The live install ($INSTALL_DIR, default /opt/vizitik) is NOT a git checkout —
+# setup-server.sh only copies the deployable trees there. So this script:
+#   1) pulls the source checkout ($SRC_DIR, default: the repo this script lives in)
+#   2) re-syncs the deployable trees (backend, frontend-app, landing, admin)
+#      into $INSTALL_DIR, preserving backend/.env, frontend-app/.env and node_modules
+#   3) rebuilds only what changed (backend and/or the PWA), restarts what needs it,
+#      and records the deployed revision.
+#
+# PHP site (frontend/) needs no build: files served from a checkout are live
+# right after the pull; when served from $INSTALL_DIR the sync covers it.
 #
 # Usage:
 #   sudo bash scripts/update.sh
@@ -13,10 +22,13 @@
 #   --frontend-only   Only rebuild frontend
 #   --restart-only    Restart services without rebuilding
 #   --force           Rebuild everything regardless of changes
+#   --no-pull         Skip the git pull, deploy the checkout as it is
 #   -y, --yes         Skip confirmations
 #
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_DIR="${SRC_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/vizitik}"
 BACKEND_PORT="${BACKEND_PORT:-3000}"
 SETUP_SVC="vizitik-backend"
@@ -24,13 +36,14 @@ ADMIN_SVC="vizitik-admin"
 
 log()  { echo -e "\n\033[1;36m> $*\033[0m"; }
 ok()   { echo -e "\033[1;32m  OK  $*\033[0m"; }
-info() { echo -e "\033[0;36m  ..  $*\033[0m"; }
-warn() { echo -e "\033[1;33m  WARN $*\033[0m"; }
-err()  { echo -e "\033[1;31m  FAIL $*\033[0m" >&2; }
+info() { echo -e "\033[0;36m  ..  $*"; }
+warn() { echo -e "\033[1;33m  WARN $*"; }
+err()  { echo -e "\033[1;31m  FAIL $*" >&2; }
 skip() { echo -e "  --  $*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 CHECK=0; YES=0; DO_BACKEND=1; DO_FRONTEND=1; DO_PULL=1; RESTART_ONLY=0; FORCE=0
+LEGACY=0 # 1 when $INSTALL_DIR itself is the git checkout (files in place after pull)
 REVISION_FILE="$INSTALL_DIR/.vizitik-revision"
 DEPLOYED_REV="$(cat "$REVISION_FILE" 2>/dev/null | tr -d ' \n' || true)"
 
@@ -51,9 +64,12 @@ usage: sudo bash scripts/update.sh [options]
   --backend-only    skip the PWA build
   --frontend-only   skip the backend build
   --restart-only    restart services without rebuilding
-  -f, --force       rebuild both sides from HEAD
-  --no-pull         use the checkout as it is
+  -f, --force       rebuild both sides from the checkout
+  --no-pull         deploy the checkout as it is (no git pull)
   -y, --yes         no confirmations
+
+  SRC_DIR       source checkout to deploy (default: parent of scripts/)
+  INSTALL_DIR   live install dir        (default: /opt/vizitik)
 TXT
       exit 0 ;;
     *) err "unknown argument: $1"; exit 2 ;;
@@ -67,36 +83,101 @@ run() {
   "$@"
 }
 
-ask() {
-  [[ "$YES" == "1" || "$CHECK" == "1" ]] || ! [[ -t 0 ]] && return 0
-  local ans=""
-  read -r -p "  $1 [${2:-y}/n]: " ans || ans=""
-  [[ "${ans:-${2:-y}}" =~ ^[Yy] ]]
-}
-
 # ------------------------------------------------------------------
-# 1) Git checkout
+# 1) Git checkout — the source checkout gets the pull
 # ------------------------------------------------------------------
 update_checkout() {
-  [[ -d "$INSTALL_DIR/.git" ]] || { skip "not a git checkout"; return 0; }
-  [[ "$DO_PULL" == "0" ]] && { skip "pull skipped"; return 0; }
+  PULLED=0
+  NEW_REV=""
+  OLD_REV=""
 
-  local branch
-  branch="$(git -C "$INSTALL_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"
-  [[ -z "$branch" || "$branch" == "HEAD" ]] && { skip "detached HEAD"; return 0; }
-
-  info "branch: $branch"
-  if git -C "$INSTALL_DIR" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
-    run "pull" git -C "$INSTALL_DIR" pull --ff-only || {
-      warn "pull failed; building current checkout"
-      DO_PULL=0
-    }
-  else
-    run "pull" git -C "$INSTALL_DIR" pull --ff-only origin "$branch" || {
-      warn "pull failed; building current checkout"
-      DO_PULL=0
-    }
+  # legacy: if the install dir itself is a git checkout, pull there
+  if [[ -d "$INSTALL_DIR/.git" ]]; then
+    LEGACY=1
+    info "install dir is a git checkout — pulling there"
+    local branch
+    branch="$(git -C "$INSTALL_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    OLD_REV="$(git -C "$INSTALL_DIR" rev-parse HEAD 2>/dev/null)"
+    local doff
+    doff="git -C $INSTALL_DIR"
+    if [[ "$CHECK" == "1" ]]; then
+      if $doff fetch origin "$branch" >/dev/null 2>&1; then
+        NEW_REV="$($doff rev-parse FETCH_HEAD 2>/dev/null)"
+        local ahead
+        ahead="$($doff rev-list --count "$OLD_REV..$NEW_REV" 2>/dev/null || echo 0)"
+        [[ "$ahead" -gt 0 ]] && { PULLED=1; info "check mode: $ahead commit(s) pending on origin/$branch"; }
+      fi
+    elif git -C "$INSTALL_DIR" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+      if run "pull" git -C "$INSTALL_DIR" pull --ff-only; then
+        NEW_REV="$(git -C "$INSTALL_DIR" rev-parse HEAD)"
+        [[ "$NEW_REV" != "$OLD_REV" ]] && PULLED=1
+      fi
+    else
+      if run "pull" git -C "$INSTALL_DIR" pull --ff-only origin "$branch"; then
+        NEW_REV="$(git -C "$INSTALL_DIR" rev-parse HEAD)"
+        [[ "$NEW_REV" != "$OLD_REV" ]] && PULLED=1
+      fi
+    fi
+    if [[ "$PULLED" == "0" ]]; then
+      [[ -n "${NEW_REV:-}" && "$NEW_REV" == "$DEPLOYED_REV" ]] && { info "already at latest"; return 0; }
+      NEW_REV="${NEW_REV:-$(git -C "$INSTALL_DIR" rev-parse HEAD 2>/dev/null)}"
+      OLD_REV="$DEPLOYED_REV"
+    fi
+    return 0
   fi
+
+  # normal mode: pull the source checkout (~/Vizitik)
+  [[ -d "$SRC_DIR/.git" ]] || { err "no git checkout at $SRC_DIR — clone the repo there first"; exit 1; }
+  [[ "$DO_PULL" == "0" ]] && { skip "pull skipped (--no-pull)"; }
+
+  OLD_REV="$(git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null)"
+  if [[ "$DO_PULL" == "1" ]]; then
+    info "source checkout: $SRC_DIR"
+    local branch
+    branch="$(git -C "$SRC_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    if [[ "$CHECK" == "1" ]]; then
+      # read-only: fetch and preview what a real run would pull
+      if git -C "$SRC_DIR" fetch origin "$branch" >/dev/null 2>&1; then
+        NEW_REV="$(git -C "$SRC_DIR" rev-parse FETCH_HEAD 2>/dev/null)"
+        local ahead
+        ahead="$(git -C "$SRC_DIR" rev-list --count "$OLD_REV..$NEW_REV" 2>/dev/null || echo 0)"
+        if [[ "$ahead" -gt 0 ]]; then
+          PULLED=1
+          info "check mode: $ahead commit(s) pending on origin/$branch:"
+          git -C "$SRC_DIR" log --oneline "$OLD_REV..$NEW_REV" | sed 's/^/        /'
+        else
+          info "check mode: up to date with origin/$branch"
+        fi
+      else
+        warn "check mode: could not fetch origin (offline?) — assuming the checkout as-is"
+      fi
+    elif git -C "$SRC_DIR" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+      if ! run "pull" git -C "$SRC_DIR" pull --ff-only; then
+        err "git pull failed in $SRC_DIR"
+        err "if the VPS has local commits, push or merge them first (git pull refuses to fast-forward)"
+        exit 2
+      fi
+      NEW_REV="$(git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null)"
+      [[ "$NEW_REV" != "$OLD_REV" ]] && { PULLED=1; ok "pulled: $(git -C "$SRC_DIR" log --oneline "$OLD_REV..$NEW_REV" | sed 's/^/        /')"; }
+    else
+      if ! run "pull" git -C "$SRC_DIR" pull --ff-only origin "$branch"; then
+        err "git pull failed in $SRC_DIR (no upstream tracking?)"
+        exit 2
+      fi
+      NEW_REV="$(git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null)"
+      [[ "$NEW_REV" != "$OLD_REV" ]] && { PULLED=1; ok "pulled: $(git -C "$SRC_DIR" log --oneline "$OLD_REV..$NEW_REV" | sed 's/^/        /')"; }
+    fi
+  else
+    NEW_REV="$OLD_REV"
+  fi
+
+  if [[ "$PULLED" == "0" && "${OLD_REV:-}" == "$DEPLOYED_REV" ]]; then
+    info "already at latest"
+    return 0
+  fi
+  # classification base: what was pulled this run (OLD_REV), or when nothing
+  # was pulled, the last recorded deployed revision
+  [[ "$PULLED" == "1" ]] || OLD_REV=""
 }
 
 # ------------------------------------------------------------------
@@ -105,30 +186,33 @@ update_checkout() {
 classify_changes() {
   CHANGED=""
   if [[ "$FORCE" == "1" ]]; then
-    CHANGED="backend frontend deps schema"
+    CHANGED="backend frontend deps schema php landing admin"
     info "--force: rebuilding all"
     return 0
   fi
-  if [[ -z "$DEPLOYED_REV" ]]; then
+  if [[ -z "$NEW_REV" ]]; then
+    CHANGED="none"
+    return 0
+  fi
+  if [[ -z "$OLD_REV" && -z "$DEPLOYED_REV" ]]; then
     CHANGED="backend frontend"
     warn "no deployed revision found; rebuilding all"
     return 0
   fi
-  if [[ "$DEPLOYED_REV" == "$(git -C "$INSTALL_DIR" rev-parse HEAD 2>/dev/null)" ]]; then
-    CHANGED="none"
-    info "already at latest"
-    return 0
-  fi
 
+  local base="${OLD_REV:-$DEPLOYED_REV}"
   local files
-  files="$(git -C "$INSTALL_DIR" diff --name-only "$DEPLOYED_REV..HEAD" 2>/dev/null)"
-  [[ -z "$files" ]] && { CHANGED="backend frontend"; return 0; }
+  files="$(git -C "$SRC_DIR" diff --name-only "$base..$NEW_REV" 2>/dev/null || git -C "$INSTALL_DIR" diff --name-only "$base..$NEW_REV" 2>/dev/null)"
+  [[ -z "$files" ]] && { CHANGED="none"; return 0; }
 
   local parts=()
   echo "$files" | grep -q '^backend/' && parts+=("backend")
   echo "$files" | grep -q '^frontend-app/' && parts+=("frontend")
-  echo "$files" | grep -Eq 'package-lock.json|package.json' && parts+=("deps")
-  echo "$files" | grep -q 'prisma/schema.prisma' && parts+=("schema")
+  echo "$files" | grep -q '^frontend/' && parts+=("php")
+  echo "$files" | grep -q '^landing/' && parts+=("landing")
+  echo "$files" | grep -q '^admin/' && parts+=("admin")
+  echo "$files" | grep -Eq '^backend/package(-lock)?\.json$|^frontend-app/package(-lock)?\.json$' && parts+=("deps")
+  echo "$files" | grep -q '^backend/prisma/schema.prisma' && parts+=("schema")
   [[ ${#parts[@]} -eq 0 ]] && parts=("none")
   CHANGED="${parts[*]}"
   info "changed: $CHANGED"
@@ -138,8 +222,50 @@ classify_changes() {
     DO_BACKEND=0
   fi
   if [[ "$CHANGED" != *frontend* && "$CHANGED" != *deps* ]]; then
-    [[ "$DO_FRONTEND" == "1" ]] && skip "no frontend changes"
+    [[ "$DO_FRONTEND" == "1" ]] && skip "no PWA changes"
     DO_FRONTEND=0
+  fi
+}
+
+# ------------------------------------------------------------------
+# 2b) Sync deployable trees from the source checkout
+# ------------------------------------------------------------------
+sync_trees() {
+  if [[ "$LEGACY" == "1" ]]; then
+    skip "install dir is the checkout — files are in place after the pull"
+    return 0
+  fi
+  log "syncing source trees to $INSTALL_DIR"
+  local t
+  for t in backend frontend-app landing admin; do
+    if [[ ! -d "$SRC_DIR/$t" ]]; then
+      skip "$t (not in checkout)"
+      continue
+    fi
+    local dest="$INSTALL_DIR/$t"
+    [[ -d "$dest" ]] || mkdir -p "$dest"
+
+    # preserve the live .env, node_modules and built dist while replacing the
+    # rest of the tree with the fresh source
+    run "clean+copy" bash -c "
+      d='$dest'; s='$SRC_DIR/$t';
+      [[ -d \"\$d/node_modules\" ]] && mv \"\$d/node_modules\" \"\$d/.nm.keep\" 2>/dev/null || true;
+      [[ -f \"\$d/.env\" ]] && cp \"\$d/.env\" \"\$d/.env.keep\" 2>/dev/null || true;
+      [[ -d \"\$d/dist\" ]] && mv \"\$d/dist\" \"\$d/.dist.keep\" 2>/dev/null || true;
+      find \"\$d\" -mindepth 1 -maxdepth 1 ! -name '.nm.keep' ! -name '.env.keep' ! -name '.dist.keep' -exec rm -rf {} + 2>/dev/null;
+      cp -r \"\$s/.\" \"\$d/\";
+      [[ -f \"\$d/.env.keep\" ]] && { mv \"\$d/.env.keep\" \"\$d/.env\"; } || rm -f \"\$d/.env.keep\";
+      [[ -d \"\$d/.nm.keep\" ]] && { mv \"\$d/.nm.keep\" \"\$d/node_modules\"; rm -rf \"\$d/node_modules/.vite\"; } || true;
+      [[ -d \"\$d/.dist.keep\" ]] && mv \"\$d/.dist.keep\" \"\$d/dist\" || true;
+      true
+    "
+    [[ "$CHECK" == "1" ]] || ok "$t synced"
+  done
+
+  # the admin panel runs from backend/admin/server.js (systemd WorkingDirectory)
+  if [[ -f "$SRC_DIR/admin/server.js" && -d "$INSTALL_DIR/backend" ]]; then
+    run "admin script" bash -c "mkdir -p '$INSTALL_DIR/backend/admin' && cp '$SRC_DIR/admin/server.js' '$INSTALL_DIR/backend/admin/server.js'"
+    [[ "$CHECK" == "1" ]] || ok "admin panel script synced"
   fi
 }
 
@@ -209,6 +335,11 @@ update_frontend() {
     exit 1
   fi
 
+  if [[ "$CHECK" == "1" ]]; then
+    echo "      would swap: $tmp/dist -> $fe/dist (old dist kept as dist.prev until success)"
+    return 0
+  fi
+
   local prev="$INSTALL_DIR/frontend-app/dist.prev"
   mv "$fe/dist" "$prev" 2>/dev/null || true
   mv "$tmp/dist" "$fe/dist" || { mv "$prev" "$fe/dist" 2>/dev/null || true; err "PWA swap failed"; exit 1; }
@@ -220,41 +351,46 @@ update_frontend() {
 # 5) Service restart
 # ------------------------------------------------------------------
 restart_service() {
-  [[ "$RESTART_ONLY" == "1" || "$DO_BACKEND" == "1" ]] || return 0
+  local need_restart=0
+  [[ "$RESTART_ONLY" == "1" || "$DO_BACKEND" == "1" ]] && need_restart=1
+  [[ " $CHANGED " == *" admin "* ]] && need_restart=1
+  [[ "$need_restart" == "1" ]] || return 0
   log "restarting services"
 
   if have systemctl; then
-    # Stop any stray processes on the port
-    local pids
-    pids="$(ss -ltnp 2>/dev/null | awk -v port=":$BACKEND_PORT" '$4 ~ port"$" {print}' | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | sort -u)"
-    local main
-    main="$(systemctl show -p MainPID "$SETUP_SVC" 2>/dev/null | cut -d= -f2)"
-    local strays=""
-    for p in $pids; do
-      [[ "$p" == "$main" ]] || strays+="$p "
-    done
-    if [[ -n "${strays// /}" ]]; then
-      info "stopping stray processes"
-      kill $strays 2>/dev/null || true
-      sleep 1
+    if [[ "$DO_BACKEND" == "1" || "$RESTART_ONLY" == "1" ]]; then
+      # Stop any stray processes on the port
+      local pids
+      pids="$(ss -ltnp 2>/dev/null | awk -v port=":$BACKEND_PORT" '$4 ~ port"$" {print}' | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | sort -u)"
+      local main
+      main="$(systemctl show -p MainPID "$SETUP_SVC" 2>/dev/null | cut -d= -f2)"
+      local strays=""
+      for p in $pids; do
+        [[ "$p" == "$main" ]] || strays+="$p "
+      done
+      if [[ -n "${strays// /}" ]]; then
+        info "stopping stray processes"
+        kill $strays 2>/dev/null || true
+        sleep 1
+      fi
+
+      run "restart" systemctl restart "$SETUP_SVC"
+      sleep 2
+      if systemctl is-active --quiet "$SETUP_SVC"; then
+        ok "$SETUP_SVC is active"
+      else
+        err "$SETUP_SVC failed to start"
+        journalctl -u "$SETUP_SVC" -n 20 --no-pager 2>/dev/null | sed 's/^/        /'
+        exit 1
+      fi
     fi
 
-    run "restart" systemctl restart "$SETUP_SVC"
-    sleep 2
-    if systemctl is-active --quiet "$SETUP_SVC"; then
-      ok "$SETUP_SVC is active"
-    else
-      err "$SETUP_SVC failed to start"
-      journalctl -u "$SETUP_SVC" -n 20 --no-pager 2>/dev/null | sed 's/^/        /'
-      exit 1
-    fi
-
-    if systemctl is-active --quiet "$ADMIN_SVC" 2>/dev/null; then
+    if [[ " $CHANGED " == *" admin "* || "$RESTART_ONLY" == "1" ]] && systemctl is-active --quiet "$ADMIN_SVC" 2>/dev/null; then
       run "restart admin" systemctl restart "$ADMIN_SVC"
       ok "$ADMIN_SVC restarted"
     fi
   else
-    warn "no systemctl; restart the service manually"
+    warn "no systemctl; restart the services manually"
   fi
 }
 
@@ -275,9 +411,9 @@ verify() {
     fi
   fi
 
-  if [[ "$RESTART_ONLY" == "0" ]] && have git; then
-    git -C "$INSTALL_DIR" rev-parse HEAD > "$REVISION_FILE" 2>/dev/null
-    ok "revision recorded: $(git -C "$INSTALL_DIR" rev-parse --short HEAD 2>/dev/null)"
+  if [[ -n "$NEW_REV" ]]; then
+    echo "$NEW_REV" > "$REVISION_FILE" 2>/dev/null
+    ok "revision recorded: $(echo "$NEW_REV" | cut -c1-7)"
   fi
 }
 
@@ -293,6 +429,7 @@ main() {
   fi
 
   log "Update - $(date '+%Y-%m-%d %H:%M')"
+  NEW_REV=""; OLD_REV=""
   update_checkout
   classify_changes
 
@@ -302,11 +439,15 @@ main() {
     exit 0
   fi
 
-  if [[ "$CHANGED" == "none" ]]; then
+  if [[ "$CHANGED" == "none" || -z "$CHANGED" ]]; then
     log "nothing changed"
-    ok "already running $(git -C "$INSTALL_DIR" rev-parse --short HEAD 2>/dev/null)"
+    ok "already running $(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || git -C "$INSTALL_DIR" rev-parse --short HEAD 2>/dev/null)"
+    verify
     exit 0
   fi
+
+  # sync the deployable trees so the build runs against fresh sources
+  sync_trees
 
   memory_guard
   update_backend
