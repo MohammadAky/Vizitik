@@ -311,8 +311,15 @@ needs_deps() { [[ " $CHANGED " == *" deps "* ]]; }
 npm_install_in() {
   local dir="$1"
   [[ -d "$dir" ]] || return 0
-  if needs_deps || [[ ! -d "$dir/node_modules" ]]; then
+  # Fingerprint of the manifest+lock: a stale node_modules (e.g. wiped on the
+  # VPS, or installed from an older package.json) must be reinstalled even
+  # when the pulled diff contains no dependency files.
+  local marker="$INSTALL_DIR/.deps-$(basename "$dir").sha"
+  local hash
+  hash="$(cat "$dir/package.json" "$dir/package-lock.json" 2>/dev/null | sha256sum | cut -d' ' -f1)"
+  if [[ "$hash" != "$(cat "$marker" 2>/dev/null)" || ! -d "$dir/node_modules" ]]; then
     run "npm" bash -c "cd '$dir' && npm ci --no-audit --no-fund --no-progress --loglevel=error 2>/dev/null || npm install --no-audit --no-fund --no-progress --loglevel=error"
+    [[ "$CHECK" == "1" ]] || echo "$hash" > "$marker"
   else
     skip "dependencies unchanged"
   fi
