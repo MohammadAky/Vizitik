@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { api, apiSilent } from '../lib/api.js';
 import { kv } from '../lib/db.js';
 import { useLocalData } from '../lib/data.js';
@@ -26,6 +28,7 @@ export default function Orders({ go }) {
   const [edit, setEdit] = useState(null);
   const [receipt, setReceipt] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [sharingPdf, setSharingPdf] = useState(false);
 
   async function refresh() {
     const cached = await kv.get('orders_cache').catch(() => null);
@@ -253,6 +256,73 @@ export default function Orders({ go }) {
       return;
     }
     setReceipt(inv);
+  }
+
+  /* ================= ساخت PDF فاکتور + اشتراک‌گذاری =================
+   * تصویر DOM فاکتور (که RTL و فونت فارسی خودش را دارد) گرفته می‌شود،
+   * داخل یک PDF روی A4 می‌نشیند و از طریق Web Share API به اشتراک می‌رود.
+   * مرورگرهایی که file-share ندارند → فایل دانلود می‌شود. */
+  async function shareInvoicePdf() {
+    if (!receipt || sharingPdf) return;
+    const paper = document.getElementById('thermalReceiptPaper');
+    if (!paper) return;
+    setSharingPdf(true);
+    try {
+      // فونت‌های وب مطمئن بارگیری شده باشند، وگرنه html2canvas فونت پیش‌فرض می‌زند
+      if (document.fonts && document.fonts.ready) await document.fonts.ready;
+      const canvas = await html2canvas(paper, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        // overlay اسپینر فقط در کاپ (نسخهٔ DOM) حذف می‌شود — روی PDF نیاید
+        onclone: (clonedDoc) => {
+          const o = clonedDoc.querySelector('.pdf-share-overlay');
+          if (o) o.remove();
+        },
+      });
+      const imgData = canvas.toDataURL('image/png');
+
+      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+      const pageW = 210;
+      const pageH = 297;
+      const margin = 15;
+      const ratio = canvas.width / canvas.height;
+      let imgW = pageW - margin * 2;
+      let imgH = imgW / ratio;
+      if (imgH > pageH - margin * 2) {
+        imgH = pageH - margin * 2;
+        imgW = imgH * ratio;
+      }
+      pdf.addImage(imgData, 'PNG', (pageW - imgW) / 2, (pageH - imgH) / 2, imgW, imgH);
+      const blob = pdf.output('blob');
+      const file = new File([blob], `vizitik-invoice-${receipt.invoiceNumber || 'receipt'}.pdf`, {
+        type: 'application/pdf',
+      });
+
+      const canShare =
+        typeof navigator !== 'undefined' &&
+        typeof navigator.canShare === 'function' &&
+        navigator.canShare({ files: [file] });
+      if (canShare) {
+        await navigator.share({ files: [file], title: 'فاکتور ویزیتیک' });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `vizitik-invoice-${receipt.invoiceNumber || 'receipt'}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        showToast('اشتراک‌گذاری مستقیم در دسترس نیست؛ فایل PDF دانلود شد.', 'info');
+      }
+    } catch (err) {
+      // کاربر اگر منوی اشتراک را ببندد AbortError می‌شود — خطا نیست
+      if (!/Abort/i.test(err && err.name || '')) {
+        showToast('ساخت PDF با خطا مواجه شد: ' + ((err && err.message) || err), 'error');
+      }
+    } finally {
+      setSharingPdf(false);
+    }
   }
 
   async function sendOrderToBale(orderId) {
@@ -785,6 +855,12 @@ export default function Orders({ go }) {
           </div>
 
           <div className="thermal-receipt-paper" id="thermalReceiptPaper">
+            {sharingPdf && (
+              <div className="pdf-share-overlay">
+                <span className="material-symbols-outlined pdf-share-spinner">progress_activity</span>
+                <span>در حال ساخت نسخهٔ PDF…</span>
+              </div>
+            )}
             {receipt && (
               <>
                 <div className="receipt-title">ویزیتیک</div>
@@ -817,6 +893,10 @@ export default function Orders({ go }) {
           </div>
 
           <div className="thermal-modal-actions">
+            <button type="button" className="share-receipt-btn" disabled={sharingPdf} onClick={shareInvoicePdf}>
+              <span className="material-symbols-outlined">{sharingPdf ? 'hourglass_top' : 'ios_share'}</span>
+              <span>{sharingPdf ? 'در حال ساخت PDF…' : 'اشتراک‌گذاری PDF'}</span>
+            </button>
             <button type="button" className="print-receipt-btn" onClick={() => window.print()}>
               <span className="material-symbols-outlined">print</span>
               <span>چاپ فاکتور حرارتی</span>

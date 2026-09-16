@@ -696,3 +696,58 @@
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
 }
+
+/* ============ اشتراک‌گذاری PDF فاکتور (PWA + نسخهٔ وب) ============ */
+.share-receipt-btn {
+  height: 44px;
+  border-radius: 12px;
+  background: #0f766e;
+  color: #ffffff;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.share-receipt-btn:active {
+  background: #115e59;
+}
+
+.share-receipt-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.thermal-receipt-paper {
+  position: relative;
+}
+
+.pdf-share-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: rgba(255, 255, 255, 0.88);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.pdf-share-spinner {
+  font-size: 34px;
+  color: #0f766e;
+  animation: pdfShareSpin 1.1s linear infinite;
+}
+
+@keyframes pdfShareSpin {
+  to { transform: rotate(360deg); }
+}

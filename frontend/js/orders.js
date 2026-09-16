@@ -512,6 +512,7 @@ async function fetchAndPrintInvoice(orderId) {
         }
 
         const inv = await res.json();
+        window._lastInvoice = inv;
         renderThermalPaper(inv);
         document.getElementById('invoiceModal').style.display = 'flex';
     } catch (e) {
@@ -633,6 +634,67 @@ function renderThermalPaper(inv) {
             نرم‌افزار توزیع و حسابداری ویزیتیک
         </div>
     `;
+    // overlay اشتراک PDF — چون innerHTML جایگزین می‌شود، هر رندر دوباره اضافه می‌شود
+    paper.insertAdjacentHTML('beforeend',
+        '<div class="pdf-share-overlay" id="pdfShareOverlay" style="display:none;">' +
+        '<span class="material-symbols-outlined pdf-share-spinner">progress_activity</span>' +
+        '<span>در حال ساخت نسخهٔ PDF…</span></div>');
+}
+
+/* ساخت PDF از فاکتور + اشتراک‌گذاری (Web Share API با fallback دانلود) */
+async function shareReceiptPdf() {
+    const paper = document.getElementById('thermalReceiptPaper');
+    const btn = document.getElementById('shareReceiptBtn');
+    if (!paper || (btn && btn.disabled)) return;
+    const overlay = document.getElementById('pdfShareOverlay');
+    const icon = document.getElementById('shareReceiptIcon');
+    const label = document.getElementById('shareReceiptLabel');
+    if (btn) btn.disabled = true;
+    if (overlay) overlay.style.display = 'flex';
+    if (icon) icon.textContent = 'hourglass_top';
+    if (label) label.textContent = 'در حال ساخت PDF…';
+    try {
+        const canvas = await html2canvas(paper, { scale: 2, backgroundColor: '#ffffff' });
+        const imgData = canvas.toDataURL('image/png');
+
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+        const pageW = 210, pageH = 297, margin = 15;
+        const ratio = canvas.width / canvas.height;
+        let imgW = pageW - margin * 2;
+        let imgH = imgW / ratio;
+        if (imgH > pageH - margin * 2) {
+            imgH = pageH - margin * 2;
+            imgW = imgH * ratio;
+        }
+        pdf.addImage(imgData, 'PNG', (pageW - imgW) / 2, (pageH - imgH) / 2, imgW, imgH);
+        const blob = pdf.output('blob');
+        const invNo = (window._lastInvoice || {}).invoiceNumber || 'receipt';
+        const file = new File([blob], `vizitik-invoice-${invNo}.pdf`, { type: 'application/pdf' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: 'فاکتور ویزیتیک' });
+        } else {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `vizitik-invoice-${invNo}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            alert('اشتراک‌گذاری مستقیم در دسترس نیست؛ فایل PDF دانلود شد.');
+        }
+    } catch (err) {
+        if (!/Abort/i.test(err && err.name)) {
+            alert('ساخت PDF با خطا مواجه شد: ' + ((err && err.message) || err));
+        }
+    } finally {
+        if (btn) btn.disabled = false;
+        if (overlay) overlay.style.display = 'none';
+        if (icon) icon.textContent = 'ios_share';
+        if (label) label.textContent = 'اشتراک‌گذاری PDF';
+    }
 }
 
 function closeThermalReceiptModal() {

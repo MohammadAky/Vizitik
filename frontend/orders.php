@@ -345,6 +345,10 @@ $productsCatalog = (!empty($apiProducts) && is_array($apiProducts)) ? $apiProduc
                 <div class="thermal-receipt-paper" id="thermalReceiptPaper"></div>
 
                 <div class="thermal-modal-actions">
+                    <button type="button" class="share-receipt-btn" id="shareReceiptBtn" onclick="shareReceiptPdf()">
+                        <span class="material-symbols-outlined" id="shareReceiptIcon">ios_share</span>
+                        <span id="shareReceiptLabel">اشتراک‌گذاری PDF</span>
+                    </button>
                     <button type="button" class="print-receipt-btn" onclick="window.print()">
                         <span class="material-symbols-outlined">print</span>
                         <span>چاپ فاکتور حرارتی (۸۰mm)</span>
@@ -362,6 +366,9 @@ $productsCatalog = (!empty($apiProducts) && is_array($apiProducts)) ? $apiProduc
         const API_TOKEN = '<?php echo $apiToken; ?>';
         const PRODUCTS_CATALOG = <?php echo json_encode($productsCatalog); ?>;
     </script>
+    <!-- ساخت PDF فاکتور برای اشتراک‌گذاری -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
     <script src="./js/orders.js?v=<?php echo time(); ?>"></script>
 </body>
 
