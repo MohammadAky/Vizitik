@@ -176,14 +176,6 @@ $categories = array_values(array_unique(array_filter(array_column($loadedProduct
                             data-total-stock-units="<?php echo $totalStockUnits; ?>">
 
                             <div class="prod-card-top">
-                                <!-- جای عکس محصول — فعلاً آیکون بستنی (تا عکسی در دیتابیس نباشد) -->
-                                <div class="prod-icon-wrap">
-                                    <?php if (!empty($imageUrl)): ?>
-                                        <img src="<?php echo htmlspecialchars($imageUrl); ?>" alt="<?php echo htmlspecialchars($name); ?>">
-                                    <?php else: ?>
-                                        <span class="material-symbols-outlined"><?php echo $isCustom ? 'star' : 'icecream'; ?></span>
-                                    <?php endif; ?>
-                                </div>
                                 <div class="prod-main-meta">
                                     <div class="prod-title-line">
                                         <h3 class="prod-title"><?php echo htmlspecialchars($name); ?></h3>

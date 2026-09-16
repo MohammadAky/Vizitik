@@ -82,7 +82,9 @@ export default function VanLoading({ go }) {
           cartons: Number(r.cartons || 0),
           units: Number(r.units || 0),
           isCustom: !!it.isCustomUserProduct,
-          isGlobal: !!it.isGlobal
+          isGlobal: !!it.isGlobal,
+          // آیا همین حالا (پیش از ویرایش) در ون موجودی دارد؟ — معادل isLoaded در PHP
+          hadStock: (it.quantityCartons || 0) > 0 || (it.quantityUnits || 0) > 0
         };
       }),
     [inventory, rows]
@@ -90,10 +92,11 @@ export default function VanLoading({ go }) {
 
   const downloaded = useMemo(() => downloadedBrands(), []);
 
-  // فیلتر اولیه: فقط کالاهایی که کاربر اضافه کرده (سفارشی) یا از کاتالوگ دانلود کرده
-  // — هیچ کالای global بدون کاتالوگ دریافت‌شده نباید در این صفحه باشد (بایپس نباشد)
+  // معادل filterLoaded در van-loading.php: سفارشی + هرچه بارگیری‌شده (isLoaded) +
+  // برندهای دانلودشده. بارگیری‌شده‌ها همیشه دیده می‌شوند، حتی اگر کاتالوگ برندشان
+  // در این دستگاه دانلود نشده باشد (دانلود کاتالوگ فقط localStorage همین مرورگر است)
   const eligible = useMemo(
-    () => items.filter((p) => p.isCustom || downloaded.includes(p.brand)),
+    () => items.filter((p) => p.isCustom || p.hadStock || (p.isGlobal && downloaded.includes(p.brand))),
     [items, downloaded]
   );
 
@@ -162,8 +165,10 @@ export default function VanLoading({ go }) {
   async function saveAndLockInventory() {
     if (saving) return;
     setSaving(true);
+    // عین van-loading.php: تمام اقلام ارسال می‌شوند (نه فقط محموله‌ها) تا
+    // موجودی همه محصولات در دیتابیس دقیقاً با صفحه برابر بماند
     const payload = {
-      items: eligible.map((c) => ({
+      items: items.map((c) => ({
         productId: c.id,
         quantityCartons: c.cartons,
         quantityUnits: c.units

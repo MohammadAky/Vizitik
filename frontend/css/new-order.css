@@ -339,30 +339,6 @@
   border-color: var(--primary);
 }
 
-/* جای عکس محصول — وقتی عکسی در دیتابیس نیست، آیکون بستنی نشسته است */
-.prod-icon-wrap {
-  width: 46px;
-  height: 46px;
-  min-width: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  background: var(--primary-light, #e8f2fb);
-  color: var(--primary);
-  overflow: hidden;
-}
-
-.prod-icon-wrap .material-symbols-outlined {
-  font-size: 26px;
-}
-
-.prod-icon-wrap img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 .prod-main-meta {
   display: flex;
   flex-direction: column;
