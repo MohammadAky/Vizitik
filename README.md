@@ -187,6 +187,19 @@ sudo bash scripts/update.sh --restart-only
 sudo bash scripts/update.sh --force-deps # اگر package-lock تغییر کرده ولی بیلد نصب نگه داشته
 ```
 
+> **اگر بیلد بک‌اند بشکند، سرویس نمی‌میرد:** `nest build` قبل از کامپایل `dist/` را پاک
+> می‌کند، پس `update.sh` یک کپی از بیلد سالم قبلی (`backend.dist.<زمان>.tgz`) نگه می‌دارد
+> و در صورت شکست همان را برمی‌گرداند و سرویس را روی نسخهٔ قبلی بالا می‌آورد. سه نسخهٔ آخر
+> نگه داشته می‌شوند.
+
+**تست‌ها** (بدون سرور و بدون سرویس اجرا می‌شوند، همه باید PASS بدهند):
+```bash
+python3 scripts/tests/update-regression.py   # تشخیص تغییرات update.sh روی یک checkout موقت
+python3 scripts/tests/update-rollback.py     # نگه‌داشتن/برگرداندن بیلد سالم بک‌اند
+python3 scripts/tests/backend-typecheck.py   # خطای TS2345 «unknown» برنگردد
+node    admin/tests/regression.cjs           # پنل ادمین
+```
+
 ## 🚢 استقرار روی سرور (Ubuntu / Debian)
 یک اسکریپت همه‌چیز را انجام می‌دهد؛ `deploy.sh` اول پروسه‌ها و سرویس‌های جا‌مانده از
 اجراهای قبلی را می‌بندد، سرویس‌های پنل هاست که پورت ۸۰ را گرفته‌اند (مثل Apache) را

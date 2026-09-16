@@ -57,6 +57,7 @@ temp/
 # Archives
 *.zip
 *.tar.gz
+*.tgz
 *.rar
 *.7z
 
