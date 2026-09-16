@@ -39,6 +39,9 @@ if [[ -f "$PREV_ENV" ]]; then
     key="${line%%=*}"
     key="${key//[[:space:]]/}"
     [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    # NODE_ENV=production must not reach the build environment: npm would
+    # skip devDependencies (vite, @nestjs/cli, prisma) and the builds fail
+    [[ "$key" == "NODE_ENV" ]] && continue
     val="${line#*=}"
     val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
     if [[ -z "${!key:-}" ]]; then export "$key=$val"; fi
@@ -220,14 +223,14 @@ memory_guard() {
 npm_install_in() {  # $1 = directory
   local dir="$1" rc=0
   if [[ -f "$dir/package-lock.json" ]]; then
-    ( cd "$dir" && npm ci --no-audit --no-fund --no-progress --loglevel=error ) || rc=$?
+    ( cd "$dir" && npm ci --no-audit --no-fund --no-progress --loglevel=error --production=false ) || rc=$?
     if (( rc == 0 )); then return 0; fi
     if (( rc == 137 )) || (( rc == 143 )); then
       report_step_rc "$rc" "npm ci in $dir"        # out of memory: no point retrying
     fi
     warn "npm ci failed (exit $rc); retrying with a plain npm install"
   fi
-  run_in "$dir" "npm install in $dir" npm install --no-audit --no-fund --no-progress --loglevel=error
+  run_in "$dir" "npm install in $dir" npm install --no-audit --no-fund --no-progress --loglevel=error --production=false
 }
 
 urlencode() {

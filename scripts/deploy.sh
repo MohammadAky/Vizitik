@@ -128,14 +128,14 @@ build_app() {
   # Build frontend
   log "building frontend"
   cd "$INSTALL_DIR/frontend-app"
-  npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
+  npm ci --no-audit --no-fund --production=false 2>/dev/null || npm install --no-audit --no-fund --production=false
   printf 'VITE_API_URL="/api"\n' > .env
   npm run build
 
   # Build backend
   log "building backend"
   cd "$INSTALL_DIR/backend"
-  npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
+  npm ci --no-audit --no-fund --production=false 2>/dev/null || npm install --no-audit --no-fund --production=false
   npx prisma generate
 
   # Create .env
