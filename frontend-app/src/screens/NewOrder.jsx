@@ -265,8 +265,19 @@ export default function NewOrder({ go }) {
             </a>
           </div>
         : <div className="order-product-list">
-            {lines.map((p) => (
-              <div className="product-order-card" key={p.productId}>
+            {lines.map((p) => {
+                const picked = p.cartonCount + p.unitCount > 0;
+                const lineTotal = (p.cartonCount * p.cartonPrice) + (p.unitCount * p.unitPrice);
+                let descText = "";
+                if (p.cartonCount > 0 && p.unitCount > 0) {
+                  descText = `جمع: ${toPersianNum(p.cartonCount)} کارتن و ${toPersianNum(p.unitCount)} دانه`;
+                } else if (p.cartonCount > 0) {
+                  descText = `جمع: ${toPersianNum(p.cartonCount)} کارتن`;
+                } else {
+                  descText = `جمع: ${toPersianNum(p.unitCount)} دانه`;
+                }
+                return (
+              <div className={`product-order-card ${picked ? "has-quantity" : ""}`} key={p.productId}>
                 <div className="prod-card-top">
                   <div className="prod-main-meta">
                     <div className="prod-title-line">
@@ -274,27 +285,21 @@ export default function NewOrder({ go }) {
                       <span className="prod-brand-tag">{p.brand || "متفرقه"}</span>
                     </div>
                     <div className="prod-prices-line">
-                      کارتن: <strong>{formatPrice(p.cartonPrice)}</strong> · دانه:{" "}
-                      <strong>{formatPrice(p.unitPrice)}</strong>
+                      <span>کارتن ({toPersianNum(p.unitsPerCarton)} تایی): <strong>{formatPrice(p.cartonPrice)}</strong> ت</span> |
+                      <span>فی دانه: <strong>{formatPrice(p.unitPrice)}</strong> ت</span>
                     </div>
                   </div>
-                  <div className="line-total-badge-row">
-                    <span
-                      className={`van-stock-badge ${p.cartonCount + p.unitCount > 0 ? "has-quantity" : ""}`}>
-                      {p.cartonCount + p.unitCount > 0 ?
-                        `${toPersianNum(p.cartonCount)} کارتن / ${toPersianNum(p.unitCount)} دانه`
-                      : "بدون انتخاب"}
-                    </span>
-                  </div>
+                  <span className="van-stock-badge in-stock">
+                    {p.quantityUnits > 0 ?
+                      `موجودی ون: ${toPersianNum(p.quantityCartons)} کارتن و ${toPersianNum(p.quantityUnits)} دانه (مجموع ${toPersianNum(p.totalSingleUnits)} عدد)`
+                      : `موجودی ون: ${toPersianNum(p.quantityCartons)} کارتن (مجموع ${toPersianNum(p.totalSingleUnits)} عدد)`}
+                  </span>
                 </div>
 
                 <div className="prod-steppers-container">
                   <div className="steppers-row">
                     <div className="stepper-item">
-                      <div className="stepper-title">
-                        <span>کارتن</span>
-                        <span>{toPersianNum(p.quantityCartons || 0)} در بار</span>
-                      </div>
+                      <span className="stepper-title">کارتن:</span>
                       <div className="stepper-control">
                         <button
                           type="button"
@@ -318,10 +323,7 @@ export default function NewOrder({ go }) {
                       </div>
                     </div>
                     <div className="stepper-item">
-                      <div className="stepper-title">
-                        <span>دانه</span>
-                        <span>{toPersianNum(p.quantityUnits || 0)} در بار</span>
-                      </div>
+                      <span className="stepper-title">دانه:</span>
                       <div className="stepper-control">
                         <button
                           type="button"
@@ -345,9 +347,17 @@ export default function NewOrder({ go }) {
                       </div>
                     </div>
                   </div>
+
+                  {picked && (
+                    <div className="line-total-badge-row show">
+                      <span className="calc-label">{descText}</span>
+                      <strong className="calc-amount">{formatPrice(lineTotal)}</strong>
+                    </div>
+                  )}
                 </div>
               </div>
-            ))}
+                );
+              })}
           </div>
         }
       </main>
