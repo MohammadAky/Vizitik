@@ -284,16 +284,34 @@ async function getTableSchema(tableName) {
   };
 }
 
-async function getDatabaseStats() {
-  const rows = await prisma.$queryRawUnsafe(
-    'SELECT TABLE_NAME AS name, TABLE_ROWS AS rowCount FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME'
+// Exact row counts (COUNT(*)) for every table in the schema.
+// information_schema.TABLE_ROWS is only an InnoDB *estimate* that does not
+// track row inserts/deletes, so panel counters would stay stale (e.g. after
+// deleting an invoice and registering a new one the orders count would not
+// move). Table sizes here keep exact counts fast; identifiers stay
+// allowlisted so the interpolated name is safe.
+async function exactTableRows() {
+  const tables = await prisma.$queryRawUnsafe(
+    'SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME'
   );
-  const details = rows
-    .filter((r) => /^[A-Za-z0-9_]+$/.test(r.name))
-    .map((r) => ({ name: r.name, rows: Number(r.rowCount) || 0 }));
+  const details = [];
+  for (const t of tables || []) {
+    if (!/^[A-Za-z0-9_]+$/.test(t.name)) continue;
+    try {
+      const [r] = await prisma.$queryRawUnsafe(`SELECT COUNT(*) AS c FROM \`${t.name}\``);
+      details.push({ name: t.name, rows: Number(r.c) || 0 });
+    } catch {
+      details.push({ name: t.name, rows: null });
+    }
+  }
+  return details;
+}
+
+async function getDatabaseStats() {
+  const details = await exactTableRows();
   return {
     tables: details.length,
-    totalRows: details.reduce((sum, d) => sum + d.rows, 0),
+    totalRows: details.reduce((sum, d) => sum + (d.rows || 0), 0),
     details,
   };
 }
@@ -540,15 +558,9 @@ async function listOrders(filters = {}) {
 // ============================================================ Tables
 
 async function listTables() {
-  // یک رفت‌وبرگشت به information_schema به‌جای COUNT(*) برای تک‌تک جدول‌ها —
-  // بارگذاری اولیه‌ی پنل روی دیتابیس بزرگ کند نمی‌شود.
-  // تعداد ردیف‌ها تخمین InnoDB است (همان که phpMyAdmin نشان می‌دهد).
-  const rows = await prisma.$queryRawUnsafe(
-    'SELECT TABLE_NAME AS name, TABLE_ROWS AS rowCount FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME'
-  );
-  return rows
-    .filter((r) => /^[A-Za-z0-9_]+$/.test(r.name))
-    .map((r) => ({ name: r.name, rows: Number(r.rowCount) || 0 }));
+  // تعداد دقیق ردیف‌ها با COUNT(*) — جدول‌ها این‌جا کوچک هستند و شمارش
+  // تخمینی InnoDB (TABLE_ROWS) با حذف/افزودن ردیف به‌روز نمی‌شد.
+  return exactTableRows();
 }
 
 // ============================================================ Static Files
