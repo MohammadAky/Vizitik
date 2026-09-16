@@ -595,9 +595,8 @@ build_backend() {
   local DB_PASS_URL
   DB_PASS_URL="$(urlencode "$DB_PASS")"
 
-  # one unified .env at the install root; scripts/env-sync.mjs distributes it
-  # to backend/.env (this service, Prisma, the admin panel) and to
-  # frontend-app/.env (VITE_* only)
+  # one unified .env at the install root; a copy lands in backend/.env so
+  # Prisma (db push + runtime client) finds it there too
   cat > "$INSTALL_DIR/.env" <<EOF
 DATABASE_URL="mysql://${DB_USER}:${DB_PASS_URL}@${DB_HOST}:3306/${DB_NAME}"
 NODE_ENV=production
@@ -614,7 +613,7 @@ ADMIN_STATIC_DIR="${INSTALL_DIR}/admin"
 ADMIN_FONTS_DIR="${INSTALL_DIR}/landing/fonts"
 VITE_API_URL="/api"
 EOF
-  run_here "env sync" node "$INSTALL_DIR/scripts/env-sync.mjs" || warn "env-sync failed; backend/.env may be stale"
+  cp "$INSTALL_DIR/.env" "$INSTALL_DIR/backend/.env"
   [[ -f .env ]] || cp "$INSTALL_DIR/.env" .env
   if [[ -z "$BALE_BOT_TOKEN" ]]; then
     warn "BALE_BOT_TOKEN is empty; the bot will not send messages (fill it in $INSTALL_DIR/.env and restart the service)"
@@ -648,8 +647,8 @@ build_frontend() {
   log "installing and building the PWA frontend"
   cd "$INSTALL_DIR/frontend-app"
   npm_install_in "$INSTALL_DIR/frontend-app"
-  # the unified .env was already synced into frontend-app/.env by env-sync
-  # (VITE_* only); keep a fallback for manual installs
+  # Vite reads frontend-app/.env (or CWD .env), not the root one - keep a
+  # small local copy with the VITE_* value for the build
   [[ -f .env ]] || printf 'VITE_API_URL="/api"\n' > .env
   run_here "PWA build (vite)" npm run build
   ok "PWA built ($INSTALL_DIR/frontend-app/dist)"
