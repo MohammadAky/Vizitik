@@ -19,10 +19,10 @@ const crypto = require('crypto');
 const { PrismaClient } = require('@prisma/client');
 
 // ------------------------------------------------------------------
-// Environment: the root .env is the single source of truth (see
-// .env.example); backend/.env - the copy scripts/env-sync.mjs keeps
-// aligned - fills in anything the root file does not define. Values
-// already set (systemd EnvironmentFile, shell) always win.
+// Environment: backend/.env is the single source of truth for the
+// panel (the same file the API and the Prisma CLI use - see
+// backend/.env.example). Values already set (systemd EnvironmentFile,
+// shell) always win.
 // ------------------------------------------------------------------
 function loadEnvFile(file) {
   let lines = [];
@@ -40,15 +40,12 @@ function loadEnvFile(file) {
   }
 }
 // the script runs from admin/ in a checkout and from backend/admin/ on the
-// server - look for the unified .env at both depths, then let the backend
-// copy fill anything missing
-const rootEnv = [
-  path.join(__dirname, '..', '.env'),
-  path.join(__dirname, '..', '..', '.env'),
-].find((f) => fs.existsSync(f)) || path.join(__dirname, '..', '.env');
-const rootDir = path.dirname(rootEnv);
-loadEnvFile(rootEnv);
-loadEnvFile(path.join(rootDir, 'backend', '.env'));
+// server - both layouts resolve to the same backend/.env
+const backendEnv = [
+  path.join(__dirname, '..', 'backend', '.env'),  // checkout: repo/admin → repo/backend/.env
+  path.join(__dirname, '..', '.env'),             // server:   backend/admin → backend/.env
+].find((f) => fs.existsSync(f));
+if (backendEnv) loadEnvFile(backendEnv);
 
 // Render injects PORT (10000); on a VPS the panel uses ADMIN_PORT (3001).
 const PORT = parseInt(process.env.PORT || process.env.ADMIN_PORT || '3001', 10);

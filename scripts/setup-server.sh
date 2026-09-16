@@ -25,12 +25,13 @@
 set -euo pipefail
 
 # ------------------------------------------------------------------
-# 0) the unified root .env (see .env.example) - a value that is already
-#    set in the real environment keeps precedence; values from the file
-#    act as the defaults for everything below
+# 0) the current server configuration ($INSTALL_DIR/backend/.env) - a
+#    value that is already set in the real environment keeps precedence;
+#    values from the file act as the defaults for everything below, so a
+#    re-run keeps the same DB password / JWT secret / bot token
 # ------------------------------------------------------------------
-ROOT_ENV="${ROOT_ENV:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.env}"
-if [[ -f "$ROOT_ENV" ]]; then
+PREV_ENV="${PREV_ENV:-${INSTALL_DIR:-/opt/vizitik}/backend/.env}"
+if [[ -f "$PREV_ENV" ]]; then
   while IFS= read -r line; do
     line="${line%%$'\r'}"
     line="${line#"${line%%[![:space:]]*}"}"   # ltrim
@@ -41,7 +42,7 @@ if [[ -f "$ROOT_ENV" ]]; then
     val="${line#*=}"
     val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
     if [[ -z "${!key:-}" ]]; then export "$key=$val"; fi
-  done < "$ROOT_ENV"
+  done < "$PREV_ENV"
 fi
 
 # ------------------------------------------------------------------
@@ -373,7 +374,7 @@ collect_inputs() {
     fi
     if [[ -n "$ADMIN_DOMAIN" && -z "$ADMIN_TOKEN" ]]; then
       ADMIN_TOKEN="$(openssl rand -hex 24)"
-      log "a fresh ADMIN_TOKEN was generated (you can change it in $INSTALL_DIR/.env later)"
+      log "a fresh ADMIN_TOKEN was generated (you can change it in $INSTALL_DIR/backend/.env later)"
     fi
   fi
 
@@ -439,7 +440,7 @@ collect_inputs() {
 
   if [[ -z "$JWT_SECRET" ]]; then
     JWT_SECRET="$(gen_secret)"
-    ok "generated a fresh JWT secret - it is written to $INSTALL_DIR/.env"
+    ok "generated a fresh JWT secret - it is written to $INSTALL_DIR/backend/.env"
   fi
 
   ask_yes ENABLE_UFW "enable the UFW firewall (SSH and Nginx get allowed)" 1
@@ -595,9 +596,9 @@ build_backend() {
   local DB_PASS_URL
   DB_PASS_URL="$(urlencode "$DB_PASS")"
 
-  # one unified .env at the install root; a copy lands in backend/.env so
-  # Prisma (db push + runtime client) finds it there too
-  cat > "$INSTALL_DIR/.env" <<EOF
+  # backend/.env is the single source of truth for the API, Prisma and the
+  # admin panel (everything runs from the backend directory)
+  cat > "$INSTALL_DIR/backend/.env" <<EOF
 DATABASE_URL="mysql://${DB_USER}:${DB_PASS_URL}@${DB_HOST}:3306/${DB_NAME}"
 NODE_ENV=production
 JWT_SECRET="${JWT_SECRET}"
@@ -613,10 +614,14 @@ ADMIN_STATIC_DIR="${INSTALL_DIR}/admin"
 ADMIN_FONTS_DIR="${INSTALL_DIR}/landing/fonts"
 VITE_API_URL="/api"
 EOF
-  cp "$INSTALL_DIR/.env" "$INSTALL_DIR/backend/.env"
-  [[ -f .env ]] || cp "$INSTALL_DIR/.env" .env
+  # drop the old unified root .env if a previous version of the script
+  # created it - backend/.env is the only env file now
+  if [[ -f "$INSTALL_DIR/.env" ]]; then
+    rm -f "$INSTALL_DIR/.env"
+    ok "removed the old unified $INSTALL_DIR/.env (replaced by backend/.env)"
+  fi
   if [[ -z "$BALE_BOT_TOKEN" ]]; then
-    warn "BALE_BOT_TOKEN is empty; the bot will not send messages (fill it in $INSTALL_DIR/.env and restart the service)"
+    warn "BALE_BOT_TOKEN is empty; the bot will not send messages (fill it in $INSTALL_DIR/backend/.env and restart the service)"
   fi
   npx prisma db push --skip-generate || warn "prisma db push failed; check the tables manually"
   run_here "backend build (tsc)" npm run build

@@ -122,6 +122,7 @@ build_app() {
   # Copy sources
   mkdir -p "$INSTALL_DIR"
   rm -rf "$INSTALL_DIR/backend" "$INSTALL_DIR/frontend-app"
+  rm -f "$INSTALL_DIR/.env"   # legacy unified env file, if any
   cp -r "$SRC_DIR/backend" "$SRC_DIR/frontend-app" "$INSTALL_DIR/"
 
   # Build frontend
@@ -146,8 +147,6 @@ PORT=${PORT}
 BIND_HOST=0.0.0.0
 JWT_SECRET="${JWT_SECRET}"
 JWT_EXPIRES_IN="30d"
-APP_NAME_FA="ویزیتیک"
-APP_NAME_EN="Vizitik"
 BALE_BOT_USERNAME="${BALE_BOT_USERNAME}"
 BALE_BOT_TOKEN="${BALE_BOT_TOKEN}"
 BALE_ADMIN_CHAT_ID="${BALE_ADMIN_CHAT_ID}"
