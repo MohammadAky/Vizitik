@@ -344,11 +344,21 @@ $productsCatalog = (!empty($apiProducts) && is_array($apiProducts)) ? $apiProduc
 
                 <div class="thermal-receipt-paper" id="thermalReceiptPaper"></div>
 
+                <!-- قالب کامل فاکتور رسمی جهت خروجی PDF (بیرون از دید کاربر، رندر با html2canvas) -->
+                <div class="pdf-invoice-paper" id="pdfInvoicePaper"></div>
+
                 <div class="thermal-modal-actions">
-                    <button type="button" class="share-receipt-btn" id="shareReceiptBtn" onclick="shareReceiptPdf()">
-                        <span class="material-symbols-outlined" id="shareReceiptIcon">ios_share</span>
-                        <span id="shareReceiptLabel">اشتراک‌گذاری PDF</span>
-                    </button>
+                    <!-- دو دکمه کنار هم: اشتراک‌گذاری + دانلود مستقیم PDF -->
+                    <div class="pdf-actions-row">
+                        <button type="button" class="share-receipt-btn" id="shareReceiptBtn" onclick="shareReceiptPdf()">
+                            <span class="material-symbols-outlined" id="shareReceiptIcon">ios_share</span>
+                            <span id="shareReceiptLabel">اشتراک‌گذاری</span>
+                        </button>
+                        <button type="button" class="download-receipt-btn" id="downloadReceiptBtn" onclick="downloadReceiptPdf()">
+                            <span class="material-symbols-outlined" id="downloadReceiptIcon">download</span>
+                            <span id="downloadReceiptLabel">دانلود PDF</span>
+                        </button>
+                    </div>
                     <button type="button" class="print-receipt-btn" onclick="window.print()">
                         <span class="material-symbols-outlined">print</span>
                         <span>چاپ فاکتور حرارتی (۸۰mm)</span>

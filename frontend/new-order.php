@@ -176,6 +176,14 @@ $categories = array_values(array_unique(array_filter(array_column($loadedProduct
                             data-total-stock-units="<?php echo $totalStockUnits; ?>">
 
                             <div class="prod-card-top">
+                                <!-- جای عکس محصول — فعلاً آیکون بستنی (تا عکسی در دیتابیس نباشد) -->
+                                <div class="prod-icon-wrap">
+                                    <?php if (!empty($imageUrl)): ?>
+                                        <img src="<?php echo htmlspecialchars($imageUrl); ?>" alt="<?php echo htmlspecialchars($name); ?>">
+                                    <?php else: ?>
+                                        <span class="material-symbols-outlined"><?php echo $isCustom ? 'star' : 'icecream'; ?></span>
+                                    <?php endif; ?>
+                                </div>
                                 <div class="prod-main-meta">
                                     <div class="prod-title-line">
                                         <h3 class="prod-title"><?php echo htmlspecialchars($name); ?></h3>
@@ -196,26 +204,40 @@ $categories = array_values(array_unique(array_filter(array_column($loadedProduct
                                 </span>
                             </div>
 
-                            <!-- استپرهای اول کارتن بعد دانه با رعایت محدودیت دانه -->
+                            <!-- استپرهای کارتن و دانه — عین صفحه بارگیری (گرید ۲ ستونه با آیکون remove/add) -->
                             <div class="prod-steppers-container">
-                                <div class="steppers-row">
-                                    <!-- ۱. کارتن (سمت راست) -->
-                                    <div class="stepper-item">
-                                        <span class="stepper-title">کارتن:</span>
-                                        <div class="stepper-control">
-                                            <button type="button" class="step-btn" onclick="updateCartonCount('<?php echo $pId; ?>', -1)">-</button>
-                                            <input type="number" class="step-input" id="cartonInput_<?php echo $pId; ?>" value="0" min="0" max="<?php echo $maxCartons; ?>" onchange="onQuantityChanged('<?php echo $pId; ?>')" oninput="onQuantityChanged('<?php echo $pId; ?>')">
-                                            <button type="button" class="step-btn" onclick="updateCartonCount('<?php echo $pId; ?>', 1)">+</button>
+                                <div class="steppers-grid">
+                                    <!-- ۱. استپر کارتن -->
+                                    <div class="stepper-box carton-stepper">
+                                        <div class="stepper-label">
+                                            <span class="material-symbols-outlined">inventory_2</span>
+                                            <span>کارتن (<?php echo toPersianNum($unitsPerCarton); ?> تایی)</span>
+                                        </div>
+                                        <div class="stepper-controls">
+                                            <button type="button" class="step-btn step-down" onclick="updateCartonCount('<?php echo $pId; ?>', -1)" aria-label="کاهش کارتن">
+                                                <span class="material-symbols-outlined">remove</span>
+                                            </button>
+                                            <input type="number" class="step-input carton-input" id="cartonInput_<?php echo $pId; ?>" value="0" min="0" max="<?php echo $maxCartons; ?>" onchange="onQuantityChanged('<?php echo $pId; ?>')" oninput="onQuantityChanged('<?php echo $pId; ?>')">
+                                            <button type="button" class="step-btn step-up" onclick="updateCartonCount('<?php echo $pId; ?>', 1)" aria-label="افزایش کارتن">
+                                                <span class="material-symbols-outlined">add</span>
+                                            </button>
                                         </div>
                                     </div>
 
-                                    <!-- ۲. دانه (وسط) با محدودیت حداکثر دانه در کارتن -->
-                                    <div class="stepper-item">
-                                        <span class="stepper-title">دانه:</span>
-                                        <div class="stepper-control">
-                                            <button type="button" class="step-btn" onclick="updateUnitCount('<?php echo $pId; ?>', -1)">-</button>
-                                            <input type="number" class="step-input" id="unitInput_<?php echo $pId; ?>" value="0" min="0" max="<?php echo $maxUnitsLimit; ?>" onchange="onQuantityChanged('<?php echo $pId; ?>')" oninput="onQuantityChanged('<?php echo $pId; ?>')">
-                                            <button type="button" class="step-btn" onclick="updateUnitCount('<?php echo $pId; ?>', 1)">+</button>
+                                    <!-- ۲. استپر دانه (با محدودیت حداکثر دانه در کارتن) -->
+                                    <div class="stepper-box unit-stepper">
+                                        <div class="stepper-label">
+                                            <span class="material-symbols-outlined">icecream</span>
+                                            <span>دانه / تکی</span>
+                                        </div>
+                                        <div class="stepper-controls">
+                                            <button type="button" class="step-btn step-down" onclick="updateUnitCount('<?php echo $pId; ?>', -1)" aria-label="کاهش دانه">
+                                                <span class="material-symbols-outlined">remove</span>
+                                            </button>
+                                            <input type="number" class="step-input unit-input" id="unitInput_<?php echo $pId; ?>" value="0" min="0" max="<?php echo $maxUnitsLimit; ?>" onchange="onQuantityChanged('<?php echo $pId; ?>')" oninput="onQuantityChanged('<?php echo $pId; ?>')">
+                                            <button type="button" class="step-btn step-up" onclick="updateUnitCount('<?php echo $pId; ?>', 1)" aria-label="افزایش دانه">
+                                                <span class="material-symbols-outlined">add</span>
+                                            </button>
                                         </div>
                                     </div>
                                 </div>

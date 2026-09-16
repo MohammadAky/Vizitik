@@ -129,14 +129,19 @@ export default function VanLoading({ go }) {
   }, [eligible, search, brand, category]);
 
   // updateGlobalSummary() در js/van-loading.js — روی کالاهای واجد شرایط
+  // جمع بر مبنای موجودی شکسته‌شده به کارتن (دانهٔ مازاد به کارتن تبدیل می‌شود)
   const summary = useMemo(() => {
     let totalCartons = 0;
     let totalUnits = 0;
     let totalValue = 0;
     eligible.forEach((c) => {
-      totalCartons += c.cartons;
-      totalUnits += c.units;
-      totalValue += c.cartons * c.cartonPrice + c.units * c.unitPrice;
+      const pack = c.packSize || 1;
+      const totalSingle = c.cartons * pack + c.units;
+      const normCartons = Math.floor(totalSingle / pack);
+      const normUnits = totalSingle % pack;
+      totalCartons += normCartons;
+      totalUnits += normUnits;
+      totalValue += normCartons * c.cartonPrice + normUnits * c.unitPrice;
     });
     return { totalCartons, totalUnits, totalValue };
   }, [eligible]);
@@ -317,6 +322,9 @@ export default function VanLoading({ go }) {
         ) : (
           visible.map((item, i) => {
             const totalSingle = item.cartons * item.packSize + item.units;
+            // شکستن موجودی به کارتن برای نمایش (مثل ۲ کارتن + ۵۵ دانه → ۴ کارتن + ۷ دانه)
+            const normCartons = Math.floor(totalSingle / (item.packSize || 1));
+            const normUnits = totalSingle % (item.packSize || 1);
             const isLoaded = item.cartons > 0 || item.units > 0;
             return (
               <article
@@ -407,15 +415,20 @@ export default function VanLoading({ go }) {
                   </div>
                 </div>
 
-                {/* زیرنویس محاسبه مجموع موجودی این کالا */}
+                {/* زیرنویس محاسبه مجموع موجودی این کالا (نمایش شکسته‌شده به کارتن) */}
                 <div className="card-calc-footer" id={`calcFooter_${item.id}`}>
                   <span>
                     مجموع بارگیری این کالا:{' '}
                     <strong className="total-units-text">{toPersianNum(totalSingle)} عدد</strong>
                   </span>
-                  {item.cartons > 0 && item.units > 0 && (
+                  {normUnits > 0 && (
                     <small>
-                      ({toPersianNum(item.cartons)} کارتن + {toPersianNum(item.units)} دانه)
+                      ({toPersianNum(normCartons)} کارتن + {toPersianNum(normUnits)} دانه)
+                    </small>
+                  )}
+                  {normUnits === 0 && normCartons > 0 && (
+                    <small>
+                      ({toPersianNum(normCartons)} کارتن)
                     </small>
                   )}
                 </div>
