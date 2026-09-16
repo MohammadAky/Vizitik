@@ -10,7 +10,7 @@ const context = vm.createContext({
     if (name === 'http') return { createServer(fn) { handler = fn; return { listen() {} }; } };
     return require(name);
   },
-  process: { env: { ADMIN_TOKEN: 'test-only', ADMIN_STATIC_DIR: path.resolve(__dirname, '..') }, exit() { throw Error('unexpected exit'); } },
+  process: { env: { ADMIN_TOKEN: 'test-only', ADMIN_STATIC_DIR: path.resolve(__dirname, '..') }, exit() { throw Error('unexpected exit'); }, on() {} },
   __dirname: path.resolve(__dirname, '..'), console, Buffer, URL, Date
 });
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8'), context);
@@ -42,5 +42,28 @@ async function request(url, token) {
   const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
   const js = fs.readFileSync(path.join(__dirname, '../js/admin.js'), 'utf8');
   for (const [, id] of js.matchAll(/\$\('([^']+)'\)/g)) assert.ok(html.includes(`id="${id}"`), `missing DOM id: ${id}`);
-  console.log('PASS: routing/auth, malformed URL, static boundaries, date/limit/customer filters, SQL guards, hidden rule, DOM IDs');
+
+  // Exact row counts (COUNT(*)) for stats/tables — TABLE_ROWS is a stale InnoDB
+  // estimate; counts must track inserts/deletes.
+  const counts = { orders: 7, customers: 3 };
+  prisma.$queryRawUnsafe = async (sql) => {
+    if (/information_schema\.TABLES/i.test(sql)) {
+      return [{ name: 'orders' }, { name: 'customers' }, { name: 'bad;name' }];
+    }
+    const m = String(sql).match(/FROM `([A-Za-z0-9_]+)`/);
+    if (m && counts[m[1]] !== undefined) return [{ c: counts[m[1]] }];
+    throw new Error('unexpected SQL in count test: ' + sql);
+  };
+  const exactRows = JSON.parse(JSON.stringify(await run('exactTableRows()')));
+  assert.deepEqual(exactRows, [
+    { name: 'orders', rows: 7 },
+    { name: 'customers', rows: 3 },
+  ]);
+  const statsRes = await request('/api/stats', 'test-only');
+  assert.equal(statsRes.status, 200);
+  assert.equal(JSON.parse(statsRes.body).stats.totalRows, 10);
+  const tablesRes = await request('/api/tables', 'test-only');
+  assert.equal(JSON.parse(tablesRes.body).tables.map((t) => t.rows).join(','), '7,3');
+
+  console.log('PASS: routing/auth, malformed URL, static boundaries, date/limit/customer filters, SQL guards, hidden rule, DOM IDs, exact table counts');
 })().catch(e => { console.error(e); process.exitCode = 1; });
