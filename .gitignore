@@ -1,7 +1,7 @@
 # Dependencies
 node_modules/
 */node_modules/
-package-lock.json
+# NOTE: package-lock.json files ARE tracked (reproducible npm ci on the VPS)
 
 # Build outputs
 dist/
