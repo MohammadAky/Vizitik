@@ -1,6 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { BulkUpdateInventoryDto, InventoryItemDto } from './van-inventory.dto';
+import { normalizeStock } from '../common/inventory-units';
 
 @Injectable()
 export class VanInventoryService {
@@ -8,6 +9,8 @@ export class VanInventoryService {
 
   /**
    * دریافت موجودی خودرو به همراه محاسبات کامل قیمت و ارزش ریالی در سمت بک‌اند
+   * خروجی همیشه «شکسته‌شده به کارتن» است (quantityUnits همواره < unitsPerCarton)
+   * پس همهٔ مصرف‌کننده‌ها (بارگیری، ثبت فاکتور PHP/PWA) بدون تغییر نمایش درست می‌گیرند.
    */
   async getInventoryForVisitor(userId: string) {
     const products = await this.prisma.product.findMany({
@@ -36,9 +39,12 @@ export class VanInventoryService {
       const inv = p.vanInventory[0];
       const custom = p.userSettings[0];
       const unitsPerCarton = custom?.customUnitsPerCarton || p.unitsPerCartonDefault || 24;
-      const cartons = inv?.quantityCartons || 0;
-      const looseUnits = inv?.quantityUnits || 0;
-      const itemTotalUnits = (cartons * unitsPerCarton) + looseUnits;
+
+      // ✨ شکستن موجودی به کارتن: مثلاً ۲ کارتن + ۵۵ دانه از کارتن ۲۴تایی → ۴ کارتن و ۷ دانه
+      const stock = normalizeStock(inv?.quantityCartons || 0, inv?.quantityUnits || 0, unitsPerCarton);
+      const cartons = stock.cartons;
+      const looseUnits = stock.units;
+      const itemTotalUnits = stock.totalSingleUnits;
 
       const defaultUnitPrice = Number(p.baseUnitPrice);
       const effectiveUnitPrice = custom?.customUnitPrice !== null && custom?.customUnitPrice !== undefined
@@ -86,6 +92,20 @@ export class VanInventoryService {
     };
   }
 
+  /** بازیابی قامت ظرفیت کارتن برای دسته‌ای از محصولات (با اولویت تنظیم شخصی کاربر) */
+  private async unitsPerCartonMap(userId: string, client: PrismaService | any = this.prisma) {
+    const products = await client.product.findMany({
+      where: { OR: [{ isGlobal: true }, { createdById: userId }] },
+      include: { userSettings: { where: { userId } } },
+    });
+    return new Map(
+      products.map((p: any) => [
+        p.id,
+        p.userSettings[0]?.customUnitsPerCarton || p.unitsPerCartonDefault || 24,
+      ]),
+    );
+  }
+
   async updateBulkInventory(userId: string, dto: BulkUpdateInventoryDto) {
     // تفکیک کالاهای بارگیری‌شده از کالاهای بدون موجودی جهت جلوگیری از افزونگی و رکوردهای پوچ
     const positiveItems = (dto.items || []).filter(
@@ -107,7 +127,14 @@ export class VanInventoryService {
       }
 
       // ۲. ذخیره/به‌روزرسانی اختصاصی فقط اقلامی که واقعاً در ون بارگیری شده‌اند
+      //    ورودی قبل از ذخیره به فرم شکسته‌شده نرمال می‌شود (دانه همیشه < ظرفیت کارتن)
+      const upcMap = await this.unitsPerCartonMap(userId, tx);
       for (const item of positiveItems) {
+        const stock = normalizeStock(
+          item.quantityCartons || 0,
+          item.quantityUnits || 0,
+          upcMap.get(item.productId) || 24,
+        );
         await tx.vanInventory.upsert({
           where: {
             userId_productId: {
@@ -118,12 +145,12 @@ export class VanInventoryService {
           create: {
             userId,
             productId: item.productId,
-            quantityCartons: item.quantityCartons || 0,
-            quantityUnits: item.quantityUnits || 0,
+            quantityCartons: stock.cartons,
+            quantityUnits: stock.units,
           },
           update: {
-            quantityCartons: item.quantityCartons || 0,
-            quantityUnits: item.quantityUnits || 0,
+            quantityCartons: stock.cartons,
+            quantityUnits: stock.units,
           },
         });
       }
@@ -133,8 +160,14 @@ export class VanInventoryService {
   }
 
   async updateSingleItem(userId: string, dto: InventoryItemDto) {
-    const cartons = dto.quantityCartons || 0;
-    const units = dto.quantityUnits || 0;
+    const upcMap = await this.unitsPerCartonMap(userId);
+    const stock = normalizeStock(
+      dto.quantityCartons || 0,
+      dto.quantityUnits || 0,
+      upcMap.get(dto.productId) || 24,
+    );
+    const cartons = stock.cartons;
+    const units = stock.units;
 
     if (cartons <= 0 && units <= 0) {
       // اگر موجودی کالا صفر شد، رکورد آن از جدول ون حذف می‌شود
