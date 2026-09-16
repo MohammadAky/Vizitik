@@ -928,10 +928,17 @@ setup_https() {
   if [[ -n "$APP_DOMAIN" && "$APP_DOMAIN" != "$DOMAIN" ]]; then probe_hosts+=( "$APP_DOMAIN" ); fi
   if [[ -n "$ADMIN_DOMAIN" && "$ADMIN_DOMAIN" != "$DOMAIN" ]]; then probe_hosts+=( "$ADMIN_DOMAIN" ); fi
   local ph code
+  local probe_body="/tmp/vizitik-acme-probe.body"
   for ph in "${probe_hosts[@]}"; do
-    code="$(curl -s -o /dev/null -m 25 -w '%{http_code}' "http://$ph/$probe" 2>/dev/null)"
+    code="$(curl -s -o "$probe_body" -m 25 -w '%{http_code}' "http://$ph/$probe" 2>/dev/null)"
     if [[ "$code" == "200" ]]; then
       ok "http://$ph answers from this box (probe ok)"
+    elif [[ "$code" == "404" ]] && grep -q '"not found"' "$probe_body" 2>/dev/null; then
+      # The admin panel only serves /css and /js (security design) so it
+      # 404s the probe file - but a 404 with OUR panel's body proves the
+      # domain reaches this box. certbot's nginx plugin serves the real
+      # challenge path itself, so the HTTP challenge will work.
+      ok "http://$ph reaches this box's own panel (probe ok)"
     else
       warn "http://$ph/$probe returned '${code:-nothing}' from this box - Let's Encrypt needs the same path"
       if can_ask; then
