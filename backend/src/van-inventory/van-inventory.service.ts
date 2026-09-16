@@ -92,18 +92,31 @@ export class VanInventoryService {
     };
   }
 
-  /** بازیابی قامت ظرفیت کارتن برای دسته‌ای از محصولات (با اولویت تنظیم شخصی کاربر) */
-  private async unitsPerCartonMap(userId: string, client: PrismaService | any = this.prisma) {
+  /**
+   * بازیابی قامت ظرفیت کارتن برای دسته‌ای از محصولات (با اولویت تنظیم شخصی کاربر)
+   *
+   * نکتهٔ تایپ (باگ TS2345 در بیلد): پارامتر `client` عمداً `any`-پذیر است تا هم
+   * `this.prisma` و هم تراکنشِ `tx` را بپذیرد. ولی وقتی ورودیِ `new Map()`
+   * نوعش `any` باشد، TypeScript کلید/مقدار را `unknown` استنتاج می‌کند و
+   * `.get()` مقدار `unknown` می‌دهد؛ بعد `upcMap.get(...) || 24` که به تابعی با
+   * پارامتر `number` پاس داده می‌شود با `error TS2345` بیلد را می‌شکند.
+   * پس نوعِ خروجی صریح است و ردیف‌ها هم صریحاً [string, number] ساخته می‌شوند.
+   * `Number(...)` هم جلوی مقادیر رشته‌ای/Decimal دیتابیس را می‌گیرد.
+   */
+  private async unitsPerCartonMap(
+    userId: string,
+    client: PrismaService | any = this.prisma,
+  ): Promise<Map<string, number>> {
     const products = await client.product.findMany({
       where: { OR: [{ isGlobal: true }, { createdById: userId }] },
       include: { userSettings: { where: { userId } } },
     });
-    return new Map(
-      products.map((p: any) => [
-        p.id,
-        p.userSettings[0]?.customUnitsPerCarton || p.unitsPerCartonDefault || 24,
-      ]),
-    );
+    const entries: [string, number][] = (products || []).map((p: any) => {
+      const raw = p?.userSettings?.[0]?.customUnitsPerCarton || p?.unitsPerCartonDefault || 24;
+      const units = Number(raw);
+      return [String(p?.id ?? ''), Number.isFinite(units) && units > 0 ? units : 24];
+    });
+    return new Map<string, number>(entries);
   }
 
   async updateBulkInventory(userId: string, dto: BulkUpdateInventoryDto) {
