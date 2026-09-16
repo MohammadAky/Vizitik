@@ -1,292 +1,297 @@
 #!/usr/bin/env bash
 #
-# Vizitik - Personal System Deployment
+# Vizitik - first deployment on a fresh Ubuntu/Debian box.
 #
-# Simple deployment for running frontend + backend together.
-# The backend serves the PWA frontend static files.
+# This script is the front door for scripts/setup-server.sh. It closes
+# whatever is left over from earlier attempts, pulls the checkout and then
+# hands over to setup-server.sh, which does the real work (MariaDB, builds,
+# systemd, Nginx, HTTPS, firewall, backup cron).
+#
+# Why the cleanup matters: a previous attempt (or the hosting panel) can hold
+# port 80 or the backend port, and then Nginx/the service comes up dead or
+# keeps serving an old build.
 #
 # Usage:
-#   bash scripts/deploy.sh
+#   sudo bash scripts/deploy.sh                  # ask the questions, then apply
+#   bash scripts/deploy.sh --dry-run             # show what would be closed/changed
+#   sudo bash scripts/deploy.sh --only-clean     # close leftovers, deploy nothing
+#   sudo bash scripts/deploy.sh --yes            # no final confirmation
+#   sudo bash scripts/deploy.sh --non-interactive --yes
+#   sudo bash scripts/deploy.sh --full-reset     # + wipe the install dir and vhost
+#                                                #   (the database and certificates survive)
 #
-set -euo pipefail
+# Flags that belong to setup-server.sh (--check, -y/--yes, --non-interactive,
+# -h/--help) are passed through untouched.
+#
+# Environment overrides:
+#   SRC_DIR        source checkout to deploy   (default: the checkout this script lives in)
+#   INSTALL_DIR    live install directory      (default: /opt/vizitik)
+#   BACKEND_PORT   backend port to free up     (default: 3000)
+#   ADMIN_PORT     admin panel port to free up (default: 3001)
+set -uo pipefail
 
-INSTALL_DIR="${INSTALL_DIR:-/opt/vizitik}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="${SRC_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+INSTALL_DIR="${INSTALL_DIR:-/opt/vizitik}"
+BACKEND_PORT="${BACKEND_PORT:-3000}"
+ADMIN_PORT="${ADMIN_PORT:-3001}"
+SETUP_SCRIPT="$SCRIPT_DIR/setup-server.sh"
 
-# Database
-DB_NAME="${DB_NAME:-vizitik_db}"
-DB_USER="${DB_USER:-vizitik}"
-DB_PASS="${DB_PASS:-}"
-DB_HOST="localhost"
+DRY=0; ONLY_CLEAN=0; FULL_RESET=0; NO_PULL=0
+PASSTHRU=()
 
-# Backend
-PORT="${PORT:-3000}"
-JWT_SECRET="${JWT_SECRET:-}"
-NODEJS_MAJOR=20
-
-# App
-APP_NAME="Vizitik"
-
-# Optional
-BALE_BOT_TOKEN="${BALE_BOT_TOKEN:-}"
-BALE_BOT_USERNAME="${BALE_BOT_USERNAME:-}"
-BALE_ADMIN_CHAT_ID="${BALE_ADMIN_CHAT_ID:-}"
-
-# ------------------------------------------------------------------
 log()  { echo -e "\n\033[1;36m> $*\033[0m"; }
-ok()   { echo -e "\033[1;32m  ✓  $*\033[0m"; }
-warn() { echo -e "\033[1;33m  ⚠  $*\033[0m"; }
-fail() { echo -e "\033[1;31m  ✗  $*\033[0m" >&2; exit 1; }
+ok()   { echo -e "\033[1;32m  OK  $*\033[0m"; }
+info() { echo -e "\033[0;36m  ..  $*\033[0m"; }
+warn() { echo -e "\033[1;33m  WARN $*\033[0m"; }
+err()  { echo -e "\033[1;31m  FAIL $*" >&2; }
+have() { command -v "$1" >/dev/null 2>&1; }
 
-urlencode() {
-  local s="$1"
-  jq -rn --arg v "$s" '$v|@uri'
+# run: in --dry-run mode just report the command
+run() {
+  if [[ "$DRY" == "1" ]]; then echo "      would run: $*"; return 0; fi
+  "$@"
 }
 
-gen_secret() {
-  head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48
+usage() {
+  cat <<'TXT'
+usage: sudo bash scripts/deploy.sh [options]
+
+  --dry-run, -n     print what would be closed/deployed, change nothing
+  --only-clean      close leftovers from earlier runs and stop
+  --full-reset      also remove the install dir, the systemd units and the vhost
+                    before deploying (database and certificates are kept)
+  --no-pull         deploy the checkout as it is, without git pull
+  --check           passed to setup-server.sh: questions + summary, change nothing
+  -y, --yes         passed through: no final confirmation
+  --non-interactive passed through: never prompt, use environment values/defaults
+  -h, --help        this text
+
+environment:
+  SRC_DIR INSTALL_DIR BACKEND_PORT ADMIN_PORT
+TXT
 }
 
-# ------------------------------------------------------------------
-# Collect inputs
-# ------------------------------------------------------------------
-collect_inputs() {
-  log "$APP_NAME deployment"
-
-  if [[ -z "$DB_PASS" ]]; then
-    read -s -p "  Database password: " DB_PASS
-    echo
-    [[ -z "$DB_PASS" ]] && fail "password required"
-  fi
-
-  if [[ -z "$JWT_SECRET" ]]; then
-    JWT_SECRET="$(gen_secret)"
-    ok "JWT secret generated"
-  fi
-
-  read -p "  Bale bot username (empty=skip): " BALE_BOT_USERNAME
-  if [[ -n "$BALE_BOT_USERNAME" ]]; then
-    read -s -p "  Bale bot token: " BALE_BOT_TOKEN
-    echo
-    read -p "  Admin chat ID: " BALE_ADMIN_CHAT_ID
-  fi
-
-  echo
-  echo "  Install: $INSTALL_DIR"
-  echo "  Database: $DB_NAME"
-  echo "  Port: $PORT"
-  echo "  Bot: ${BALE_BOT_USERNAME:-disabled}"
-}
-
-# ------------------------------------------------------------------
-# Prerequisites
-# ------------------------------------------------------------------
-install_prereqs() {
-  log "installing prerequisites"
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update -y
-  apt-get install -y curl git nginx ufw mariadb-server build-essential jq
-
-  if ! command -v node >/dev/null 2>&1 || [[ "$(node -v | sed 's/v//;s/\..*//')" -lt 18 ]]; then
-    curl -fsSL "https://deb.nodesource.com/setup_${NODEJS_MAJOR}.x" | bash -
-    apt-get install -y nodejs
-  fi
-  ok "Node $(node -v)"
-}
-
-# ------------------------------------------------------------------
-# Database
-# ------------------------------------------------------------------
-setup_database() {
-  log "setting up MariaDB"
-  systemctl enable --now mariadb
-  sleep 2
-
-  mysql -u root <<SQL
-CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
-ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
-GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
-FLUSH PRIVILEGES;
-SQL
-  ok "database ready"
-}
-
-# ------------------------------------------------------------------
-# Build
-# ------------------------------------------------------------------
-build_app() {
-  log "building application"
-
-  # Copy sources
-  mkdir -p "$INSTALL_DIR"
-  rm -rf "$INSTALL_DIR/backend" "$INSTALL_DIR/frontend-app"
-  rm -f "$INSTALL_DIR/.env"   # legacy unified env file, if any
-  cp -r "$SRC_DIR/backend" "$SRC_DIR/frontend-app" "$INSTALL_DIR/"
-
-  # Build frontend
-  log "building frontend"
-  cd "$INSTALL_DIR/frontend-app"
-  npm ci --no-audit --no-fund --production=false 2>/dev/null || npm install --no-audit --no-fund --production=false
-  printf 'VITE_API_URL="/api"\n' > .env
-  npm run build
-
-  # Build backend
-  log "building backend"
-  cd "$INSTALL_DIR/backend"
-  npm ci --no-audit --no-fund --production=false 2>/dev/null || npm install --no-audit --no-fund --production=false
-  npx prisma generate
-
-  # Create .env
-  DB_PASS_URL="$(urlencode "$DB_PASS")"
-  cat > "$INSTALL_DIR/backend/.env" <<EOF
-DATABASE_URL="mysql://${DB_USER}:${DB_PASS_URL}@${DB_HOST}:3306/${DB_NAME}"
-NODE_ENV=production
-PORT=${PORT}
-BIND_HOST=0.0.0.0
-JWT_SECRET="${JWT_SECRET}"
-JWT_EXPIRES_IN="30d"
-BALE_BOT_USERNAME="${BALE_BOT_USERNAME}"
-BALE_BOT_TOKEN="${BALE_BOT_TOKEN}"
-BALE_ADMIN_CHAT_ID="${BALE_ADMIN_CHAT_ID}"
-EOF
-
-  # Push schema
-  npx prisma db push --skip-generate
-
-  # Build
-  npm run build
-
-  # Frontend is already at $INSTALL_DIR/frontend-app/dist
-  # Backend looks for it there automatically
-
-  ok "application built"
-}
-
-# ------------------------------------------------------------------
-# Service
-# ------------------------------------------------------------------
-create_service() {
-  log "creating systemd service"
-
-  cat > /etc/systemd/system/vizitik.service <<EOF
-[Unit]
-Description=$APP_NAME
-After=network.target mariadb.service
-
-[Service]
-Type=simple
-WorkingDirectory=$INSTALL_DIR/backend
-ExecStart=$(command -v node) dist/main.js
-Restart=always
-RestartSec=3
-Environment=NODE_ENV=production
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  systemctl daemon-reload
-  systemctl enable vizitik
-  systemctl restart vizitik
-  sleep 2
-  systemctl is-active --quiet vizitik && ok "service running" || warn "service failed to start"
-}
-
-# ------------------------------------------------------------------
-# Nginx
-# ------------------------------------------------------------------
-setup_nginx() {
-  log "configuring Nginx"
-
-  cat > /etc/nginx/sites-available/vizitik <<EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name _;
-
-    location / {
-        proxy_pass http://127.0.0.1:${PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 60s;
-        proxy_buffering off;
-    }
-}
-EOF
-
-  ln -sf /etc/nginx/sites-available/vizitik /etc/nginx/sites-enabled/vizitik
-  [[ -e /etc/nginx/sites-enabled/default ]] && rm -f /etc/nginx/sites-enabled/default
-  nginx -t && systemctl reload nginx
-  ok "nginx configured"
-}
-
-# ------------------------------------------------------------------
-# Firewall
-# ------------------------------------------------------------------
-setup_firewall() {
-  log "enabling firewall"
-  ufw allow OpenSSH >/dev/null 2>&1 || ufw allow 22/tcp >/dev/null 2>&1
-  ufw allow 'Nginx Full' >/dev/null 2>&1
-  ufw --force enable >/dev/null 2>&1 || true
-  ok "firewall enabled"
-}
-
-# ------------------------------------------------------------------
-# Backup
-# ------------------------------------------------------------------
-setup_backup() {
-  log "creating backup cron"
-  mkdir -p /var/backups
-  cat > /etc/cron.d/vizitik-backup <<EOF
-SHELL=/bin/bash
-0 2 * * * root mysqldump -u ${DB_USER} -p'${DB_PASS}' ${DB_NAME} > /var/backups/${DB_NAME}-\$(date +\%F).sql && find /var/backups -name '${DB_NAME}-*.sql' -mtime +7 -delete
-EOF
-  chmod 644 /etc/cron.d/vizitik-backup
-  ok "backups scheduled"
-}
-
-# ------------------------------------------------------------------
-# Summary
-# ------------------------------------------------------------------
-final_summary() {
-  echo -e "\n\033[1;32m======================================================\033[0m"
-  echo -e "\033[1;32m  $APP_NAME deployed! \033[0m"
-  echo -e "\033[1;32m  http://$(hostname -I | awk '{print $1}')\033[0m"
-  echo -e "\033[1;32m======================================================\033[0m"
-  echo "  Logs: journalctl -u vizitik -f"
-  echo "  Config: $INSTALL_DIR/backend/.env"
-}
-
-# ------------------------------------------------------------------
-# Main
-# ------------------------------------------------------------------
-main() {
-  for a in "$@"; do
-    case "$a" in
-      -h|--help) echo "usage: bash scripts/deploy.sh"; exit 0 ;;
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run|-n)      DRY=1 ;;
+      --only-clean)      ONLY_CLEAN=1 ;;
+      --full-reset)      FULL_RESET=1 ;;
+      --no-pull)         NO_PULL=1 ;;
+      -h|--help)         usage; exit 0 ;;
+      --check|-y|--yes|--non-interactive|--defaults) PASSTHRU+=("$1") ;;
+      *) err "unknown argument: $1"; usage; exit 2 ;;
     esac
+    shift
+  done
+}
+
+preflight() {
+  log "preflight"
+
+  # shellcheck disable=SC1091
+  if [[ -r /etc/os-release ]]; then
+    . /etc/os-release
+    case "${ID:-}" in
+      ubuntu|debian) ok "OS: ${PRETTY_NAME:-$ID}" ;;
+      *) warn "setup-server.sh supports Ubuntu/Debian only (yours: ${ID:-unknown})" ;;
+    esac
+  else
+    warn "cannot read /etc/os-release - unknown distribution"
+  fi
+
+  if [[ "$DRY" == "1" ]]; then
+    info "dry run: no root needed, nothing will be changed"
+  elif [[ "$(id -u)" -ne 0 ]]; then
+    err "run as root: sudo bash scripts/deploy.sh"
+    exit 1
+  fi
+
+  [[ -f "$SETUP_SCRIPT" ]] || { err "missing $SETUP_SCRIPT"; exit 1; }
+  [[ -d "$SRC_DIR/backend" && -d "$SRC_DIR/frontend-app" ]] || {
+    err "no Vizitik checkout at $SRC_DIR (backend/ and frontend-app/ are required)"
+    exit 1
+  }
+  ok "source: $SRC_DIR"
+  ok "install dir: $INSTALL_DIR"
+}
+
+resources() {
+  log "resources"
+
+  if have free; then
+    local mem swap
+    mem="$(free -m | awk '/^Mem:/{print $2}')"
+    swap="$(free -m | awk '/^Swap:/{print $2}')"
+    info "RAM ${mem:-?} MB, swap ${swap:-?} MB"
+    if [[ "${mem:-0}" -lt 1024 && "${swap:-0}" -lt 1024 ]]; then
+      warn "less than ~2 GB of RAM+swap: setup-server.sh will create a swap file, otherwise npm/vite get OOM-killed"
+    fi
+  fi
+  have df && info "disk free: $(df -h / | awk 'NR==2{print $4}')"
+
+  # DNS (only if a domain was passed in the environment)
+  local d
+  for d in ${DOMAIN:-} ${APP_DOMAIN:-} ${ADMIN_DOMAIN:-}; do
+    [[ -z "$d" ]] && continue
+    if have getent && getent hosts "$d" >/dev/null 2>&1; then
+      ok "$d resolves"
+    elif have dig && [[ -n "$(dig +short "$d" A 2>/dev/null)" ]]; then
+      ok "$d resolves"
+    else
+      warn "$d does not resolve yet - Let's Encrypt will fail until the A record points here"
+    fi
+  done
+}
+
+# who is holding a port (empty when nothing does)
+port_holder() {
+  have ss || return 0
+  ss -ltnpH "sport = :$1" 2>/dev/null | head -1
+}
+
+leftovers() {
+  log "closing leftovers from earlier runs"
+
+  local unit
+  for unit in vizitik vizitik-backend vizitik-admin; do
+    if have systemctl && systemctl list-unit-files "$unit.service" >/dev/null 2>&1; then
+      if systemctl is-active --quiet "$unit" 2>/dev/null; then
+        run systemctl stop "$unit" >/dev/null 2>&1 || true
+        ok "stopped $unit.service"
+      fi
+      # `vizitik.service` came from the old standalone installer and would
+      # fight vizitik-backend for port 3000 after a reboot
+      if [[ "$unit" == "vizitik" ]] && systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+        run systemctl disable "$unit" >/dev/null 2>&1 || true
+        ok "disabled the legacy $unit.service (replaced by vizitik-backend.service)"
+      fi
+    fi
   done
 
-  . /etc/os-release 2>/dev/null || fail "unknown OS"
-  case "$ID" in
-    ubuntu|debian) ;;
-    *) fail "Ubuntu/Debian required" ;;
-  esac
+  if have pm2; then
+    run pm2 delete all >/dev/null 2>&1 || true
+    ok "cleared pm2 (if anything was running there)"
+  fi
 
-  collect_inputs
-  install_prereqs
-  setup_database
-  build_app
-  create_service
-  setup_nginx
-  setup_firewall
-  setup_backup
-  final_summary
+  # dev servers / manual launches that would fight for the ports
+  local pat
+  for pat in 'node dist/main.js' 'nest start' 'php -S' 'vite'; do
+    if pgrep -f "$pat" >/dev/null 2>&1; then
+      run pkill -f "$pat" >/dev/null 2>&1 || true
+      ok "stopped stray process: $pat"
+    fi
+  done
+
+  # a hung certbot keeps the ACME challenge port busy
+  if pgrep -f certbot >/dev/null 2>&1; then
+    run pkill -f certbot >/dev/null 2>&1 || true
+    ok "stopped a hung certbot"
+  fi
+
+  # hosting-panel Apache squatting on port 80 (Nginx needs it)
+  if [[ -n "$(port_holder 80)" ]] && have systemctl; then
+    for unit in apache2 httpd; do
+      if systemctl list-unit-files "$unit.service" >/dev/null 2>&1 && systemctl is-active --quiet "$unit" 2>/dev/null; then
+        run systemctl stop "$unit" >/dev/null 2>&1 || true
+        run systemctl disable "$unit" >/dev/null 2>&1 || true
+        ok "stopped and disabled $unit (it held port 80)"
+      fi
+    done
+  fi
+
+  # report the ports we care about afterwards
+  local p holder
+  for p in 80 "$BACKEND_PORT" "$ADMIN_PORT"; do
+    holder="$(port_holder "$p")"
+    if [[ -n "$holder" ]]; then
+      warn "port $p is still busy: $holder"
+    else
+      ok "port $p is free"
+    fi
+  done
+}
+
+pull_checkout() {
+  if [[ "$NO_PULL" == "1" ]]; then
+    warn "skipping git pull (--no-pull)"
+    return 0
+  fi
+  if [[ "$DRY" == "1" ]]; then
+    info "dry run: would pull $SRC_DIR (git pull --ff-only)"
+    return 0
+  fi
+  if [[ ! -d "$SRC_DIR/.git" ]]; then
+    warn "$SRC_DIR is not a git checkout - using the files as they are"
+    return 0
+  fi
+
+  log "updating the checkout"
+  local branch
+  branch="$(git -C "$SRC_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  if git -C "$SRC_DIR" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+    if ! git -C "$SRC_DIR" pull --ff-only; then
+      err "git pull failed in $SRC_DIR"
+      err "the VPS has local commits or uncommitted changes; commit/push or merge them first,"
+      err "or run with --no-pull to deploy the checkout as it is"
+      exit 2
+    fi
+  elif ! git -C "$SRC_DIR" pull --ff-only origin "$branch"; then
+    err "git pull failed in $SRC_DIR (no upstream tracking branch, and origin/$branch is unreachable)"
+    err "fix the remote (git remote -v) or run with --no-pull"
+    exit 2
+  fi
+  ok "checkout at $(git -C "$SRC_DIR" rev-parse --short HEAD)"
+}
+
+full_reset() {
+  log "full reset (database and certificates are kept)"
+
+  run systemctl stop vizitik-backend vizitik-admin vizitik >/dev/null 2>&1 || true
+  run systemctl disable vizitik-backend vizitik-admin vizitik >/dev/null 2>&1 || true
+  run rm -f /etc/systemd/system/vizitik-backend.service \
+            /etc/systemd/system/vizitik-admin.service \
+            /etc/systemd/system/vizitik.service
+  run systemctl daemon-reload >/dev/null 2>&1 || true
+  ok "systemd units removed"
+
+  run rm -f /etc/nginx/sites-enabled/vizitik /etc/nginx/sites-available/vizitik
+  run systemctl reload nginx >/dev/null 2>&1 || true
+  ok "vhost removed"
+
+  run rm -rf "$INSTALL_DIR"
+  ok "install dir removed: $INSTALL_DIR"
+}
+
+main() {
+  parse_args "$@"
+
+  echo -e "\033[1;36m"
+  echo "  Vizitik - deploy"
+  echo -e "\033[0m"
+
+  preflight
+  resources
+  leftovers
+
+  if [[ "$ONLY_CLEAN" == "1" ]]; then
+    log "done (--only-clean)"
+    exit 0
+  fi
+
+  [[ "$FULL_RESET" == "1" ]] && full_reset
+  pull_checkout
+
+  if [[ "$DRY" == "1" ]]; then
+    log "dry run: handing over to setup-server.sh --check (questions + summary, no changes)"
+    PASSTHRU+=(--check)
+  else
+    log "handing over to setup-server.sh"
+  fi
+
+  export SRC_DIR INSTALL_DIR BACKEND_PORT
+  exec bash "$SETUP_SCRIPT" ${PASSTHRU[@]+"${PASSTHRU[@]}"}
 }
 
 main "$@"

@@ -3,7 +3,7 @@
 > نسخه: ۱۴۰۵/۰۶ — برای کسی که **دسترسی root** روی سرور Ubuntu/Debian دارد.
 > هدف: بالا آوردن بک‌اند (NestJS) + دیتابیس (MySQL/MariaDB محلی) + سرو کردنِ خودِ اپ PWA، همگی روی یک سرور، پشت یک دامنه با HTTPS.
 >
-> ⚠️ کار در برنچ `feat/pwa-visitor-app` است. فرانت PWA جدید در `frontend-app/` (Vite) و بک‌اند در `backend/` (NestJS) است.
+> فرانت PWA در `frontend-app/` (Vite) و بک‌اند در `backend/` (NestJS) است؛ همه‌چیز روی برنچ پیش‌فرض (`main`) است.
 
 ---
 
@@ -30,8 +30,8 @@ sudo DOMAIN=app.example.com CERT_EMAIL=admin@example.com DB_PASS='رمز_قوی'
 # هاست/نام/کاربر/رمز دیتابیس، نام‌کاربری/توکن ربات بله و
 # BALE_ADMIN_CHAT_ID، فعال‌سازی UFW، کرونِ بکاپ، و در پایان شماره/رمز یک حساب برای تست لاگین.
 # JWT_SECRET را اگر خالی بگذاری خودش ۴۸ کاراکتر تصادفی می‌سازد؛ هیچ توکن یا آی‌دی شخصی
-# در کد یا در فایل‌های نمونه وجود ندارد و همه‌چیز فقط در .env روت می‌نشیند
-# (env-sync آن را به backend/.env و frontend-app/.env هم پخش می‌کند).
+# در کد یا در فایل‌های نمونه وجود ندارد و همه‌چیز فقط در backend/.env می‌نشیند
+# (env نسخهٔ روت وجود ندارد؛ متغیر بیلد PWA جدا در frontend-app/.env است).
 ```
 
 ### بعد از هر تغییر کد: `scripts/update.sh`
@@ -199,36 +199,41 @@ mkdir -p /opt/vizitik && cd /opt/vizitik
 # یا کلون، یا پوشه‌های backend و frontend-app را با scp/copy منتقل کن.
 ```
 
-### ۳-الف) یک فایل .env روت برای همه‌ی سرویس‌ها
+### ۳-الف) تنها فایل محیطی: `backend/.env`
+هرچه سرویس‌ها لازم دارند در همین یک فایل است (API + Prisma CLI + پنل ادمین). متغیرهای
+بیلد PWA جدا و در `frontend-app/.env` می‌نشینند.
 ```bash
-cd /opt/vizitik
-cp .env.example .env
+cd /opt/vizitik/backend
+cp .env.example .env          # نمونهٔ کاملِ توضیح‌دار
 cat > .env <<EOF
 DATABASE_URL="mysql://${DB_USER}:${DBPASS}@localhost:3306/${DB_NAME}"
 JWT_SECRET="$(openssl rand -hex 32)"
 JWT_EXPIRES_IN="30d"
 PORT=3000
-BACKEND_PORT=3000
 BIND_HOST="127.0.0.1"
 NODE_ENV=production
 BALE_BOT_USERNAME="Vizitik_bot"   # نام‌کاربری عمومی ربات، بدون @
 BALE_BOT_TOKEN="<توکنِ ربات خودت>"
 BALE_ADMIN_CHAT_ID="<آی‌دیِ چت ادمین>"
 ADMIN_PORT=3001
-VITE_API_URL="/api"
+ADMIN_TOKEN="$(openssl rand -hex 32)"   # پنل ادمین بدون این بالا نمی‌آید
 EOF
-node scripts/env-sync.mjs
-# پخش: backend/.env (کپی کامل — API + Prisma CLI + پنل ادمین)
-#      frontend-app/.env (فقط VITE_* — بیلد PWA)
+
+cd /opt/vizitik/frontend-app
+printf 'VITE_API_URL="/api"\n' > .env   # هم‌ریشه؛ از گوشی به localhost وصل نشو
 ```
+> اسکریپتِ `scripts/setup-server.sh` همین دو فایل را خودش می‌سازد؛ این بخش برای وقتی است
+> که می‌خواهی دستی جلو بروی.
 
 ### ۳-ب) بک‌اند (NestJS)
+> ⚠️ `npm install --omit=dev` اینجا **اشتباه** است: `prisma` و `@nestjs/cli` روی
+> devDependencies هستند و بدون آن‌ها `npm run build` با `nest: not found` می‌شکند.
 ```bash
 cd /opt/vizitik/backend
-npm install --omit=dev
-npx prisma generate
-npx prisma db push     # سینک اسکیما با جداول موجود (ایمن)
-npm run build          # خروجی: dist/main.js
+npm install --production=false   # نصب با devDeps تا ابزار بیلد موجود باشد
+npx prisma generate              # هیچ وابستگی نِیتیو نداریم (رمزها با bcryptjs)
+npx prisma db push               # سینک اسکیما با جداول موجود (ایمن)
+npm run build                    # خروجی: dist/main.js
 ```
 
 ### ۳-پ) فرانت PWA (Vite)
@@ -392,7 +397,10 @@ EOF
 | اپ نصب نمی‌شود / دکمهٔ Install نیست | باید HTTPS معتبر + همین دامنه باشد + منیفست با آیکون ۱۹۲/۵۱۲ |
 | بعد از آپدیت کد، SW قدیمی می‌ماند | `vite-plugin-pwa` با `registerType:'autoUpdate'` به‌روز می‌کند؛ یک بار ریفرش کافی است |
 | CORS/توکن درخواست | همه از همان دامنه نسبی برو؛ اگر از IP جدا می‌زنی مسیر کامل بده |
-
+| `npm install` با `gyp ERR!` / `node-gyp` / `Failed to execute … configure` می‌شکند | یک وابستگیِ نِیتیو در نسخهٔ قدیمیِ کد بود (`bcrypt`). کد فعلی `bcryptjs` (خالص JS) دارد؛ `git pull` کن و `npm install` را دوباره بزن — نه gcc لازم است نه python نه دانلود از github |
+| `npx prisma generate` با `request to https://binaries.prisma.sh/… failed` می‌ماند | شبکه اجازهٔ دانلود موتور Prisma را نمی‌دهد. یا با پروکسی اجرا کن، یا با آینه: `PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma npx prisma generate` |
+| بعد از آن، `npm run build` با کلی `error TS2345: Argument of type 'unknown' …` می‌شکند | علتِ اصلی همان generateِ ناتمام است: بدون کلاینتِ تولیدشده، مدل‌های Prisma `unknown` می‌شوند. اول `prisma generate` را موفق کن، بعد بیلد |
+| `npm run build` → `nest: not found` | با `--omit=dev` نصب کرده‌ای؛ `npm install --production=false` بزن (prisma و @nestjs/cli روی devDependencies هستند) |
 ---
 
 ## ۱۱) اگر دامنه نداری — چطور HTTPS معتبر و نصب PWA بگیری
