@@ -68,6 +68,9 @@ function updateCardState(prodId) {
     const packSize = parseInt(card.dataset.pack) || 24;
 
     const totalSingle = (cartons * packSize) + units;
+    // شکستن موجودی به کارتن بر اساس ظرفیت کارتن (مثل ۲ کارتن + ۵۵ دانه → ۴ کارتن + ۷ دانه)
+    const normCartons = Math.floor(totalSingle / packSize);
+    const normUnits = totalSingle % packSize;
 
     card.dataset.cartons = cartons;
     card.dataset.units = units;
@@ -79,11 +82,13 @@ function updateCardState(prodId) {
         card.classList.remove('is-loaded');
     }
 
-    // به‌روزرسانی متن زیرنویس کارت
+    // به‌روزرسانی متن زیرنویس کارت (نمایش شکسته‌شده به کارتن)
     if (calcFooter) {
         let text = `<span>مجموع بارگیری این کالا: <strong class="total-units-text">${toPersianNumber(totalSingle)} عدد</strong></span>`;
-        if (cartons > 0 && units > 0) {
-            text += `<small>(${toPersianNumber(cartons)} کارتن + ${toPersianNumber(units)} دانه)</small>`;
+        if (normUnits > 0) {
+            text += `<small>(${toPersianNumber(normCartons)} کارتن + ${toPersianNumber(normUnits)} دانه)</small>`;
+        } else if (normCartons > 0) {
+            text += `<small>(${toPersianNumber(normCartons)} کارتن)</small>`;
         }
         calcFooter.innerHTML = text;
     }
@@ -99,12 +104,18 @@ function updateGlobalSummary() {
     cards.forEach(card => {
         const cartons = parseInt(card.dataset.cartons) || 0;
         const units = parseInt(card.dataset.units) || 0;
+        const packSize = parseInt(card.dataset.pack) || 24;
         const cartonPrice = parseFloat(card.dataset.cartonprice) || 0;
         const unitPrice = parseFloat(card.dataset.unitprice) || 0;
 
-        totalCartons += cartons;
-        totalUnits += units;
-        totalValue += (cartons * cartonPrice) + (units * unitPrice);
+        // جمع‌بندی بر مبنای موجودی شکسته‌شده به کارتن (دانهٔ مازاد به کارتن تبدیل می‌شود)
+        const totalSingle = (cartons * packSize) + units;
+        const normCartons = Math.floor(totalSingle / packSize);
+        const normUnits = totalSingle % packSize;
+
+        totalCartons += normCartons;
+        totalUnits += normUnits;
+        totalValue += (normCartons * cartonPrice) + (normUnits * unitPrice);
     });
 
     const headerSub = document.getElementById('headerSubSummary');
