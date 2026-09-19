@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma.service';
 import { BaleService } from '../bale/bale.service';
 import { CreateOrderDto, UpdateOrderDto } from './orders.dto';
+import { normalizeStock, splitByCarton, toTotalSingleUnits } from '../common/inventory-units';
 
 @Injectable()
 export class OrdersService {
@@ -151,7 +152,7 @@ export class OrdersService {
 
     let subtotalAmount = 0;
     const orderItemsData: any[] = [];
-    const inventoryDeductions: { productId: string; cartonCount: number; unitCount: number }[] = [];
+    const inventoryDeductions: { productId: string; cartonCount: number; unitCount: number; unitsPerCarton: number }[] = [];
 
     for (const item of dto.items) {
       const prod = productMap.get(item.productId);
@@ -187,6 +188,7 @@ export class OrdersService {
         productId: prod.id,
         cartonCount: item.cartonCount,
         unitCount: item.unitCount,
+        unitsPerCarton,
       });
     }
 
@@ -229,8 +231,13 @@ export class OrdersService {
         });
 
         if (inv) {
-          const newCartons = Math.max(0, inv.quantityCartons - deduction.cartonCount);
-          const newUnits = Math.max(0, inv.quantityUnits - deduction.unitCount);
+          // کسر بر مبنای «مجموع دانه» و شکستن مجدد به کارتن — بدون این کار،
+          // رکورد شکسته‌نشده (مثل ۰ کارتن + ۲۴ دانه) هیچ‌وقت از فروش کارتنی کم نمی‌شد
+          const stockBefore = normalizeStock(inv.quantityCartons, inv.quantityUnits, deduction.unitsPerCarton);
+          const sellTotal = toTotalSingleUnits(deduction.cartonCount, deduction.unitCount, deduction.unitsPerCarton);
+          const after = splitByCarton(Math.max(0, stockBefore.totalSingleUnits - sellTotal), deduction.unitsPerCarton);
+          const newCartons = after.cartons;
+          const newUnits = after.units;
 
           if (newCartons === 0 && newUnits === 0) {
             // در صورت صفر شدن کامل موجودی، رکورد پاک می‌شود تا افزونگی در دیتابیس ایجاد نشود
@@ -363,9 +370,34 @@ export class OrdersService {
     const netDebt = finalAmount - creditedPayments;
 
     await this.prisma.$transaction(async (tx) => {
-      // ۱) بازمغردانی اقلام به موجودی خودرو
+      // ۱) بازگردانی اقلام به موجودی خودرو — افزایش بر مبنای مجموع دانه و شکستن مجدد
+      const restockProducts = await tx.product.findMany({
+        where: { id: { in: order.items.map((i) => i.productId) } },
+        include: { userSettings: { where: { userId: visitorId } } },
+      });
+      const restockUpc = new Map(
+        restockProducts.map((p) => [
+          p.id,
+          p.userSettings[0]?.customUnitsPerCarton || p.unitsPerCartonDefault || 24,
+        ]),
+      );
+
       for (const item of order.items) {
         if (!item.cartonCount && !item.unitCount) continue;
+        const upc = restockUpc.get(item.productId) || 24;
+        const existing = await tx.vanInventory.findUnique({
+          where: {
+            userId_productId: {
+              userId: visitorId,
+              productId: item.productId,
+            },
+          },
+        });
+        const before = normalizeStock(existing?.quantityCartons || 0, existing?.quantityUnits || 0, upc);
+        const restored = splitByCarton(
+          before.totalSingleUnits + toTotalSingleUnits(item.cartonCount || 0, item.unitCount || 0, upc),
+          upc,
+        );
         await tx.vanInventory.upsert({
           where: {
             userId_productId: {
@@ -376,12 +408,12 @@ export class OrdersService {
           create: {
             userId: visitorId,
             productId: item.productId,
-            quantityCartons: item.cartonCount || 0,
-            quantityUnits: item.unitCount || 0,
+            quantityCartons: restored.cartons,
+            quantityUnits: restored.units,
           },
           update: {
-            quantityCartons: { increment: item.cartonCount || 0 },
-            quantityUnits: { increment: item.unitCount || 0 },
+            quantityCartons: restored.cartons,
+            quantityUnits: restored.units,
           },
         });
       }
@@ -693,8 +725,25 @@ export class OrdersService {
 
     // ۵. اجرای تراکنش جامع
     await this.prisma.$transaction(async (tx) => {
-      // الف: بازگردانی موجودی اقلام قبلی به انبار خودرو
+      // نقشهٔ ظرفیت کارتن برای کالاهای قدیم و جدید (کالای حذف‌شده هم باید درست شکسته شود)
+      const allIds = Array.from(new Set([
+        ...dto.items.map((i) => i.productId),
+        ...order.items.map((i) => i.productId),
+      ]));
+      const upcProducts = await tx.product.findMany({
+        where: { id: { in: allIds } },
+        include: { userSettings: { where: { userId: visitorId } } },
+      });
+      const upcOf = new Map(
+        upcProducts.map((p) => [
+          p.id,
+          p.userSettings[0]?.customUnitsPerCarton || p.unitsPerCartonDefault || 24,
+        ]),
+      );
+
+      // الف: بازگردانی موجودی اقلام قبلی به انبار خودرو (افزایش بر مبنای مجموع دانه + شکستن مجدد)
       for (const oldItem of order.items) {
+        const upc = upcOf.get(oldItem.productId) || 24;
         const inv = await tx.vanInventory.findUnique({
           where: {
             userId_productId: {
@@ -704,12 +753,18 @@ export class OrdersService {
           },
         });
 
+        const before = normalizeStock(inv?.quantityCartons || 0, inv?.quantityUnits || 0, upc);
+        const restored = splitByCarton(
+          before.totalSingleUnits + toTotalSingleUnits(oldItem.cartonCount, oldItem.unitCount, upc),
+          upc,
+        );
+
         if (inv) {
           await tx.vanInventory.update({
             where: { id: inv.id },
             data: {
-              quantityCartons: inv.quantityCartons + oldItem.cartonCount,
-              quantityUnits: inv.quantityUnits + oldItem.unitCount,
+              quantityCartons: restored.cartons,
+              quantityUnits: restored.units,
             },
           });
         } else {
@@ -717,15 +772,16 @@ export class OrdersService {
             data: {
               userId: visitorId,
               productId: oldItem.productId,
-              quantityCartons: oldItem.cartonCount,
-              quantityUnits: oldItem.unitCount,
+              quantityCartons: restored.cartons,
+              quantityUnits: restored.units,
             },
           });
         }
       }
 
-      // ب: کسر مقادیر جدید از انبار خودرو
+      // ب: کسر مقادیر جدید از انبار خودرو (کسر بر مبنای مجموع دانه + شکستن مجدد)
       for (const newItem of dto.items) {
+        const upc = upcOf.get(newItem.productId) || 24;
         const inv = await tx.vanInventory.findUnique({
           where: {
             userId_productId: {
@@ -736,8 +792,11 @@ export class OrdersService {
         });
 
         if (inv) {
-          const finalCartons = Math.max(0, inv.quantityCartons - newItem.cartonCount);
-          const finalUnits = Math.max(0, inv.quantityUnits - newItem.unitCount);
+          const before = normalizeStock(inv.quantityCartons, inv.quantityUnits, upc);
+          const sellTotal = toTotalSingleUnits(newItem.cartonCount, newItem.unitCount, upc);
+          const after = splitByCarton(Math.max(0, before.totalSingleUnits - sellTotal), upc);
+          const finalCartons = after.cartons;
+          const finalUnits = after.units;
 
           if (finalCartons === 0 && finalUnits === 0) {
             await tx.vanInventory.delete({ where: { id: inv.id } });

@@ -1,7 +1,13 @@
 import { Injectable, UnauthorizedException, BadRequestException, NotFoundException, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt';
+// bcryptjs یک پیاده‌سازیِ خالصِ جاوااسکریپت و سازگار با bcrypt است:
+// هش‌های $2a$/$2b$/$2y$ موجود در دیتابیس را همان‌طور می‌خواند و می‌سازد.
+// چرا bcrypt نِیتیو نیست؟ چون npm install آن روی سرور به کامپایلر C، پایتون و
+// دانلود هدرهای node از nodejs.org و باینری از github.com نیاز دارد؛ روی
+// سرورهای ایرانی (و بعضی هاست‌های ابری) همین دانلودها فیلتر است و
+// deploy وسط npm install با خطای node-gyp/gyp ERR! می‌خوابد.
+import bcrypt from 'bcryptjs';
 import { APP } from '../app.config';
 import { OtpStore } from './otp.store';
 import {

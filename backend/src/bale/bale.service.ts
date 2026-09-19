@@ -123,7 +123,6 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       const finalStr = Number(order.finalAmount).toLocaleString("fa-IR");
 
       const paidSum = order.payments.reduce((sum, p) => sum + Number(p.amount), 0);
-      const paidStr = paidSum.toLocaleString("fa-IR");
       const remainingCredit = Math.max(0, Number(order.finalAmount) - paidSum);
       const remainingCreditStr = remainingCredit.toLocaleString("fa-IR");
 
@@ -192,16 +191,19 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
         `اگر ویزیتور یا پخش‌کننده‌ی دیگری را می‌شناسید که به این فروشگاه یا محله‌های دیگر سر می‌زند، این ربات را به او معرفی کنید تا سفارش، فاکتور و حسابِ او هم دقیق و منظم در *${APP.nameFa}* ثبت و همین‌جا در بله ارسال شود.\n` +
         `ربات: ${BOT.link}`;
 
-      // ۲. پیام اختصاصی برای ویزیتور
+      // ۲. پیام اختصاصی برای ویزیتور — با کلیهٔ اطلاعات فاکتور، دقیقاً مثل پیام مشتری
       const visitorMessage =
-        `${updatePrefix}📋 *گزارش خودکار فاکتور فروش*\n\n` +
-        `🏪 *فروشگاه:* #${customer.name.replace(/\s+/g, "_")}\n` +
+        `${updatePrefix}📋 *فاکتور فروش — گزارش خودکار ویزیتور*\n\n` +
+        `🏪 *فروشگاه:* ${customer.name}\n` +
+        (customer.phone ? `📞 *تلفن فروشگاه:* ${customer.phone}\n` : ``) +
         `🔢 *شماره فاکتور:* #${invNo.replace(/-/g, "_")}\n` +
-        `💰 *مبلغ فاکتور:* *${finalStr} تومان*\n` +
-        `💳 *مبلغ دریافتی:* ${paidStr} تومان\n` +
-        (remainingCredit > 0 ?
-          `⚠️ *مانده نسیه این فاکتور:* ${remainingCreditStr} تومان\n\n`
-        : `✅ *تسویه کامل*\n`) +
+        `📅 *زمان ثبت:* ${orderDateStr}\n` +
+        `👤 *ویزیتور:* #${visitor.firstName}_${visitor.lastName} (${visitor.phone})\n\n` +
+        (itemsListText ? `📦 *اقلام فاکتور:*\n${itemsListText}\n\n` : "") +
+        `💵 *جمع ناخالص:* ${subtotalStr} تومان\n` +
+        (Number(order.totalDiscountAmount) > 0 ? `🎁 *مجموع تخفیف:* ${discountStr} تومان\n` : "") +
+        `💰 *مبلغ نهایی قابل پرداخت:* *${finalStr} تومان*\n\n` +
+        `💳 *روش تسویه و پرداخت:*\n${paymentMethodsList}\n\n` +
         `📊 *مانده کل حساب فروشگاه:* ${latestBalanceStr} تومان\n` +
         (customer.baleChatId ?
           `📲 *فاکتور به صورت خودکار برای فروشگاه در بله ارسال شد.*`

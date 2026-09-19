@@ -51,7 +51,10 @@ export default function NewOrder({ go }) {
         })
         .map((p) => {
           const k = qty[p.productId] || { c: 0, u: 0 };
-          return { ...p, cartonCount: k.c, unitCount: k.u };
+          // مجموع دانهٔ کل موجودی ون — اگر فیلد سرور فراموش/کهنه شده باشد، محلی محاسبه می‌شود
+          const totalSingle =
+            p.totalSingleUnits ?? (p.quantityCartons || 0) * (p.unitsPerCarton || 1) + (p.quantityUnits || 0);
+          return { ...p, totalSingleUnits: totalSingle, cartonCount: k.c, unitCount: k.u };
         }),
     [bar, search, cat, qty],
   );
@@ -279,6 +282,14 @@ export default function NewOrder({ go }) {
                 return (
               <div className={`product-order-card ${picked ? "has-quantity" : ""}`} key={p.productId}>
                 <div className="prod-card-top">
+                  {/* جای عکس محصول — فعلاً آیکون بستنی (تا عکسی در دیتابیس نباشد) */}
+                  <div className="prod-icon-wrap">
+                    {p.imageUrl ? (
+                      <img src={p.imageUrl} alt={p.productName} />
+                    ) : (
+                      <span className="material-symbols-outlined">{p.isCustomUserProduct ? "star" : "icecream"}</span>
+                    )}
+                  </div>
                   <div className="prod-main-meta">
                     <div className="prod-title-line">
                       <span className="prod-title">{p.productName}</span>
@@ -297,18 +308,23 @@ export default function NewOrder({ go }) {
                 </div>
 
                 <div className="prod-steppers-container">
-                  <div className="steppers-row">
-                    <div className="stepper-item">
-                      <span className="stepper-title">کارتن:</span>
-                      <div className="stepper-control">
+                  {/* عین صفحهٔ بارگیری: گرید ۲ ستونه با دکمه‌های آیکونی step-up/step-down */}
+                  <div className="steppers-grid">
+                    <div className="stepper-box carton-stepper">
+                      <div className="stepper-label">
+                        <span className="material-symbols-outlined">inventory_2</span>
+                        <span>کارتن ({toPersianNum(p.unitsPerCarton)} تایی)</span>
+                      </div>
+                      <div className="stepper-controls">
                         <button
                           type="button"
-                          className="step-btn"
+                          className="step-btn step-down"
+                          aria-label="کاهش کارتن"
                           onClick={() => step(p, "cartonCount", -1)}>
-                          -
+                          <span className="material-symbols-outlined">remove</span>
                         </button>
                         <input
-                          className="step-input"
+                          className="step-input carton-input"
                           type="number"
                           min="0"
                           value={p.cartonCount}
@@ -316,23 +332,28 @@ export default function NewOrder({ go }) {
                         />
                         <button
                           type="button"
-                          className="step-btn"
+                          className="step-btn step-up"
+                          aria-label="افزایش کارتن"
                           onClick={() => step(p, "cartonCount", 1)}>
-                          +
+                          <span className="material-symbols-outlined">add</span>
                         </button>
                       </div>
                     </div>
-                    <div className="stepper-item">
-                      <span className="stepper-title">دانه:</span>
-                      <div className="stepper-control">
+                    <div className="stepper-box unit-stepper">
+                      <div className="stepper-label">
+                        <span className="material-symbols-outlined">icecream</span>
+                        <span>دانه / تکی</span>
+                      </div>
+                      <div className="stepper-controls">
                         <button
                           type="button"
-                          className="step-btn"
+                          className="step-btn step-down"
+                          aria-label="کاهش دانه"
                           onClick={() => step(p, "unitCount", -1)}>
-                          -
+                          <span className="material-symbols-outlined">remove</span>
                         </button>
                         <input
-                          className="step-input"
+                          className="step-input unit-input"
                           type="number"
                           min="0"
                           value={p.unitCount}
@@ -340,9 +361,10 @@ export default function NewOrder({ go }) {
                         />
                         <button
                           type="button"
-                          className="step-btn"
+                          className="step-btn step-up"
+                          aria-label="افزایش دانه"
                           onClick={() => step(p, "unitCount", 1)}>
-                          +
+                          <span className="material-symbols-outlined">add</span>
                         </button>
                       </div>
                     </div>

@@ -258,61 +258,66 @@ export default function Orders({ go }) {
     setReceipt(inv);
   }
 
-  /* ================= ساخت PDF فاکتور + اشتراک‌گذاری =================
-   * تصویر DOM فاکتور (که RTL و فونت فارسی خودش را دارد) گرفته می‌شود،
-   * داخل یک PDF روی A4 می‌نشیند و از طریق Web Share API به اشتراک می‌رود.
-   * مرورگرهایی که file-share ندارند → فایل دانلود می‌شود. */
+  /* ================= ساخت PDF فاکتور + اشتراک‌گذاری/دانلود =================
+   * قالب کامل فاکتور رسمی (A5) که بیرون از دید (left:-10000px) رندر شده،
+   * به تصویر تبدیل و داخل PDF روی A4 می‌نشیند. نام فایل = نام مشتری + شماره فاکتور.
+   * دو دکمهٔ جدا دارد: اشتراک‌گذاری (Web Share API) و دانلود مستقیم. */
+  function invoicePdfFilename(inv) {
+    const cust = String((inv && inv.customer && inv.customer.name) || 'مشتری')
+      .trim().replace(/\s+/g, '_').replace(/[\\/:*?"<>|]/g, '');
+    const invNo = String((inv && inv.invoiceNumber) || 'receipt');
+    return `${cust}-فاکتور-${invNo}.pdf`;
+  }
+
+  function downloadBlobAs(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  async function buildInvoicePdf() {
+    const paper = document.getElementById('pdfInvoicePaper');
+    if (!paper || !paper.innerHTML) throw new Error('ابتدا فاکتور را برای نمایش باز کنید.');
+    // فونت‌های وب مطمئن بارگیری شده باشند، وگرنه html2canvas فونت پیش‌فرض می‌زند
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    const canvas = await html2canvas(paper, { scale: 2, backgroundColor: '#ffffff' });
+    const imgData = canvas.toDataURL('image/png');
+
+    const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+    const pageW = 210;
+    const pageH = 297;
+    const margin = 10;
+    const ratio = canvas.width / canvas.height;
+    let imgW = pageW - margin * 2;
+    let imgH = imgW / ratio;
+    if (imgH > pageH - margin * 2) {
+      imgH = pageH - margin * 2;
+      imgW = imgH * ratio;
+    }
+    pdf.addImage(imgData, 'PNG', (pageW - imgW) / 2, (pageH - imgH) / 2, imgW, imgH);
+    return { blob: pdf.output('blob'), filename: invoicePdfFilename(receipt) };
+  }
+
   async function shareInvoicePdf() {
     if (!receipt || sharingPdf) return;
-    const paper = document.getElementById('thermalReceiptPaper');
-    if (!paper) return;
     setSharingPdf(true);
     try {
-      // فونت‌های وب مطمئن بارگیری شده باشند، وگرنه html2canvas فونت پیش‌فرض می‌زند
-      if (document.fonts && document.fonts.ready) await document.fonts.ready;
-      const canvas = await html2canvas(paper, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-        // overlay اسپینر فقط در کاپ (نسخهٔ DOM) حذف می‌شود — روی PDF نیاید
-        onclone: (clonedDoc) => {
-          const o = clonedDoc.querySelector('.pdf-share-overlay');
-          if (o) o.remove();
-        },
-      });
-      const imgData = canvas.toDataURL('image/png');
-
-      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-      const pageW = 210;
-      const pageH = 297;
-      const margin = 15;
-      const ratio = canvas.width / canvas.height;
-      let imgW = pageW - margin * 2;
-      let imgH = imgW / ratio;
-      if (imgH > pageH - margin * 2) {
-        imgH = pageH - margin * 2;
-        imgW = imgH * ratio;
-      }
-      pdf.addImage(imgData, 'PNG', (pageW - imgW) / 2, (pageH - imgH) / 2, imgW, imgH);
-      const blob = pdf.output('blob');
-      const file = new File([blob], `vizitik-invoice-${receipt.invoiceNumber || 'receipt'}.pdf`, {
-        type: 'application/pdf',
-      });
+      const { blob, filename } = await buildInvoicePdf();
+      const file = new File([blob], filename, { type: 'application/pdf' });
 
       const canShare =
         typeof navigator !== 'undefined' &&
         typeof navigator.canShare === 'function' &&
         navigator.canShare({ files: [file] });
       if (canShare) {
-        await navigator.share({ files: [file], title: 'فاکتور ویزیتیک' });
+        await navigator.share({ files: [file], title: filename });
       } else {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `vizitik-invoice-${receipt.invoiceNumber || 'receipt'}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        downloadBlobAs(blob, filename);
         showToast('اشتراک‌گذاری مستقیم در دسترس نیست؛ فایل PDF دانلود شد.', 'info');
       }
     } catch (err) {
@@ -320,6 +325,19 @@ export default function Orders({ go }) {
       if (!/Abort/i.test(err && err.name || '')) {
         showToast('ساخت PDF با خطا مواجه شد: ' + ((err && err.message) || err), 'error');
       }
+    } finally {
+      setSharingPdf(false);
+    }
+  }
+
+  async function downloadInvoicePdf() {
+    if (!receipt || sharingPdf) return;
+    setSharingPdf(true);
+    try {
+      const { blob, filename } = await buildInvoicePdf();
+      downloadBlobAs(blob, filename);
+    } catch (err) {
+      showToast('ساخت PDF با خطا مواجه شد: ' + ((err && err.message) || err), 'error');
     } finally {
       setSharingPdf(false);
     }
@@ -861,42 +879,272 @@ export default function Orders({ go }) {
                 <span>در حال ساخت نسخهٔ PDF…</span>
               </div>
             )}
-            {receipt && (
-              <>
-                <div className="receipt-title">ویزیتیک</div>
-                <div className="receipt-sub receipt-center">فاکتور فروش گرم — {toPersianNum(receipt.invoiceNumber || '')}</div>
-                <div className="receipt-divider"></div>
-                <div className="receipt-center">
-                  {(receipt.items || []).map((it, i) => (
-                    <div className="receipt-row" key={i}>
-                      <span>
-                        {it.productName} ({toPersianNum(it.cartonCount)} کارتن{it.unitCount ? ` + ${toPersianNum(it.unitCount)} دانه` : ''})
-                      </span>
-                      <span>{fa(it.lineTotal)}</span>
+            {receipt && (() => {
+              // پورت ۱:۱ از renderThermalPaper در js/orders.js (رسید کامل نسخهٔ PHP)
+              const orderDate = new Date(receipt.orderDate || Date.now());
+              const dateStr = toPersianNum(orderDate.toLocaleDateString('fa-IR'));
+              const timeStr = toPersianNum(orderDate.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }));
+              const finalAmount = Number(receipt.pricing?.finalAmount ?? 0);
+              const totalPaid = (receipt.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+              const remainingCredit = Math.max(0, finalAmount - totalPaid);
+              return (
+                <>
+                  <div className="receipt-center">
+                    <div className="receipt-title">🍦 فاکتور فروش ویزیتیک</div>
+                    <div className="receipt-sub">سامانه پخش مویرگی و ویزیتوری</div>
+                  </div>
+                  <div className="receipt-divider"></div>
+                  <div className="receipt-row">
+                    <span>شماره فاکتور:</span>
+                    <strong><span className="invoice-num">{toPersianNum(receipt.invoiceNumber || '')}</span></strong>
+                  </div>
+                  <div className="receipt-row">
+                    <span>مشتری:</span>
+                    <strong>{receipt.customer?.name || 'مشتری'}</strong>
+                  </div>
+                  <div className="receipt-row">
+                    <span>ویزیتور:</span>
+                    <span>{receipt.visitor?.name || 'ویزیتور'}</span>
+                  </div>
+                  <div className="receipt-row">
+                    <span>تاریخ و ساعت:</span>
+                    <span>{dateStr} - {timeStr}</span>
+                  </div>
+                  <div className="receipt-divider"></div>
+                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>اقلام تحویل داده شده:</div>
+                  {(receipt.items || []).map((it, i) => {
+                    const qtyText =
+                      it.cartonCount > 0 && it.unitCount > 0
+                        ? `${toPersianNum(it.cartonCount)}ک + ${toPersianNum(it.unitCount)}د`
+                        : it.cartonCount > 0
+                          ? `${toPersianNum(it.cartonCount)}کارتن`
+                          : `${toPersianNum(it.unitCount)}دانه`;
+                    return (
+                      <div className="receipt-row" key={i}>
+                        <span>{it.productName} ({qtyText})</span>
+                        <strong>{formatPrice(it.lineTotal)}</strong>
+                      </div>
+                    );
+                  })}
+                  <div className="receipt-divider"></div>
+                  <div className="receipt-row">
+                    <span>جمع ناخالص:</span>
+                    <span>{formatPrice(receipt.pricing?.subtotal || 0)}</span>
+                  </div>
+                  {(receipt.pricing?.totalDiscount || 0) > 0 && (
+                    <>
+                      {(receipt.pricing?.discountSteps || []).map((s, i) => (
+                        <div className="receipt-row" key={`ds_${i}`} style={{ color: '#c2410c', fontSize: '10.5px' }}>
+                          <span>تخفیف پله {toPersianNum(i + 1)} ({toPersianNum(s.percent)}٪):</span>
+                          <span>-{formatPrice((s.before || 0) - (s.after || 0))}</span>
+                        </div>
+                      ))}
+                      <div className="receipt-row" style={{ fontWeight: 'bold', marginTop: '2px' }}>
+                        <span>مجموع تخفیف‌ها:</span>
+                        <span>-{formatPrice(receipt.pricing?.totalDiscount || 0)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="receipt-row" style={{ fontSize: '13.5px', fontWeight: 900, marginTop: '4px' }}>
+                    <span>مبلغ نهایی فاکتور:</span>
+                    <span>{formatPrice(finalAmount)}</span>
+                  </div>
+                  <div className="receipt-divider"></div>
+                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>نحوه تسویه:</div>
+                  {(receipt.payments || []).map((p, i) => (
+                    <div className="receipt-row" key={`tp_${i}`}>
+                      <span>{p.method === 'CASH' ? 'نقدی' : p.method === 'CARD' ? 'کارتخوان / پوز' : 'چک صیادی'}:</span>
+                      <strong>{formatPrice(p.amount)}</strong>
                     </div>
                   ))}
-                </div>
-                <div className="receipt-row">
-                  <span>جمع ناخالص:</span>
-                  <span>{fa(receipt.subtotalAmount)} ت</span>
-                </div>
-                <div className="receipt-row">
-                  <span>تخفیف:</span>
-                  <span>-{fa(receipt.totalDiscountAmount)} ت</span>
-                </div>
-                <div className="receipt-row">
-                  <strong>مبلغ قابل پرداخت:</strong>
-                  <strong>{fa(receipt.finalAmount)} ت</strong>
-                </div>
-              </>
-            )}
+                  {remainingCredit > 0 && (
+                    <div className="receipt-row" style={{ fontWeight: 900, color: '#ea580c' }}>
+                      <span>مانده در دفتر حساب (نسیه):</span>
+                      <strong>{formatPrice(remainingCredit)}</strong>
+                    </div>
+                  )}
+                  <div className="receipt-divider"></div>
+                  <div className="receipt-center" style={{ fontSize: '10px', marginTop: '6px' }}>
+                    از خرید شما سپاسگزاریم<br />
+                    نرم‌افزار توزیع و حسابداری ویزیتیک
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
+          {/* قالب کامل فاکتور رسمی (A5) برای خروجی PDF — بیرون از دید رندر می‌شود */}
+          {receipt && (
+            <div className="pdf-invoice-paper" id="pdfInvoicePaper">
+              <div className="pi-sheet">
+                <div className="pi-header">
+                  <div className="pi-brand">
+                    <span className="pi-brand-name">ویزیتیک</span>
+                    <span className="pi-brand-sub">سامانه پخش مویرگی و ویزیتوری</span>
+                  </div>
+                  <div className="pi-invoice-chip">
+                    <small>فاکتور رسمی فروش</small>
+                    <strong>#{toPersianNum(receipt.invoiceNumber || '')}</strong>
+                  </div>
+                </div>
+
+                <div className="pi-meta-band">
+                  <div className="pi-meta-box">
+                    <span className="pi-meta-title">اطلاعات فروشگاه</span>
+                    <div className="pi-meta-row"><span>نام:</span><strong>{receipt.customer?.name || 'مشتری'}</strong></div>
+                    <div className="pi-meta-row"><span>تلفن:</span><strong>{receipt.customer?.phone ? toPersianNum(receipt.customer.phone) : '—'}</strong></div>
+                    <div className="pi-meta-row"><span>آدرس:</span><strong>{receipt.customer?.address || '—'}</strong></div>
+                  </div>
+                  <div className="pi-meta-box">
+                    <span className="pi-meta-title">اطلاعات ویزیتور و فاکتور</span>
+                    <div className="pi-meta-row"><span>ویزیتور:</span><strong>{receipt.visitor?.name || 'ویزیتور'}</strong></div>
+                    <div className="pi-meta-row"><span>تلفن:</span><strong>{receipt.visitor?.phone ? toPersianNum(receipt.visitor.phone) : '—'}</strong></div>
+                    <div className="pi-meta-row">
+                      <span>تاریخ:</span>
+                      <strong>
+                        {toPersianNum(new Date(receipt.orderDate || Date.now()).toLocaleDateString('fa-IR'))}
+                        {' — '}
+                        {toPersianNum(new Date(receipt.orderDate || Date.now()).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }))}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pi-section-title">اقلام فاکتور (تحویل داده شده)</div>
+                <table className="pi-items-table">
+                  <thead>
+                    <tr>
+                      <th className="pi-num">ردیف</th>
+                      <th>نام کالا</th>
+                      <th className="pi-c">تعداد</th>
+                      <th className="pi-c">فی (تومان)</th>
+                      <th className="pi-c">مبلغ (تومان)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(receipt.items || []).length > 0 ? (
+                      (receipt.items || []).map((it, i) => {
+                        const qtyText =
+                          it.cartonCount > 0 && it.unitCount > 0
+                            ? `${toPersianNum(it.cartonCount)} کارتن + ${toPersianNum(it.unitCount)} دانه`
+                            : it.cartonCount > 0
+                              ? `${toPersianNum(it.cartonCount)} کارتن`
+                              : `${toPersianNum(it.unitCount)} دانه`;
+                        return (
+                          <tr key={`pi_${i}`}>
+                            <td className="pi-num">{toPersianNum(i + 1)}</td>
+                            <td>{it.productName}{it.brand ? <small> ({it.brand})</small> : null}</td>
+                            <td className="pi-c">{qtyText}</td>
+                            <td className="pi-c">{fa(it.unitPrice)}<br /><small>کارتن: {fa(it.cartonPrice)}</small></td>
+                            <td className="pi-c"><strong>{fa(it.lineTotal)}</strong></td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr><td className="pi-c" colSpan="5" style={{ color: '#94a3b8' }}>قلمی ثبت نشده است.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+
+                <div className="pi-summary">
+                  <div className="pi-sum-row">
+                    <span>جمع ناخالص</span>
+                    <strong>{fa(receipt.pricing?.subtotal ?? receipt.subtotalAmount)} تومان</strong>
+                  </div>
+                  {(receipt.pricing?.totalDiscount || 0) > 0 && (
+                    <>
+                      {(receipt.pricing?.discountSteps || []).map((s, i) => (
+                        <div className="pi-sum-row pi-discount" key={`pid_${i}`}>
+                          <span>تخفیف پله {toPersianNum(i + 1)} ({toPersianNum(s.percent)}٪)</span>
+                          <span>-{fa((s.before || 0) - (s.after || 0))} تومان</span>
+                        </div>
+                      ))}
+                      <div className="pi-sum-row pi-discount" style={{ fontWeight: 800 }}>
+                        <span>مجموع تخفیف‌ها</span>
+                        <span>-{fa(receipt.pricing?.totalDiscount)} تومان</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="pi-sum-row pi-final">
+                    <span>مبلغ نهایی قابل پرداخت</span>
+                    <span>{fa(receipt.pricing?.finalAmount ?? receipt.finalAmount)} تومان</span>
+                  </div>
+                </div>
+
+                <div className="pi-payments">
+                  <div className="pi-sum-row" style={{ fontWeight: 900, color: '#0f172a' }}>
+                    <span>ریز تسویه فاکتور</span>
+                    <span>
+                      {(receipt.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0) > 0
+                        ? `${fa((receipt.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0))} تومان دریافت شده`
+                        : ''}
+                    </span>
+                  </div>
+                  {(receipt.payments || []).length > 0 ? (
+                    (receipt.payments || []).map((p, i) => {
+                      if (p.method === 'CASH') {
+                        return (
+                          <div className="pi-pay-row" key={`pay_${i}`}><span>نقدی</span><strong>{fa(p.amount)} تومان</strong></div>
+                        );
+                      }
+                      if (p.method === 'CARD') {
+                        return (
+                          <div className="pi-pay-row" key={`pay_${i}`}><span>کارتخوان / پوز</span><strong>{fa(p.amount)} تومان</strong></div>
+                        );
+                      }
+                      if (p.method === 'CHECK') {
+                        return (
+                          <div className="pi-pay-row" key={`pay_${i}`}>
+                            <span>
+                              چک صیادی {p.check?.bankName ? `(${p.check.bankName})` : ''}
+                              <br />
+                              <span className="pi-pay-sub">
+                                شناسه: {p.check?.checkNumber ? toPersianNum(p.check.checkNumber) : '—'}
+                                {' — سررسید: '}
+                                {p.check?.dueDate ? toPersianNum(new Date(p.check.dueDate).toLocaleDateString('fa-IR')) : '—'}
+                              </span>
+                            </span>
+                            <strong>{fa(p.amount)} تومان</strong>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })
+                  ) : (
+                    <div className="pi-pay-row"><span style={{ color: '#94a3b8' }}>پرداختی ثبت نشده است.</span></div>
+                  )}
+                  {(() => {
+                    const paid = (receipt.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+                    const remaining = Math.max(0, Number(receipt.pricing?.finalAmount ?? receipt.finalAmount ?? 0) - paid);
+                    return remaining > 0 ? (
+                      <div className="pi-pay-row pi-credit"><span>مانده در دفتر حساب (نسیه)</span><strong>{fa(remaining)} تومان</strong></div>
+                    ) : null;
+                  })()}
+                </div>
+
+                {receipt.status === 'CANCELLED' && (
+                  <div className="pi-cancelled">این فاکتور ابطال شده است</div>
+                )}
+
+                <div className="pi-footer">
+                  از همراهی شما سپاسگزاریم — برگهٔ فاکتور به‌صورت خودکار توسط سامانهٔ ویزیتیک صادر شده است.
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="thermal-modal-actions">
-            <button type="button" className="share-receipt-btn" disabled={sharingPdf} onClick={shareInvoicePdf}>
-              <span className="material-symbols-outlined">{sharingPdf ? 'hourglass_top' : 'ios_share'}</span>
-              <span>{sharingPdf ? 'در حال ساخت PDF…' : 'اشتراک‌گذاری PDF'}</span>
-            </button>
+            {/* دو دکمهٔ کنار هم: اشتراک‌گذاری + دانلود مستقیم PDF */}
+            <div className="pdf-actions-row">
+              <button type="button" className="share-receipt-btn" disabled={sharingPdf} onClick={shareInvoicePdf}>
+                <span className="material-symbols-outlined">{sharingPdf ? 'hourglass_top' : 'ios_share'}</span>
+                <span>{sharingPdf ? 'در حال ساخت PDF…' : 'اشتراک‌گذاری'}</span>
+              </button>
+              <button type="button" className="download-receipt-btn" disabled={sharingPdf} onClick={downloadInvoicePdf}>
+                <span className="material-symbols-outlined">download</span>
+                <span>دانلود PDF</span>
+              </button>
+            </div>
             <button type="button" className="print-receipt-btn" onClick={() => window.print()}>
               <span className="material-symbols-outlined">print</span>
               <span>چاپ فاکتور حرارتی</span>
