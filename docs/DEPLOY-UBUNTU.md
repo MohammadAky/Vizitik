@@ -1,476 +1,213 @@
-# راهنمای کامل استقرار روی سرور Ubuntu / Debian
+# نصب، آپدیت و بازیابی امن ویزیتیک
 
-> نسخه: ۱۴۰۵/۰۶ — برای کسی که **دسترسی root** روی سرور Ubuntu/Debian دارد.
-> هدف: بالا آوردن بک‌اند (NestJS) + دیتابیس (MySQL/MariaDB محلی) + سرو کردنِ خودِ اپ PWA، همگی روی یک سرور، پشت یک دامنه با HTTPS.
->
-> فرانت PWA در `frontend-app/` (Vite) و بک‌اند در `backend/` (NestJS) است؛ همه‌چیز روی برنچ پیش‌فرض (`main`) است.
+## قبل از هر کاری روی سرور قدیمی
 
----
+**`documents/hesabchin.sql` حاوی `DROP TABLE` است و فقط داده/ساختار نمونه است، نه migration.**
+نسخهٔ قبلی نصب آن را در هر اجرا وارد می‌کرد. نصب جدید هیچ SQL نمونه‌ای وارد نمی‌کند،
+هیچ دیتابیسی را reset نمی‌کند و `.env` موجود را حفظ می‌کند.
 
-## ۰-الف) ⚡ سریع‌ترین راه: اجرای اسکریپت خودکار
+اگر داده قبلاً حذف شده، تغییر کد به‌تنهایی آن را برنمی‌گرداند. قبل از نصب/آپدیت دوباره،
+از وضعیت فعلی، دیسک/volume و فایل‌های باقی‌مانده کپی بگیرید. مسیرهای زیر را بررسی کنید:
 
-یک اسکریپتِ کامل (`scripts/setup-server.sh`) نوشته‌ام که همین راهنما را **خودکار** اجرا می‌کند: نصب پیش‌نیازها، دیتابیس، بیلد بک‌اند + فرانت، سرویس systemd، Nginx، (اختیاری) HTTPS، فایروال و بکاپ.
+- `/var/backups/*.sql` (بکاپ‌های قدیمی)
+- `/var/backups/vizitik/` (بکاپ‌های جدید)
+- snapshot شرکت میزبان، بکاپ خارج از سرور و binlog دیتابیس، اگر از قبل فعال بوده‌اند
+- فایل اصلی `/opt/vizitik/backend/.env`؛ خصوصاً `DATABASE_URL` و `JWT_SECRET`
+
+**فایل `.env` را با نمونه جایگزین نکنید.** تغییر URL ممکن است اپ را به دیتابیس خالی وصل
+کند؛ تغییر JWT_SECRET نشست‌های قبلی را نامعتبر می‌کند. خاموش‌ماندن معمول سرور به‌خودی‌خود
+نباید باعث پاک‌شدن دیتابیس شود. بررسی علت روی سرور واقعی هنوز به لاگ و بکاپ آن سرور نیاز دارد.
+
+## ۱. لوکال: نصب و اجرا
+
+پیش‌نیاز: Node 22+، npm، Python 3، دیتابیس MySQL/MariaDB روشن و ابزار `mariadb-dump`
+یا `mysqldump` (`mariadb-client` روی Debian/Ubuntu). اسکریپت لوکال دیتابیس/کاربر سیستم‌عامل نمی‌سازد.
+یک دیتابیس اختصاصی با دسترسی کافی بسازید؛ هرگز لوکال را به دیتابیس production وصل نکنید.
 
 ```bash
-# از داخل ریپو، با دسترسی root:
-# ۱) اول فقط سؤال‌ها را ببین (هیچ تغییری روی سرور داده نمی‌شود)
-sudo bash scripts/setup-server.sh --check
-
-# ۲) اجرای کامل — تک‌تک مقدارها را می‌پرسد، خلاصه می‌دهد و بعد از تأیید تو اعمال می‌کند
-sudo bash scripts/setup-server.sh
-
-# ۳) حالت غیرتعاملی (همهٔ مقدارها از محیط) — برای CI یا وقتی می‌خواهی یک‌بار و سریع بگذری
-sudo DOMAIN=app.example.com CERT_EMAIL=admin@example.com DB_PASS='رمز_قوی' \
-  BALE_BOT_USERNAME='Vizitik_bot' BALE_BOT_TOKEN='توکن_ربات' BALE_ADMIN_CHAT_ID='123456789' \
-  bash scripts/setup-server.sh --non-interactive --yes
-
-# پرچم‌ها:  --check (فقط پرسش و خلاصه) · -y/--yes (بدون تأیید آخر) ·
-#          --non-interactive/--defaults (پرسش نکن) · -h/--help
-# سؤال‌ها به این ترتیب‌اند: پوشهٔ نصب، دامنه، گواهی HTTPS و ایمیل آن، پورت بک‌اند،
-# هاست/نام/کاربر/رمز دیتابیس، نام‌کاربری/توکن ربات بله و
-# BALE_ADMIN_CHAT_ID، فعال‌سازی UFW، کرونِ بکاپ، و در پایان شماره/رمز یک حساب برای تست لاگین.
-# JWT_SECRET را اگر خالی بگذاری خودش ۴۸ کاراکتر تصادفی می‌سازد؛ هیچ توکن یا آی‌دی شخصی
-# در کد یا در فایل‌های نمونه وجود ندارد و همه‌چیز فقط در backend/.env می‌نشیند
-# (env نسخهٔ روت وجود ندارد؛ متغیر بیلد PWA جدا در frontend-app/.env است).
+bash scripts/setup-local.sh --run
+# اجرای اول: .env و JWT_SECRET/ADMIN_TOKEN تصادفی ساخته می‌شوند، سپس توقف.
+# backend/.env را ویرایش کنید؛ DATABASE_URL را برای دیتابیس لوکال تنظیم کنید.
+bash scripts/setup-local.sh --run
 ```
 
-### بعد از هر تغییر کد: `scripts/update.sh`
-روی لپ‌تاپ commit/push کن، بعد روی سرور:
+رمز دارای `@ : / # %` را در URL percent-encode کنید. هیچ فایل تنظیمات موجودی خودکار
+بازنویسی نمی‌شود. قبل از `prisma db push` بکاپ SQL و تنظیمات در `.backups/` گرفته می‌شود؛
+شکست dump یعنی توقف، نه ادامه بدون بکاپ. ساختار مخرب با `--accept-data-loss` پذیرفته نمی‌شود.
+
+برای دفعات بعد فقط:
+
+```bash
+bash scripts/run-dev.sh
+```
+
+- PWA: پورت 5173، `/api` به پورت `PORT` بک‌اند پراکسی می‌شود؛ مرورگر با localhostِ سرور تماس نمی‌گیرد.
+- API: پورت 3000 به‌صورت پیش‌فرض؛ ادمین: `ADMIN_PORT`، پیش‌فرض 3001.
+- روی `0.0.0.0` اجرا می‌شوند؛ محیط لوکال را روی شبکهٔ عمومی بدون حفاظت در دسترس نگذارید.
+- Ctrl+C یا خروج یک سرویس، گروه پردازشی هر سه سرویس را می‌بندد.
+- ادمین از Prisma Client تولیدشدهٔ بک‌اند استفاده می‌کند؛ `npm install` جدا در admin لازم نیست.
+
+## ۲. نصب سرور Ubuntu/Debian
+
+checkout کد را جدا از نصب نگه دارید، مثلاً `~/Vizitik` و `/opt/vizitik`.
+اسکریپت با root بسته‌های سیستم، Node 22، MariaDB، Nginx، سرویس‌های systemd، کرون بکاپ،
+و در صورت انتخاب HTTPS/UFW را تنظیم می‌کند. سرویس یا پردازش برنامه‌های دیگر را عمداً متوقف نمی‌کند.
+
+```bash
+bash scripts/setup-server.sh --check        # پرسش/گزارش؛ بدون تغییر
+sudo bash scripts/setup-server.sh          # نصب تعاملی
+# مسیر سفارشی باید قبل از شروع مشخص باشد تا .env همان مسیر خوانده شود:
+sudo INSTALL_DIR=/opt/vizitik bash scripts/setup-server.sh
+```
+
+از `--non-interactive --yes` برای مقادیر ازپیش‌تنظیم‌شده استفاده کنید. secrets را در تاریخچهٔ
+ترمینال/چت ننویسید. `DOMAIN=example.com` لندینگ را روی دامنهٔ اصلی، PWA را روی
+`app.example.com` و ادمین را روی `admin.example.com` تنظیم می‌کند؛ `APP_DOMAIN` و
+`ADMIN_DOMAIN` قابل تغییرند. بدون DOMAIN، اپ با HTTP روی IP سرو می‌شود؛ نصب PWA در
+مرورگرهای موبایل به HTTPS نیاز دارد. راهنمای SSL: [CLOUDFLARE-SSL.md](CLOUDFLARE-SSL.md).
+
+### تضمین‌ها و محدودیت‌های نصب مجدد
+
+- فایل `/opt/vizitik/backend/.env` و کلیدهای موجود حفظ می‌شوند، نه جایگزین با مقادیر جدیدِ prompt.
+  برای تغییر تنظیماتِ نصب موجود، خودِ فایل را آگاهانه ویرایش کنید.
+- در نصب موجود، از URL واقعی `.env` بکاپ گرفته می‌شود؛ `DB_NAME/DB_PASS` قدیمی مبنای dump نیستند.
+- اگر `.env` وجود نداشته باشد ولی دیتابیس انتخاب‌شده جدول داشته باشد، نصب متوقف می‌شود؛ ابتدا `.env` اصلی را برگردانید.
+- روی دیتابیس موجود `ALTER USER` اجرا نمی‌شود. برای DB راه‌دور، `.env` معتبر را از قبل در محل نصب بگذارید.
+- کد با rsync و بدون حذف پوشه‌ها/تنظیمات کپی می‌شود؛ نمونه SQL هرگز import نمی‌شود.
+- نصب و آپدیت هم‌زمان قفل می‌شوند. نصب مجدد جایگزینِ آپدیت مرحله‌ای نیست؛ برای تغییر کد از `update.sh` استفاده کنید.
+- نصب سرور شامل تغییر تنظیمات Nginx است؛ روی vhost سفارشی ابتدا کپی بگیرید. سرویس‌ها در حال حاضر مانند نسخهٔ قبلی با root اجرا می‌شوند؛ محدودسازی کاربر سرویس کار جداگانه‌ای است.
+
+`deploy.sh` فقط نام سازگار برای `setup-server.sh` است؛ reset و cleanup مخرب عمداً رد می‌شوند.
+
+## ۳. آپدیت سرور
+
+برای اولین ارتقا از اسکریپت قدیمی، ابتدا checkout کد را به‌روزرسانی کنید تا **خود اسکریپت جدید** اجرا شود:
+
 ```bash
 cd ~/Vizitik
-sudo bash scripts/update.sh
-```
-چه می‌کند: `git pull --ff-only` (اگر upstream نداشته باشی `origin/<branch>` را می‌زند)، diff را
-دسته‌بندی می‌کند (`backend/`، `frontend-app/`، `package-lock.json`، `prisma/schema.prisma`) و
-فقط همان سمت‌ها را می‌سازد؛ `node_modules` دست‌نخورده می‌ماند مگر lock تغییر کرده باشد؛ بیلدِ
-PWA در یک پوشهٔ موقت انجام می‌شود و `dist` فقط وقتی جایش می‌رود که بیلد موفق بوده باشد؛ از
-`dist` بک‌اند آرشیو `backend.dist.<زمان>.tgz` نگه می‌دارد (سه تای آخر) و اگر `npm run build`
-بک‌اند بشکند، همان را برمی‌گرداند و سرویس را ری‌استارت می‌کند؛ بعد `systemctl restart`،
-`nginx -t && systemctl reload`، و دو پرچم سلامت (`127.0.0.1:3000` و `127.0.0.1/` با
-Host دامنه) را چک می‌کند؛ شمارهٔ کامیتِ اعمال‌شده در `/opt/vizitik/.vizitik-revision` نوشته
-می‌شود تا اجرای بعدی بداند از کجا شروع کند.
-پرچم‌ها: `--check` (فقط گزارش)، `--backend-only`، `--frontend-only`، `--restart-only`،
-`--force-deps`، `--force` (بیلد هر دو سمت فارغ از diff)، `--no-restart`، `--no-pull`،
-`--revision <sha>` (برگشت به یک کامیت مشخص).
-
-نکتهٔ مهم: مبنای مقایسه **همان چیزی است که روی سرور اجراست** (`/opt/vizitik/.vizitik-revision`)
-نه کامیتِ یک اجرای قبلی؛ پس اگر دستی `git pull` کرده باشی یا بیلدی شکسته باشد، اجرای بعدی
-هم همان کامیت را دوباره می‌سازد. شمارهٔ کامیت فقط بعد از موفقیت کامل نوشته می‌شود. اگر
-خودِ `scripts/update.sh` هم در همان pull عوض شده باشد، اسکریپت یک‌بار با نسخهٔ جدید
-جایگزین و ادامه می‌دهد.
-
-### اسکریپت یک‌خطی (توصیه می‌شود)
-`deploy.sh` اول همه‌چیزِ جا‌مانده از اجراهای قبلی را می‌بندد (سرویس، پروسه‌های node/php،
-pm2، آپاچیِ پورت ۸۰)، `git pull` می‌کند و بعد `setup-server.sh` را اجرا می‌کند:
-```bash
-sudo bash scripts/deploy.sh                 # سوال‌ها همان‌هاست
-sudo bash scripts/deploy.sh --dry-run       # فقط نشان بده چه می‌بندد، چیزی را عوض نکن
-sudo bash scripts/deploy.sh --only-clean    # ببند و تمام (بدون deploy)
-sudo bash scripts/deploy.sh --yes --full-reset   # + پاک‌کردن /opt/vizitik و vhost (دیتابیس و گواهی می‌مانند)
-```
-قدم‌به‌قدمِ کلودفلر و SSL: `docs/CLOUDFLARE-SSL.md`.
-
-### «Killed» وسط build = کمبود RAM
-اگر خروجی نصب خطی مثل `setup-server.sh: line 396: 49858 Killed  npm install` داد،
-کشندهٔ حافظه (OOM killer) سیستم‌عامل پروسه را کشته — نه باگ کد. نشانه‌اش: `free -h`
-مقدار swap را `0B` نشان می‌دهد. اسکریپت خودش این را تشخیص می‌دهد (exit 137) و اگر
-RAM+swap از `MIN_TOTAL_MB` (پیش‌فرض ۲۰۴۸ مگ) کمتر باشد یک `/swapfile` می‌سازد،
-`NODE_OPTIONS=--max-old-space-size` را هم بر اساس حافظهٔ دستگاه تنظیم می‌کند.
-دستی:
-```bash
-fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
-echo "/swapfile none swap sw 0 0" >> /etc/fstab && free -h
-```
-بعد دوباره همان دستور اجرا را تکرار کن؛ همهٔ مرحله‌ها idempotent هستند و `npm ci`
-قبل از نصب، `node_modules` نیمه‌کارهٔ قبلی را پاک می‌کند.
-
-### گواهی SSL و فیلتر پورت ۸۰
-`setup_https` اول با HTTP-01 (پلاگین nginx) تلاش می‌کند و اگر جواب نگیرد، **دقیق همان خطای certbot را در `/var/log/vizitik-certbot.log`** نشان می‌دهد و می‌گوید چرا:
-
-| پیام certbot | معنی | کاری که بکنی |
-|---|---|---|
-| `Timeout during connect` / `Could not connect` | پورت ۸۰ از بیرون باز نیست (بسیاری از هاست‌های ایرانی ترافیک خارج را می‌بندند) یا ابر نارنجی کلودفلر بدون گواهیِ origin پاسخ ۵۲۱ می‌دهد | `CF_API_TOKEN=<token> HTTPS_MODE=dns sudo -E bash scripts/setup-server.sh --yes` (چالش DNS هیچ اتصال ورودی لازم ندارد) |
-| `NXDOMAIN` / `DNS problem` | دامنه هنوز به IP سرور نمی‌رسد | در کلودفلر رکورد `A` را بررسی کن: `dig +short vizitik.ir` |
-| `Problem binding to port 80` | پروسهٔ دیگری ۸۰ را گرفته | `ss -ltnp \| grep ':80'` |
-| `too many certificates` | سقف نرخ Let's Encrypt | یک ساعت صبر یا `--staging` |
-
-توکن کلودفلر: `dash.cloudflare.com → My Account → API Tokens → Create Token → قالب Edit zone DNS → Zone: vizitik.ir`. اسکریپت آن را در `/etc/letsencrypt/cloudflare.credentials` با مجوز `600` می‌گذارد، پس `certbot renew` بعداً بدون باز بودن ۸۰ هم کار می‌کند.
-
-- اگر مقداری را از قبل در محیط export کرده باشی، اسکریپت همان را می‌پرسد ولی در brackets نشان می‌دهد؛ با Enter همان مقدار می‌ماند.
-- رمزها (رمز دیتابیس، توکن ربات، رمز تست) مخفی خوانده و دوباره‌تایید می‌شوند؛ در خلاصه فقط «set» چاپ می‌شود.
-- بدون دامنه: `DOMAIN` را خالی بگذار (یا اصلاً ست نکن) تا از HTTPS رد شود (نصب PWA بعداً — بخش ۱۱).
-- اسکریپت **ایدِمپوتنت** است؛ هر وقت خواستی کد/تنظیمات را به‌روز کنی، دوباره اجرایش کن.
-
-> دستورهای گام‌به‌گامِ دستی زیر برای درک کامل و عیب‌یابی هم باقی می‌مانند.
-
----
-
-## ۰) نقشهٔ کلی (یک سرور = سه نقش)
-
-```
-اینترنت ──► https://app.EXAMPLE.com
-                 │  (Nginx روی سرور)
-        ┌────────┴─────────┐
-   location /  (استاتیک)   │  location /api  (ریورس‌پروکسی)
-   → frontend-app/dist     │  → 127.0.0.1:3000  (NestJS)
-   = خودِ اپ PWA           │      → MariaDB (localhost:3306)
-                           │      → ربات بله (داخل همین پروسه)
+git pull --ff-only
+bash scripts/update.sh --check --no-pull
+sudo bash scripts/update.sh --no-pull
 ```
 
-چرا همه‌چیز هم‌ریشه است؟ چون اپ PWA با **مسیر نسبی** `/api/...` صحبت می‌کند، پس با یک دامنه همهٔ مشکلات CORS/هاست/کوکی از بین می‌رود.
+دفعات بعد: `sudo bash scripts/update.sh`. مراحل:
 
----
+1. قفل عملیات، تأیید، `git pull --ff-only`؛ checkout کثیف فقط با `--no-pull` پذیرفته می‌شود.
+2. مقایسه با آخرین نسخهٔ موفق، نه صرفاً آخرین pull؛ در staging وابستگی‌ها با `npm ci --include=dev` و سپس بیلد ساخته می‌شوند.
+3. بکاپ SQL و `.env` در مسیر خصوصی؛ شکست بکاپ عملیات را قطع می‌کند.
+4. `prisma db push` بدون گزینهٔ از‌دست‌دادن داده؛ هر خطا fatal است.
+5. توقف کوتاه سرویس‌ها، جایگزینی فایل‌ها، راه‌اندازی و انتظار برای `/api/health` با پاسخ سالم دیتابیس.
+6. در آپدیت کامل، کرون قدیمی موجود به نسخهٔ امن تبدیل و محدودیت آپلود Nginx ادمین ارتقا داده می‌شود؛ TLS و سایر locationها حفظ می‌شوند. کانفیگ سفارشی ناشناخته خطا می‌دهد.
+7. فقط پس از موفقیت همه مراحل، ثبت revision. شکست فعال‌سازی، فایل‌ها و وابستگی‌های قبلی را برمی‌گرداند.
 
-## ۱) آماده‌سازی سیستم (root)
+**DDL در MySQL rollback تراکنشی ندارد.** اسکیما با شکست مرحلهٔ بعد خودکار به عقب برنمی‌گردد؛
+از بکاپ قبل از آپدیت و بازیابی آفلاین استفاده کنید. حتی db push بدون accept-data-loss جایگزین
+بازبینی migration و تست staging نیست. OOM، قطع برق یا SIGKILL می‌تواند پوشهٔ `.update.*`
+را باقی بگذارد؛ در آن وضعیت `previous/` را پیش از پاک‌سازی بررسی کنید.
+
+گزینه‌ها:
+
+- `--check`: کاملاً آفلاین و فقط‌خواندنی؛ فقط checkout فعلی را پیش‌نمایش می‌کند، نه commitهای remote.
+- `--force`: بیلد همهٔ بخش‌ها؛ `--no-pull`: همان کد موجود.
+- `--backend-only` / `--frontend-only`: تغییر جزئی؛ revision سراسری جلو نمی‌رود.
+- `--restart-only`: بدون pull، schema و نصب؛ restart و تست سلامت.
+- `--yes`: حذف تأیید. `INSTALL_DIR` برای محل نصب غیراستاندارد باید صریحاً داده شود.
+- نصب قدیمی که خود `/opt/vizitik` یک checkout است عمداً رد می‌شود؛ کد و نصب را با حفظ `.env` جدا کنید.
+
+## ۴. بکاپ‌ها: دو فرمت با کاربرد متفاوت
+
+### پنل ادمین: `.vizitik.json.gz`
+
+- `GET /api/export/backup`، هدر `X-Admin-Token`؛ همان دکمهٔ خروجی بکاپ در تنظیمات.
+- snapshot سازگار در تراکنش RepeatableRead، شامل هر ۱۳ جدول برنامه؛ حفظ UUID، هش رمز،
+  اعشار، تاریخ، متن فارسی، NULL و اطلاعات فاکتور. schema و routines دیتابیس جزو این فرمت نیستند.
+- `POST /api/import/backup`: بدنهٔ باینری فایل، هدر توکن و `X-Confirm-Restore: replace-all-data`.
+- فقط نسخهٔ شناخته‌شده و ساختار یکسان جدول‌ها؛ حداکثر 50MiB فشرده و 200MiB پس از بازشدن.
+- فایل ابتدا کامل اعتبارسنجی می‌شود؛ سپس بکاپ احتیاطی `pre-restore-*.vizitik.json.gz` نوشته می‌شود.
+- DELETE/INSERT پارامتری در یک تراکنش Serializable، با FK روشن؛ خطای هر ردیف موجب rollback کامل است.
+  هیچ SQL دلخواهی از فایل اجرا نمی‌شود و موفقیت ناقص `207` نداریم.
+- اگر ذخیرهٔ بکاپ احتیاطی ممکن نباشد، هیچ DELETE اجرا نمی‌شود. restore حساب‌ها/رمزها را هم
+  به زمان بکاپ برمی‌گرداند؛ با رمز همان زمان وارد شوید.
+- هنگام restore، کاربران و نویسنده‌های دیگر (API/بات/SQL دستی) را در پنجرهٔ نگهداری متوقف کنید.
+  روی سرور می‌توانید `sudo systemctl stop vizitik-backend` بزنید و ادمین را روشن نگه دارید؛ پس از
+  بازیابی `sudo systemctl start vizitik-backend` و سلامت/ورود را بررسی کنید. قفل داخلی پنل
+  فقط از اجرای هم‌زمان عملیات بکاپ همین پردازش جلوگیری می‌کند، نه همهٔ کلاینت‌های دیتابیس.
+- برای دیتابیس بزرگ از SQL dump استفاده کنید؛ محدودیت زمان تراکنش پنل ۱۲۰ ثانیه است.
+
+فایل‌های قدیمی با پسوند ZIP در واقع GZIP/SQL بودند و ممکن است ناقص باشند. پنل جدید
+عمداً آن‌ها را روی دیتابیس زنده اجرا نمی‌کند. فایل را با `file` و `gzip -t` شناسایی و در
+دیتابیس آزمایشی بررسی کنید. تغییر نام فایل، خرابی محتوا را درست نمی‌کند.
+
+### سرور: SQL.GZ + کپی `.env`
 
 ```bash
-sudo -i
-apt update && apt upgrade -y
-apt install -y curl git nginx ufw nodejs npm mariadb-server certbot python3-certbot-nginx
+sudo python3 scripts/database-backup.py \
+  --env /opt/vizitik/backend/.env \
+  --output /var/backups/vizitik --reason manual
 ```
 
-**Node را بررسی کن (حداقل 18):**
-```bash
-node -v
-```
-اگر خیلی قدیمی/نیست:
-```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt install -y nodejs
-node -v
-```
+- اتصال از `DATABASE_URL` فایل انتخاب‌شده؛ رمز در آرگومان پردازش/کرون نیست، فایل موقت 600 است.
+- `--single-transaction --quick --hex-blob` برای جدول‌های InnoDB؛ در حین dump هیچ DDL دستی اجرا نکنید.
+- خروجی با نام یکتا ابتدا `.partial` است؛ فقط پس از موفقیت dump و آزمون GZIP منتشر می‌شود.
+- کنار هر dump، فایل `.sql.gz.env` محرمانه برای حفظ تنظیمات/کلید JWT ذخیره می‌شود.
+- کرون ساعت 02:00 **به وقت سرور** اجرا می‌شود؛ لاگ: `/var/log/vizitik-backup.log`.
+- فقط بکاپ‌های موفق `nightly` پس از ۱۴ روز پاک می‌شوند؛ `pre-update`، `pre-install`،
+  `pre-schema`، `pre-restore` و manual خودکار حذف نمی‌شوند. مصرف دیسک را مانیتور کنید.
+- cron با نصب/آپدیت هم‌زمان اجرا نمی‌شود؛ شکست شبانه را از لاگ و نبود فایل جدید تشخیص دهید.
+- `BACKUP_DIR` باید خصوصی و خارج از پوشه‌های قابل‌تعویضِ نصب و web root باشد.
+- فایل‌ها رمزگذاری‌شده نیستند؛ حاوی هش رمز و secrets هستند. آن‌ها را خارج از سرور، رمزگذاری‌شده
+  نگه دارید و بازیابی آزمایشی دوره‌ای انجام دهید. موفقیت dump تضمین سالم‌بودن دادهٔ قبلاً خراب‌شده نیست.
 
-**مشخص کن دامنه چیست** — این متغیر در تمام دستورهای بعد استفاده می‌شود:
-```bash
-DOMAIN=app.EXAMPLE.com     # ← فقط این را با دامنهٔ خودت عوض کن
-```
+## ۵. بازیابی SQL بدون ریسک بی‌دلیل
 
-**DNS:** مطمئن شو یک رکورد `A` برای `app.EXAMPLE.com` به IP سرور اشاره می‌کند.
-
-> **نام دیتابیس دلخواه است** — از `.env` خوانده می‌شود:
-> - `DB_NAME` : نام دیتابیس (در این مثال `vizitik_db`)
->
-> **نام نرم‌افزار ثابت و هاردکد است** (ویزیتیک / Vizitik) — متغیر محیطی ندارد.
-> اگر روزی خواستی عوض کنی، ثابت‌های `backend/src/app.config.ts` و
-> `frontend-app/src/lib/brand.js` و title/لینک‌های admin و landing را
-> (با `grep -rn "ویزیتیک"` و `grep -rn "Vizitik"`) به‌روز کن.
-
----
-
-## ۲) دیتابیس MySQL/MariaDB
+1. بکاپ وضعیت فعلی و snapshot دیسک؛ API/نویسنده‌ها را متوقف کنید.
+2. `gzip -t /path/to/backup.sql.gz`؛ فایل معتبر باید از منبع مورد اعتماد باشد. dump یک برنامهٔ SQL است.
+3. در **دیتابیس خالی و جداگانه** مثلاً `vizitik_recovery` وارد کنید؛ ابتدا تعداد کاربران، مشتریان،
+   سفارش‌ها، ارتباط‌ها و ورود با رمز شناخته‌شده را بررسی کنید. از اپ یا بات production برای آزمایش استفاده نکنید.
 
 ```bash
-systemctl enable --now mariadb
-mysql_secure_installation     # رمز root دیتابیس بگذار؛ بقیه را بله/پیش‌فرض
+# نمونه: حساب مدیریتی با دسترسی فقط به محیط بازیابی؛ -p رمز را تعاملی می‌گیرد.
+# ابتدا دیتابیس vizitik_recovery را خالی و جدا بسازید.
+set -o pipefail
+gzip -dc /path/to/backup.sql.gz | mariadb -u recovery_admin -p vizitik_recovery
 ```
 
-رمز اپ و نام دیتابیس را انتخاب کن:
-```bash
-DB_NAME='vizitik_db'          # ← هر نامی می‌خواهی بگذار
-DB_USER='vizitik'
-DBPASS='CHANGE_ME_STRONG_PASSWORD'
+dump جدید شامل `CREATE DATABASE`/`USE` نیست؛ dump قدیمی را قبل از اجرا برای این دستورات
+بازبینی کنید تا دیتابیس اصلی را هدف نگیرد. dump می‌تواند جدول‌های مقصد را جایگزین کند؛ مقصد باید جدا باشد.
 
-mysql -u root -p <<SQL
-CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DBPASS}';
-GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
-FLUSH PRIVILEGES;
-SQL
-```
+4. پس از تأیید، URL اپ را آگاهانه به دیتابیس بازیابی‌شده تغییر دهید و `JWT_SECRET` اصلی را حفظ کنید.
+   `.env` قدیمی را کورکورانه کپی نکنید؛ دامنه/مسیر/پورت هم داخل آن هستند.
+5. سرویس‌ها را بالا بیاورید؛ `/api/health` و ورود صحیح/رمز اشتباه را تست کنید؛ بعد اجازهٔ نوشتن کاربران را برگردانید.
 
-**ایمپورت دامپ موجود** (ساختار + دادهٔ اولیه از ریپو):
-> `documents/hesabchin.sql` دو خطِ ابتدایی `CREATE DATABASE ... hesabchin` و `USE hesabchin` دارد — چون دیتابیس را خودت با `DB_NAME` می‌سازی، این دو خط را حذف کن تا در دیتابیسِ انتخابی‌ات ایمپورت شود:
-```bash
-sed '/CREATE DATABASE/,/^USE `hesabchin`;/d' documents/hesabchin.sql > /tmp/hesabchin_schema.sql
-mysql -u "${DB_USER}" -p"${DBPASS}" "${DB_NAME}" < /tmp/hesabchin_schema.sql
-```
+## ۶. تست‌ها و وضعیت اعتبارسنجی
 
-تأیید:
-```bash
-mysql -u "${DB_USER}" -p"${DBPASS}" "${DB_NAME}" -e "SHOW TABLES;"
-```
-
----
-
-## ۳) کپی کد روی سرور و بیلد
+تست‌های واحد و رگرسیون با دیتابیس/دستورات سیستم شبیه‌سازی‌شده:
 
 ```bash
-mkdir -p /opt/vizitik && cd /opt/vizitik
-# یا کلون، یا پوشه‌های backend و frontend-app را با scp/copy منتقل کن.
+(cd backend && npm ci --include=dev && npx prisma generate && npm run build)
+node --test admin/tests/backup.test.js
+python3 scripts/tests/database-backup.py
+python3 scripts/tests/setup-safety.py
+python3 scripts/tests/proxy-config.py
+python3 scripts/tests/update-regression.py
+python3 scripts/tests/update-rollback.py
+python3 scripts/tests/backend-typecheck.py
 ```
 
-### ۳-الف) تنها فایل محیطی: `backend/.env`
-هرچه سرویس‌ها لازم دارند در همین یک فایل است (API + Prisma CLI + پنل ادمین). متغیرهای
-بیلد PWA جدا و در `frontend-app/.env` می‌نشینند.
-```bash
-cd /opt/vizitik/backend
-cp .env.example .env          # نمونهٔ کاملِ توضیح‌دار
-cat > .env <<EOF
-DATABASE_URL="mysql://${DB_USER}:${DBPASS}@localhost:3306/${DB_NAME}"
-JWT_SECRET="$(openssl rand -hex 32)"
-JWT_EXPIRES_IN="30d"
-PORT=3000
-BIND_HOST="127.0.0.1"
-NODE_ENV=production
-BALE_BOT_USERNAME="Vizitik_bot"   # نام‌کاربری عمومی ربات، بدون @
-BALE_BOT_TOKEN="<توکنِ ربات خودت>"
-BALE_ADMIN_CHAT_ID="<آی‌دیِ چت ادمین>"
-ADMIN_PORT=3001
-ADMIN_TOKEN="$(openssl rand -hex 32)"   # پنل ادمین بدون این بالا نمی‌آید
-EOF
-
-cd /opt/vizitik/frontend-app
-printf 'VITE_API_URL="/api"\n' > .env   # هم‌ریشه؛ از گوشی به localhost وصل نشو
-```
-> اسکریپتِ `scripts/setup-server.sh` همین دو فایل را خودش می‌سازد؛ این بخش برای وقتی است
-> که می‌خواهی دستی جلو بروی.
-
-### ۳-ب) بک‌اند (NestJS)
-> ⚠️ `npm install --omit=dev` اینجا **اشتباه** است: `prisma` و `@nestjs/cli` روی
-> devDependencies هستند و بدون آن‌ها `npm run build` با `nest: not found` می‌شکند.
-```bash
-cd /opt/vizitik/backend
-npm install --production=false   # نصب با devDeps تا ابزار بیلد موجود باشد
-npx prisma generate              # هیچ وابستگی نِیتیو نداریم (رمزها با bcryptjs)
-npx prisma db push               # سینک اسکیما با جداول موجود (ایمن)
-npm run build                    # خروجی: dist/main.js
-```
-
-### ۳-پ) فرانت PWA (Vite)
-```bash
-cd /opt/vizitik/frontend-app
-npm install
-npm run build          # خروجی: dist/ (شامل sw.js و manifest)
-```
-
----
-
-## ۴) سرویس دائمی بک‌اند (systemd)
+تست واقعی **مخرب برای دیتابیس تست** است و فقط نام `vizitik_test` را می‌پذیرد:
 
 ```bash
-cat > /etc/systemd/system/vizitik-backend.service <<'EOF'
-[Unit]
-Description=Vizitik NestJS Backend (API + Bale bot)
-After=network.target mariadb.service
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/vizitik/backend
-ExecStart=/usr/bin/node dist/main.js
-Restart=always
-RestartSec=3
-Environment=NODE_ENV=production
-User=root
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable --now vizitik-backend
-systemctl status vizitik-backend --no-pager
-journalctl -u vizitik-backend -n 50 --no-pager     # دیدن لاگ
+# فقط دیتابیس آزمایشی دورریختنی؛ هرگز اطلاعات production را اینجا نگذارید.
+export TEST_DATABASE_URL='mysql://test_user:TEST_PASSWORD@127.0.0.1:3306/vizitik_test'
+(cd backend && DATABASE_URL="$TEST_DATABASE_URL" npx prisma db push)
+RUN_DB_TESTS=1 node --test admin/tests/integration.test.js
 ```
 
-> نکتهٔ امنیتی: می‌توانی به‌جای `User=root` یک کاربر معمولی مثل `www-data` بسازی و مالکیت پوشه را بدهی. برای سادگی اول از root شروع می‌کنیم (این خودِ کلاینت از بیرون فقط از طریق Nginx دیده می‌شود).
+این تست همهٔ جدول‌ها را پر می‌کند، export/restore واقعی را انجام می‌دهد، FK نامعتبر را برای
+آزمون rollback تزریق می‌کند و ورود HTTP، JWT و داده‌های دقیق مالی/تاریخ را بررسی می‌کند.
+بدون `RUN_DB_TESTS=1` صریحاً SKIP می‌شود. فایل CI خودکار حذف شده است؛ این تست را باید
+دستی روی یک دیتابیس آزمایشی دورریختنی اجرا کنید، نه روی دیتابیس اصلی.
 
-تست محلی API:
-```bash
-curl -s -X POST http://127.0.0.1:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"phone":"<شماره‌ای‌که‌ثبت‌نام‌کرده‌ای>","password":"<رمز‌عبور>"}'
-```
-> باید یک `accessToken` برگرداند.
-
----
-
-## ۵) Nginx (ریورس‌پروکسی + سرو استاتیک PWA)
-
-```bash
-cat > /etc/nginx/sites-available/vizitik <<'EOF'
-server {
-    listen 80;
-    listen [::]:80;
-    server_name _;
-    root /opt/vizitik/frontend-app/dist;
-    index index.html;
-
-    # PWA باید فایل index را برای هر مسیرِ داخلی برگرداند
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # مسیرهای Service Worker / منیفست نباید کشِ مرورگر بخورند
-    location ~* (sw\.js|workbox-.*\.js|manifest\.webmanifest)$ {
-        expires -1;
-        add_header Cache-Control "no-cache";
-        add_header Service-Worker-Allowed "/";
-    }
-
-    # فایل‌های بیلد (با هش) کش بلندمدت
-    location /assets/ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # ریورس‌پروکسی به بک‌اند NestJS
-    location /api/ {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 60s;
-    }
-}
-EOF
-
-ln -s /etc/nginx/sites-available/vizitik /etc/nginx/sites-enabled/vizitik
-rm -f /etc/nginx/sites-enabled/default        # حذف صفحهٔ پیش‌فرض
-nginx -t && systemctl reload nginx
-```
-
-> اگر `server_name _;` را داری، بعد از گرفتن گواهی، certbot مقدار را با دامنه درست‌سازی می‌کند. دامنه را هم می‌توانی دستی بگذاری: `server_name ${DOMAIN};`
-
----
-
-## ۶) HTTPS با Let's Encrypt (ضروری برای نصب PWA)
-
-```bash
-sed -i "s/server_name _;/server_name ${DOMAIN};/" /etc/nginx/sites-available/vizitik
-nginx -t && systemctl reload nginx
-
-certbot --nginx -d "${DOMAIN}" --redirect --agree-tos -m you@example.com -n
-```
-
-تأیید نهایی:
-```bash
-curl -sI https://${DOMAIN}/ | head -3
-curl -s https://${DOMAIN}/api/  -o /dev/null -w "api http %{http_code}\n"
-```
-
----
-
-## ۷) فایروال UFW
-
-```bash
-ufw allow OpenSSH
-ufw allow 'Nginx Full'
-ufw --force enable
-ufw status verbose
-```
-
----
-
-## ۸) نصب PWA روی گوشی + تست آفلاین
-
-1. در مرورگر گوشی به `https://app.EXAMPLE.com` برو.
-2. در منوی مرورگر «افزودن به صفحهٔ اصلی / Install app» را بزن (برای کروم اندروید معمولاً از نوار آدرس).
-3. اپ تمام‌صفحه باز می‌شود. با دادهٔ واقعیِ همگام‌شده، در حالت هواپیما هم فاکتور آفلاین قابل ثبت است (هستهٔ آفلاین در فاز ۲ پیاده شده).
-
-> **نکتهٔ تست در مرورگر دسکتاپ:** در Chrome روی دسکتاپ هم می‌توانی نصب را شبیه‌سازی کنی — در DevTools تب *Application → Service Workers* چک کن که SW «activated» است و تب *Network* را روی «Offline» بگذار تا آفلاین را تست کنی.
-
----
-
-## ۹) بکاپ‌گیری منظم (مهم)
-
-کرون‌جاب روزانه:
-```bash
-cat > /etc/cron.d/vizitik-backup <<'EOF'
-SHELL=/bin/bash
-# ساعت ۲ بامداد هر روز، دامپ دیتابیس
-0 2 * * * root mysqldump -u vizitik -p'CHANGE_ME_STRONG_PASSWORD' hesabchin > /var/backups/hesabchin-$(date +\%F).sql && find /var/backups -name 'hesabchin-*.sql' -mtime +7 -delete
-EOF
-```
-> این بکاپ را حتماً به جای امنِ بیرون از سرور (مثل S3/Google Drive) انتقال بده.
-
----
-
-## ۱۰) عیب‌یابی سریع
-
-| مشکل | راه‌حل |
-| :-- | :-- |
-| `curl /api/auth/login` روی سرور جواب می‌دهد ولی از بیرون نه | `ufw status` را چک کن؛ `Nginx Full` باز باشد |
-| «Bad Gateway / 502» از Nginx | بک‌اند down است: `systemctl status vizitik-backend` و `journalctl` |
-| گواهی می‌خواهد ولی DNS تنظیم نشده | رکورد A دامنه → IP سرور |
-| اپ نصب نمی‌شود / دکمهٔ Install نیست | باید HTTPS معتبر + همین دامنه باشد + منیفست با آیکون ۱۹۲/۵۱۲ |
-| بعد از آپدیت کد، SW قدیمی می‌ماند | `vite-plugin-pwa` با `registerType:'autoUpdate'` به‌روز می‌کند؛ یک بار ریفرش کافی است |
-| CORS/توکن درخواست | همه از همان دامنه نسبی برو؛ اگر از IP جدا می‌زنی مسیر کامل بده |
-| `npm install` با `gyp ERR!` / `node-gyp` / `Failed to execute … configure` می‌شکند | یک وابستگیِ نِیتیو در نسخهٔ قدیمیِ کد بود (`bcrypt`). کد فعلی `bcryptjs` (خالص JS) دارد؛ `git pull` کن و `npm install` را دوباره بزن — نه gcc لازم است نه python نه دانلود از github |
-| `npx prisma generate` با `request to https://binaries.prisma.sh/… failed` می‌ماند | شبکه اجازهٔ دانلود موتور Prisma را نمی‌دهد. یا با پروکسی اجرا کن، یا با آینه: `PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma npx prisma generate` |
-| بعد از آن، `npm run build` با کلی `error TS2345: Argument of type 'unknown' …` در `orders.service.ts` می‌شکند | کلاینت تولید نشده: بدون `prisma generate` مدل‌های Prisma `unknown` می‌شوند و `new Map(products.map(…))` تبدیل به `Map<unknown, unknown>` می‌شود. اول `prisma generate` را موفق کن، بعد بیلد |
-| دقیقاً دو خطا: `van-inventory.service.ts:136` و `:167` — `Argument of type 'unknown' is not assignable to parameter of type 'number'` | این یکی باگِ خودِ کد بود و در نسخهٔ فعلی رفع شده (نوعِ خروجی `unitsPerCartonMap` صریح `Map<string, number>` شده). `git pull` کن و `sudo bash scripts/update.sh` را دوباره بزن |
-| بیلد شکست ولی سرویس هنوز جواب می‌دهد / یا بعد از ری‌استارت سرویس بالا نمی‌آید | `nest build` قبل از کامپایل `dist/` را پاک می‌کند؛ `update.sh` حالا یک کپی از بیلد سالم قبلی (`backend/dist` → `backend.dist.<زمان>.tgz`) نگه می‌دارد و اگر بیلد جدید بشکند همان را برمی‌گرداند و سرویس را ری‌استارت می‌کند. سه نسخهٔ آخر نگه داشته می‌شوند |
-| `npm run build` → `nest: not found` | با `--omit=dev` نصب کرده‌ای؛ `npm install --production=false` بزن (prisma و @nestjs/cli روی devDependencies هستند) |
----
-
-## ۱۱) اگر دامنه نداری — چطور HTTPS معتبر و نصب PWA بگیری
-
-> **خلاصه:** اپ روی `http://IP` برای توسعه کار می‌کند، ولی برای **نصب و آفلاینِ واقعی** به HTTPS معتبر نیاز است (سرویس‌ورکر بدون HTTPS — به‌جز localhost — رجیستر نمی‌شود). لازم نیست دامنه بخریم؛ دو راه رایگان داریم:
-
-| گزینه | مناسب برای | زحمت |
-| :-- | :-- | :-- |
-| **DuckDNS** | تست واقعی با HTTPS روی سروری که IP دارد | کم — یک زیردامنه + DNS + certbot |
-| **Cloudflare Tunnel** | بدون نیاز به IP ثابت/باز کردن پورت | متوسط |
-
----
-
-### ۱۱-الف) راهِ پیشنهادی: DuckDNS + certbot (ساده و شفاف)
-
-۱. به `https://www.duckdns.org` برو (با حساب گوگل/گیتهاب وارد شو)، یک زیردامنه بساز مثل `vizitik` و IP عمومی سرورت را ثبت کن → `vizitik.duckdns.org`.
-
-۲. روی سرور، دامنه را بگذار و Nginx را با همان مقدار تنظیم کن:
-```bash
-DOMAIN=vizitik.duckdns.org
-sed -i "s/server_name _;/server_name ${DOMAIN};/" /etc/nginx/sites-available/vizitik
-nginx -t && systemctl reload nginx
-```
-
-۳. گواهی بگیر:
-```bash
-certbot --nginx -d "${DOMAIN}" --redirect --agree-tos -m you@example.com -n
-```
-
-۴. حالا `https://vizitik.duckdns.org` را در گوشی باز کن و «افزودن به صفحهٔ اصلی» را بزن. آفلاین و نصب کامل کار می‌کند.
-
-> **نکته:** DuckDNS با IP متغیر (Dynamic IP) هم کار می‌کند؛ اگر سرورت IP ثابت ندارد، `duckdns` را به‌عنوان cron نصب کن که IP را هر ۵ دقیقه به‌روز کند:
-> ```bash
-> echo "*/5 * * * * root curl -k https://www.duckdns.org/update?domains=vizitik&token=YOUR_TOKEN&ip=" > /etc/cron.d/duckdns
-> ```
-
----
-
-### ۱۱-ب) راهِ جایگزین: Cloudflare Tunnel (حتی بدون باز کردن پورت)
-
-اگر IP ثابت نداری یا نمی‌خواهی پورتی باز کنی، Cloudflare Tunnel به تو یک URL معتبر HTTPS می‌دهد:
-
-```bash
-apt install -y cloudflared
-cloudflared tunnel login                 # یک‌بار با مرورگر تأیید کن
-cloudflared tunnel create vizitik
-# دامنهٔ رایگان (مثلاً با tld رایگان روی Cloudflare) را به tunnel متصل کن:
-cloudflared tunnel route dns vizitik app.yourdomain
-# اجرا:
-cloudflared tunnel run vizitik
-```
-
-> با Tunnel، دیگر نیازی به تنظیم رکورد A یا باز کردن پورت ۸۰/۴۴۳ نیست؛ خود Cloudflare ترافیک را به سرورت (حتی پشت NAT) می‌رساند. بعداً فقط یک `config.yml` به Nginx/مستقیم به backend اضافه می‌کنیم.
-
----
-
-### ۱۱-ج) فقط برای تستِ سریعِ API (بدون HTTPS)
-
-- محلی: `npm run dev` در `frontend-app/` و `npm run start:dev` در `backend/`.
-- روی سرور با IP: فقط بخش‌های ۱ تا ۵ (بدون certbot) را بالا بیاور و در توسعه، `VITE_API_URL` را روی `http://IP:3000/api` بگذار. نصب/آفلاینِ کامل بعداً با یکی از دو راه بالا ممکن می‌شود.
-
-
----
-
-## ۱۲) نقشهٔ ارتقاهای امنیتی (بعد از راه‌اندازی اول)
-
-- [ ] اجرای بک‌اند با کاربر غیر root (`User=www-data`) + `chown`.
-- [ ] تغییر `BALE_BOT_TOKEN` و `JWT_SECRET` به مقادیر اختصاصی و حذف نمونهٔ README.
-- [ ] `fail2ban` برای SSH.
-- [ ] کلید SSH به‌جای رمز (`PermitRootLogin prohibit-password`).
-- [ ] بکاپ خودکار به مقصد خارج از سرور.
+**اعتبارسنجی این تغییر در محیط توسعه:** بیلد بک‌اند و PWA و تست‌های شبیه‌سازی‌شده اجرا شدند.
+نصب MariaDB و دانلود موتور اجرایی Prisma به‌دلیل محدودیت شبکه ممکن نبود؛ تست InnoDB واقعی
+در این محیط اجرا نشده است؛ حذف CI به معنی تأیید تست دیتابیس واقعی نیست.

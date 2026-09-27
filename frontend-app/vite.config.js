@@ -32,23 +32,18 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,ttf}'],
         navigateFallback: '/index.html',
-        runtimeCaching: [
-          {
-            // برنامه هرگز نباید وابسته به شبکه برای شِل باشد؛ داده از IndexedDB می‌آید.
-            urlPattern: /\/api\//,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'vizitik-api',
-              networkTimeoutSeconds: 5
-            }
-          }
-        ]
+        // Offline business data lives in IndexedDB. Never cache authenticated
+        // API responses across logout/login or database restores.
+        navigateFallbackDenylist: [/^\/api(?:\/|$)/],
+        runtimeCaching: [{ urlPattern: /\/api\//, handler: 'NetworkOnly' }]
       }
     })
   ],
   server: {
     host: true,
     port: 5173,
+    strictPort: true,
+    proxy: { '/api': { target: process.env.DEV_API_TARGET || 'http://127.0.0.1:3000', changeOrigin: true } },
     allowedHosts: ['.e2b.app', '.githubpreview.dev', 'localhost']
   }
 });
