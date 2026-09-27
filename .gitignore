@@ -1,32 +1,64 @@
-# Dependencies
-node_modules/
-*/node_modules/
-# NOTE: package-lock.json files ARE tracked (reproducible npm ci on the VPS)
+# ============================================================
+#  Vizitik — root .gitignore (applies to every package in the repo)
+# ============================================================
+#  NOTE: package-lock.json files ARE tracked on purpose
+#  (reproducible `npm ci` on the server).
 
+# ------------------------------------------------------------
+# Dependencies
+# ------------------------------------------------------------
+node_modules/
+.pnpm-store/
+
+# ------------------------------------------------------------
 # Build outputs
+# ------------------------------------------------------------
 dist/
-*/dist/
 build/
 out/
 .next/
+.nuxt/
+.vite/
+frontend-app/dev-dist/
 
-# Environment variables
+# ------------------------------------------------------------
+# Environment variables (secrets — never commit)
+# ------------------------------------------------------------
 .env
 .env.local
 .env.*.local
 *.env
+!.env.example
+!.env.*.example
 
-# Logs and Caches
+# ------------------------------------------------------------
+# Logs & caches
+# ------------------------------------------------------------
 logs/
 *.log
-.vite/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.cache/
+pnpm-debug.log*
 .npm/
+.cache/
+.eslintcache
+.stylelintcache
 
+# ------------------------------------------------------------
+# Tests & coverage
+# ------------------------------------------------------------
+coverage/
+.nyc_output/
+
+# ------------------------------------------------------------
+# TypeScript
+# ------------------------------------------------------------
+*.tsbuildinfo
+
+# ------------------------------------------------------------
 # IDE & Editor
+# ------------------------------------------------------------
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
@@ -39,27 +71,35 @@ yarn-error.log*
 *.sln
 *.sw?
 
+# ------------------------------------------------------------
 # OS metadata
+# ------------------------------------------------------------
 .DS_Store
 Thumbs.db
+desktop.ini
 .sudo_as_admin_successful
 .config/
 
-# TypeScript Cache
-*.tsbuildinfo
-
-# Uploads & Temporary Media
+# ------------------------------------------------------------
+# Uploads & temporary files
+# ------------------------------------------------------------
 uploads/
-*/uploads/
 tmp/
 temp/
+*.tmp
 
+# ------------------------------------------------------------
 # Archives
+# ------------------------------------------------------------
 *.zip
 *.tar.gz
 *.tgz
 *.rar
 *.7z
 
+# ------------------------------------------------------------
+# Python (scripts/tests)
+# ------------------------------------------------------------
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
