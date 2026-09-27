@@ -210,6 +210,11 @@ else
   if [[ "$DO_BACKEND" == 1 ]] && grep -q '^backend/prisma/schema\.prisma' <<< "$files"; then add_changed schema; fi
 fi
 echo "changed: ${CHANGED:-none}"
+if in_changed php; then
+  # The legacy PHP site is served straight from the checkout: the pull IS the
+  # deploy. It is not a tree of the install, so it is never copied or built.
+  info 'php: the legacy site lives in frontend/ and is served from the checkout - nothing to copy or build'
+fi
 
 if [[ "$CHECK" == 1 ]]; then
   echo 'check mode: offline preview of this checkout; no pull, no copy, no build, no service or database change'
@@ -227,6 +232,10 @@ if [[ "$CHECK" == 1 ]]; then
       in_changed "$part" || continue
       label="$part"
       if [[ "$part" == frontend ]]; then label=frontend-app; fi
+      if [[ "$part" == php ]]; then
+        info 'would leave the legacy site alone: frontend/ is served from the checkout, no copy, no build'
+        continue
+      fi
       info "would stage, build and activate $label/"
     done
     if in_changed schema; then info 'would run prisma db push (schema changed, never with --accept-data-loss)'; fi
@@ -359,7 +368,16 @@ fi
 # 4) stage every changed tree
 # ------------------------------------------------------------------
 command -v tar >/dev/null || fail 'tar is required'
-log "staging: $CHANGED"
+# php is deliberately absent from the tree list: the legacy site is not part
+# of the install (it is served straight from the checkout).
+STAGING=""
+for part in backend frontend admin landing scripts; do
+  in_changed "$part" || continue
+  tree="$part"; [[ "$part" == frontend ]] && tree=frontend-app
+  [[ -d "$SRC_DIR/$tree" ]] || fail "missing sources for $tree/ (expected $SRC_DIR/$tree)"
+  STAGING="${STAGING:+$STAGING }$tree"
+done
+log "staging: ${STAGING:-none}"
 require_space
 mkdir -p "$INSTALL_DIR"
 STAGE="$(mktemp -d "$INSTALL_DIR/.update.XXXXXXXX")"
@@ -394,7 +412,7 @@ trap 'exit 143' TERM
 
 mkdir -p "$STAGE/previous"
 PART_TREES=()
-for part in backend frontend admin landing scripts php; do
+for part in backend frontend admin landing scripts; do
   in_changed "$part" || continue
   tree="$part"
   if [[ "$part" == frontend ]]; then tree=frontend-app; fi
@@ -428,22 +446,28 @@ fi
 # 5) activate atomically, then verify
 # ------------------------------------------------------------------
 log 'activating'
-SERVICES_STOPPED=1
-systemctl stop vizitik-backend
-if systemctl cat vizitik-admin.service >/dev/null 2>&1; then systemctl stop vizitik-admin; fi
-for tree in "${PART_TREES[@]}"; do
-  [[ ! -d "$INSTALL_DIR/$tree" ]] || mv "$INSTALL_DIR/$tree" "$STAGE/previous/$tree"
-  activated+=("$tree")
-  mv "$STAGE/$tree" "$INSTALL_DIR/$tree"
-done
-# the admin panel runs from backend/admin/server.js (systemd WorkingDirectory)
-if compgen -G "$INSTALL_DIR/admin/*.js" >/dev/null; then
-  mkdir -p "$INSTALL_DIR/backend/admin"
-  cp "$INSTALL_DIR/admin/"*.js "$INSTALL_DIR/backend/admin/"
+if [[ ${#PART_TREES[@]} -eq 0 ]]; then
+  # Only the legacy site (frontend/) and/or the schema changed: there is no
+  # application tree to swap in, so the services keep running untouched.
+  info 'no application tree changed; nothing to swap in'
+else
+  SERVICES_STOPPED=1
+  systemctl stop vizitik-backend
+  if systemctl cat vizitik-admin.service >/dev/null 2>&1; then systemctl stop vizitik-admin; fi
+  for tree in "${PART_TREES[@]}"; do
+    [[ ! -d "$INSTALL_DIR/$tree" ]] || mv "$INSTALL_DIR/$tree" "$STAGE/previous/$tree"
+    activated+=("$tree")
+    mv "$STAGE/$tree" "$INSTALL_DIR/$tree"
+  done
+  # the admin panel runs from backend/admin/server.js (systemd WorkingDirectory)
+  if compgen -G "$INSTALL_DIR/admin/*.js" >/dev/null; then
+    mkdir -p "$INSTALL_DIR/backend/admin"
+    cp "$INSTALL_DIR/admin/"*.js "$INSTALL_DIR/backend/admin/"
+  fi
+  restart_services
+  health       || fail 'API/database health check failed after activation'
+  health_admin || fail 'admin service health check failed after activation'
 fi
-restart_services
-health       || fail 'API/database health check failed after activation'
-health_admin || fail 'admin service health check failed after activation'
 
 # Partial updates never advance the recorded revision, so the next full run
 # still sees whatever they left behind.
@@ -454,7 +478,12 @@ fi
 
 SUCCESS=1
 log 'done'
-ok "deployed $(printf '%s' "$NEW_REV" | cut -c1-7) - trees: $CHANGED"
+INSTALLED="${STAGING:-none}"
+if in_changed schema; then INSTALLED="$INSTALLED schema"; fi
+ok "deployed $(printf '%s' "$NEW_REV" | cut -c1-7) - trees: $INSTALLED"
+if in_changed php; then
+  ok 'the legacy site (frontend/) is already live from the checkout; nothing to install'
+fi
 if systemctl is-active --quiet vizitik-backend; then ok 'vizitik-backend is active'; fi
 if systemctl cat vizitik-admin.service >/dev/null 2>&1 && systemctl is-active --quiet vizitik-admin; then ok 'vizitik-admin is active'; fi
 echo '  hard reload the app (Ctrl+Shift+R) so the new PWA bundle is picked up'

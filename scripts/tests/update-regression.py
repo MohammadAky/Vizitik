@@ -88,9 +88,27 @@ with tempfile.TemporaryDirectory() as tmp:
           f'case 2: expected a no-op, got:\n{out}')
     check('npm' not in out, f'case 2: no-op run tried to build something\n{out}')
 
+    # --- case 3: stale recorded revision + the legacy PHP site present ----
+    # The live server that reported "cd: .../php: No such file or directory" had
+    # exactly this shape: a full rebuild with frontend/ in the checkout.
+    (src / 'frontend').mkdir(exist_ok=True)
+    (src / 'frontend' / 'index.php').write_text('<?php echo 1;\n', encoding='utf-8')
+    (install / '.vizitik-revision').write_text('deadbeef' * 5 + '\n', encoding='utf-8')
+
+    proc = run_check(src, install)
+    out = proc.stdout + proc.stderr
+    check(proc.returncode == 0, f'case 3: update.sh --check exited {proc.returncode}\n{out}')
+    check('php' in changed_parts(out),
+          f'case 3: a frontend/ change must be recognised as the legacy php site, got {changed_parts(out)}\n{out}')
+    check('served from the checkout' in out,
+          f'case 3: the php part must be explained as "nothing to copy or build"\n{out}')
+    check('php/' not in out.replace('frontend/', ''),
+          f'case 3: php must never be announced as an install tree\n{out}')
+
 if failures:
     for failure in failures:
         print('FAIL:', failure, file=sys.stderr)
     sys.exit(1)
 
-print('PASS: update.sh keeps undeployed admin/landing changes and treats a deployed revision as a no-op')
+print('PASS: update.sh keeps undeployed admin/landing changes, treats a deployed revision as a no-op, '
+      'and never treats the legacy frontend/ site as an install tree')

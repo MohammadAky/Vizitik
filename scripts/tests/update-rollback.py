@@ -26,7 +26,8 @@ class UpdateTests(unittest.TestCase):
         self.bin = self.root / 'bin'
         self.bin.mkdir()
         for root, text in [(self.src, 'new'), (self.live, 'old')]:
-            for tree in ['backend', 'frontend-app', 'admin', 'landing', 'scripts']:
+            # 'frontend' is the legacy PHP site: it is served straight from the checkout
+            for tree in ['backend', 'frontend-app', 'admin', 'landing', 'scripts', 'frontend']:
                 (root / tree).mkdir(parents=True)
                 (root / tree / 'marker').write_text(text)
             (root / 'admin/server.js').write_text(text)
@@ -96,6 +97,24 @@ class UpdateTests(unittest.TestCase):
         self.assert_original()
         self.assertEqual((self.live / 'frontend-app/marker').read_text(), 'new')
 
+    def test_php_only_change_installs_nothing_and_keeps_services_running(self):
+        # The legacy PHP site is served straight from the checkout, so a change
+        # under frontend/ must never be staged as a tree nor restart the API.
+        first = self.run_update()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        (self.src / 'frontend' / 'index.php').write_text('<?php echo 2;\n', encoding='utf-8')
+        git(self.src, 'add', '-A')
+        git(self.src, 'commit', '-qm', 'legacy site change')
+        before = (self.root / 'commands').read_text()
+        proc = self.run_update()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        after = (self.root / 'commands').read_text()[len(before):]
+        self.assertIn('changed: php', proc.stdout)
+        self.assertIn('nothing to swap in', proc.stdout)
+        self.assertNotIn('systemctl stop', after)
+        self.assertNotIn('staging: php', proc.stdout)
+        self.assertEqual((self.live / '.vizitik-revision').read_text().strip(), git(self.src, 'rev-parse', 'HEAD'))
+
     def test_restart_only_touches_no_file(self):
         proc = self.run_update(args=['--restart-only'])
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -103,6 +122,19 @@ class UpdateTests(unittest.TestCase):
         log = (self.root / 'commands').read_text()
         self.assertIn('systemctl restart vizitik-backend', log)
         self.assertNotIn('npm ', log)
+
+    def test_stale_recorded_revision_rebuilds_every_tree_without_a_php_tree(self):
+        # A recorded revision from the pre-rewrite history is not in the checkout:
+        # the updater falls back to a full rebuild. That is the run that died with
+        # "cd: .../php: No such file or directory" on the live server.
+        (self.live / '.vizitik-revision').write_text('deadbeef' * 5 + '\n', encoding='utf-8')
+        proc = self.run_update()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn('rebuilding every tree', proc.stdout)
+        self.assertIn('changed: backend schema frontend admin landing scripts php', proc.stdout)
+        self.assertFalse((self.live / 'php').exists(), 'the legacy site must never be installed as a tree')
+        self.assertEqual((self.live / 'backend/marker').read_text(), 'new')
+        self.assertEqual((self.live / 'frontend/marker').read_text(), 'old')
 
     def test_quiet_no_op_is_loud_and_never_reports_a_deploy(self):
         # an install already at the checkout revision must say so instead of
