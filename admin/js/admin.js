@@ -1260,7 +1260,7 @@
   $('db-backup-zip').addEventListener('click', () => {
     showToast('در حال آماده‌سازی پشتیبان...', 'info');
     // Download as binary - can't use the api() helper since it parses JSON
-    fetch('/api/export/zip', { headers: { 'X-Admin-Token': token } })
+    fetch('/api/export/backup', { headers: { 'X-Admin-Token': token } })
       .then(res => {
         if (!res.ok) return res.json().then(data => { throw new Error(data.error); });
         const blob = res.blob();
@@ -1268,7 +1268,7 @@
           const url = URL.createObjectURL(b);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `vizitik-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+          a.download = `vizitik-backup-${new Date().toISOString().slice(0, 10)}.vizitik.json.gz`;
           a.click();
           URL.revokeObjectURL(url);
           showToast('پشتیبان دانلود شد');
@@ -1284,18 +1284,16 @@
 
   $('db-restore-zip').addEventListener('click', () => {
     if (!restoreFile) {
-      showToast('ابتدا یک فایل ZIP را انتخاب کنید', 'error');
+      showToast('ابتدا یک فایل .vizitik.json.gz را انتخاب کنید', 'error');
       return;
     }
     if (!confirm('⚠️ آیا مطمئن هستید؟ این عملیات تمام داده‌های فعلی را جایگزین می‌کند!')) return;
 
     showToast('در حال بازیابی دیتابیس...', 'info');
-    const formData = new FormData();
-    formData.append('backup', restoreFile);
 
-    fetch('/api/import/zip', {
+    fetch('/api/import/backup', {
       method: 'POST',
-      headers: { 'X-Admin-Token': token },
+      headers: { 'X-Admin-Token': token, 'X-Confirm-Restore': 'replace-all-data', 'Content-Type': 'application/gzip' },
       body: restoreFile
     })
       .then(res => {
