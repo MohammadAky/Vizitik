@@ -561,6 +561,23 @@
               </div>
             </div>
 
+            <!-- Database Backup / Restore -->
+            <div class="settings-card">
+              <h3>💾 پشتیبان‌گیری و بازیابی</h3>
+              <div class="setting-item">
+                <button id="db-backup-zip" type="button" class="btn btn-primary">📥 خروجی ZIP (کل دیتابیس)</button>
+                <p class="setting-desc">دریافت فایل ZIP شامل تمام داده‌های دیتابیس</p>
+              </div>
+              <div class="setting-item">
+                <label class="form-field">
+                  <span>بازیابی از فایل ZIP:</span>
+                  <input type="file" id="db-restore-input" accept=".zip,.gz,.sql" dir="ltr" style="margin-bottom: 8px;" />
+                </label>
+                <button id="db-restore-zip" type="button" class="btn btn-ghost">📤 بازیابی دیتابیس</button>
+                <p class="setting-desc warning-text">⚠️ بازیابی باعث جایگزین کامل داده‌ها می‌شود</p>
+              </div>
+            </div>
+
             <!-- Danger Zone -->
             <div class="settings-card danger-zone">
               <h3>⚠️ منطقه خطرناک</h3>

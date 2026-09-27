@@ -1255,4 +1255,70 @@
     }
   });
 
+  // ============================================================ Database Backup / Restore
+
+  $('db-backup-zip').addEventListener('click', () => {
+    showToast('در حال آماده‌سازی پشتیبان...', 'info');
+    // Download as binary - can't use the api() helper since it parses JSON
+    fetch('/api/export/zip', { headers: { 'X-Admin-Token': token } })
+      .then(res => {
+        if (!res.ok) return res.json().then(data => { throw new Error(data.error); });
+        const blob = res.blob();
+        return blob.then(b => {
+          const url = URL.createObjectURL(b);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `vizitik-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+          a.click();
+          URL.revokeObjectURL(url);
+          showToast('پشتیبان دانلود شد');
+        });
+      })
+      .catch(err => showToast('خطا: ' + err.message, 'error'));
+  });
+
+  let restoreFile = null;
+  $('db-restore-input').addEventListener('change', (e) => {
+    restoreFile = e.target.files[0] || null;
+  });
+
+  $('db-restore-zip').addEventListener('click', () => {
+    if (!restoreFile) {
+      showToast('ابتدا یک فایل ZIP را انتخاب کنید', 'error');
+      return;
+    }
+    if (!confirm('⚠️ آیا مطمئن هستید؟ این عملیات تمام داده‌های فعلی را جایگزین می‌کند!')) return;
+
+    showToast('در حال بازیابی دیتابیس...', 'info');
+    const formData = new FormData();
+    formData.append('backup', restoreFile);
+
+    fetch('/api/import/zip', {
+      method: 'POST',
+      headers: { 'X-Admin-Token': token },
+      body: restoreFile
+    })
+      .then(res => {
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          return res.json().then(data => {
+            if (!res.ok) throw new Error(data.error || 'خطا در بازیابی');
+            return data;
+          });
+        }
+        if (!res.ok) throw new Error('خطا در بازیابی');
+        return res.json();
+      })
+      .then(data => {
+        if (data.errors && data.errors.length > 0) {
+          showToast(`${data.message || 'بازیابی با برخی خطاها انجام شد'} (${data.errors.length} خطا)`, 'info');
+        } else {
+          showToast(data.message || 'بازیابی با موفقیت انجام شد', 'success');
+        }
+        // Reload tables list
+        loadTables();
+      })
+      .catch(err => showToast('خطا: ' + err.message, 'error'));
+  });
+
 })();
