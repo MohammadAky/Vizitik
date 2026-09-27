@@ -304,7 +304,8 @@ export class OrdersService {
             });
           }
 
-          if (p.method === 'CASH' || p.method === 'CARD') {
+          // CASH, CARD, and CHECK all reduce customer debt
+          if (p.method === 'CASH' || p.method === 'CARD' || p.method === 'CHECK') {
             runningBalance -= p.amount;
             await tx.customerLedger.create({
               data: {
@@ -337,9 +338,8 @@ export class OrdersService {
    *  ۲) خالص فاکتور در دفتر حساب مشتری معکوس می‌شود (یک سورتکس ADJUSTMENT/PAYMENT_CREDIT)
    *  ۳) وضعیت فاکتور CANCELLED می‌شود — خود فاکتور و سوابقش باقی می‌ماند (تاریخ‌ساز)
    *
-   * نکته: پرداخت نقد/پوز در لحظهٔ ثبت، اعتبار (PAYMENT_CREDIT) زده به حساب مشتری
-   * کرده است؛ پس خالصِ فاکتور = مبلغ نهایی - (نقد + پوز). چک تسویه‌شده به‌صورت
-   * خودکار دست‌نخورده می‌ماند و در صورت نیاز از بخش وصول مطالبات مدیریت می‌شود.
+   * نکته: پرداخت نقد/پوز/چک در لحظهٔ ثبت، اعتبار (PAYMENT_CREDIT) زده به حساب مشتری
+   * کرده است؛ پس خالصِ فاکتور = مبلغ نهایی - (نقد + پوز + چک).
    */
   async cancelOrder(visitorId: string, orderId: string) {
     const order = await this.prisma.order.findUnique({
@@ -365,7 +365,7 @@ export class OrdersService {
 
     const finalAmount = Number(order.finalAmount);
     const creditedPayments = order.payments
-      .filter((p) => p.method === 'CASH' || p.method === 'CARD')
+      .filter((p) => p.method === 'CASH' || p.method === 'CARD' || p.method === 'CHECK')
       .reduce((sum, p) => sum + Number(p.amount), 0);
     const netDebt = finalAmount - creditedPayments;
 
