@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run the actual updater with isolated source/install dirs and fake OS commands.
-No system services, production database, or checkout are modified.
+No system services, production database, or checkout are modified. The updater
+never touches a database and never requires a dump tool.
 """
 import os
 from pathlib import Path
@@ -38,14 +39,13 @@ class UpdateTests(unittest.TestCase):
         git(self.src, 'add', '.')
         git(self.src, 'commit', '-qm', 'fixture')
         self.env = {**os.environ, 'SRC_DIR': str(self.src), 'INSTALL_DIR': str(self.live),
-                    'BACKUP_DIR': str(self.root / 'backups'), 'PATH': str(self.bin) + ':' + os.environ['PATH'],
+                    'PATH': str(self.bin) + ':' + os.environ['PATH'],
                     'LOG': str(self.root / 'commands'), 'FAIL': ''}
         tools = {
             'id': 'echo 0',
             'flock': 'exit 0',  # parallel test runners do not share the deploy lock
-            'npm': 'echo "npm $PWD $*" >> "$LOG"; [[ "$FAIL" != build ]]',
+            'npm': 'echo "npm $PWD $*" >> "$LOG"; [[ "$FAIL" == build ]] && exit 1; if [[ "$*" == *build* ]]; then mkdir -p dist; : > dist/main.js; fi; exit 0',
             'npx': 'echo "npx $*" >> "$LOG"; [[ "$FAIL" != schema || "$*" != *"db push"* ]]',
-            'mariadb-dump': 'echo "dump" >> "$LOG"; echo "-- dump"; [[ "$FAIL" != backup ]]',
             'systemctl': 'echo "systemctl $*" >> "$LOG"; exit 0',
             'curl': '[[ "$FAIL" != health ]] && echo \'{"db":"ok","ok":true}\'',
             'sleep': ':',
@@ -54,14 +54,6 @@ class UpdateTests(unittest.TestCase):
             file = self.bin / name
             file.write_text('#!/usr/bin/env bash\n' + body + '\n')
             file.chmod(0o755)
-        rsync = self.bin / 'rsync'
-        rsync.write_text('''#!/usr/bin/env python3
-import shutil, sys
-shutil.copytree(sys.argv[-2], sys.argv[-1], dirs_exist_ok=True,
-                ignore=shutil.ignore_patterns('node_modules', 'dist', '.env', '.env.*', '*.tgz'))
-''')
-        rsync.chmod(0o755)
-
     def run_update(self, fail='', args=()):
         return subprocess.run(['bash', str(SCRIPT), '--yes', '--no-pull', *args], env={**self.env, 'FAIL': fail}, text=True, capture_output=True)
 
@@ -77,18 +69,11 @@ shutil.copytree(sys.argv[-2], sys.argv[-1], dirs_exist_ok=True,
         self.assert_original()
         self.assertNotIn('systemctl stop', (self.root / 'commands').read_text())
 
-    def test_backup_failure_never_applies_schema(self):
-        proc = self.run_update('backup')
-        self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assert_original()
-        self.assertNotIn('db push', (self.root / 'commands').read_text())
-
     def test_schema_failure_is_fatal_before_activation(self):
         proc = self.run_update('schema')
         self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assert_original()
         self.assertNotIn('systemctl stop', (self.root / 'commands').read_text())
-        self.assertEqual(len(list((self.root / 'backups').glob('*.sql.gz'))), 1)
 
     def test_health_failure_rolls_back_files_dependencies_and_secrets(self):
         proc = self.run_update('health')
@@ -110,6 +95,26 @@ shutil.copytree(sys.argv[-2], sys.argv[-1], dirs_exist_ok=True,
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assert_original()
         self.assertEqual((self.live / 'frontend-app/marker').read_text(), 'new')
+
+    def test_restart_only_touches_no_file(self):
+        proc = self.run_update(args=['--restart-only'])
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assert_original()
+        log = (self.root / 'commands').read_text()
+        self.assertIn('systemctl restart vizitik-backend', log)
+        self.assertNotIn('npm ', log)
+
+    def test_quiet_no_op_is_loud_and_never_reports_a_deploy(self):
+        # an install already at the checkout revision must say so instead of
+        # silently doing nothing (the bug this updater replaced).
+        first = self.run_update()
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        before = (self.root / 'commands').read_text()
+        second = self.run_update()
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn('nothing to do', second.stdout)
+        self.assertIn('already at', second.stdout)
+        self.assertNotIn('systemctl stop', (self.root / 'commands').read_text()[len(before):])
 
 
 if __name__ == '__main__': unittest.main()

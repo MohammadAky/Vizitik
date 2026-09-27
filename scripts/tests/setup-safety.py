@@ -31,26 +31,19 @@ class SetupTests(unittest.TestCase):
         self.header = '''set -euo pipefail
 log() { :; }; ok() { :; }; warn() { :; }; fail() { echo "$*" >&2; exit 1; }
 systemctl() { echo "systemctl $*" >> "$LOG"; }
-python3() { echo "backup $*" >> "$LOG"; }
 mysql() { echo "mysql $*" >> "$LOG"; echo 13; }
 '''
 
     def run_script(self, text):
         return subprocess.run(['bash', '-c', self.header + text], env=self.env, capture_output=True, text=True)
 
-    def test_reinstall_only_backs_up_and_never_imports_or_alters_database(self):
+    def test_reinstall_never_imports_or_alters_the_database(self):
         before = self.env_file.read_bytes()
         proc = self.run_script(function('setup_database') + '\nsetup_database\n')
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        log = (self.root / 'commands').read_text()
-        self.assertIn('--reason pre-install', log)
-        self.assertNotIn('mysql ', log)
+        log = (self.root / 'commands').read_text() if (self.root / 'commands').exists() else ''
+        self.assertNotIn('mysql ', log, 'a reinstall must not run any SQL against the live database')
         self.assertEqual(self.env_file.read_bytes(), before)
-
-    def test_failed_backup_stops_reinstall(self):
-        proc = self.run_script('python3() { return 9; }\n' + function('setup_database') + '\nsetup_database\necho UNSAFE_CONTINUATION\n')
-        self.assertEqual(proc.returncode, 9)
-        self.assertNotIn('UNSAFE_CONTINUATION', proc.stdout)
 
     def test_missing_env_with_populated_database_refuses_install(self):
         self.env_file.unlink()

@@ -98,15 +98,16 @@ temp/
 *.7z
 
 # ------------------------------------------------------------
+# Deployment bookkeeping (created by scripts/update.sh)
+# ------------------------------------------------------------
+.vizitik-revision
+.update.lock
+.update.*
+.deps-*.sha
+
+# ------------------------------------------------------------
 # Python (scripts/tests)
 # ------------------------------------------------------------
 __pycache__/
 *.py[cod]
 .pytest_cache/
-
-# Private recovery data (never commit databases or copied secrets)
-.backups/
-*.sql.gz
-*.sql.gz.env
-*.vizitik.json.gz
-*.partial

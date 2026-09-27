@@ -16,7 +16,6 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { createBackup, restoreBackup } = require('./backup');
 // Reuse the generated backend client in a checkout and in the server layout.
 const { PrismaClient } = require(require.resolve('@prisma/client', { paths: [path.join(__dirname, '../backend'), path.join(__dirname, '..')] }));
 
@@ -49,7 +48,6 @@ const MAX_LIMIT = 500;
 const QUERY_TIMEOUT_MS = Math.max(1000, parseInt(process.env.ADMIN_QUERY_TIMEOUT_MS || '55000', 10));
 const MAX_BODY_QUERY = 2 * 1024 * 1024; // SQL payloads (bulk INSERT/UPDATE)
 const MAX_BODY_JSON = 64 * 1024;        // structured JSON endpoints
-const MAX_BODY_ZIP = 50 * 1024 * 1024;  // ZIP payloads (up to 50 MB)
 
 const prisma = new PrismaClient();
 
@@ -249,10 +247,6 @@ function guardSql(raw, allowWrite = false) {
   return { ok: false, error: 'نوع کوئری پشتیبانی نمی‌شود. فقط SELECT, INSERT, UPDATE, DELETE, SHOW, DESCRIBE مجاز هستند.' };
 }
 
-// Never place safety backups in the web-served admin/ directory.
-const BACKUP_DIR = process.env.BACKUP_DIR || (process.env.NODE_ENV === 'production'
-  ? '/var/backups/vizitik' : path.resolve(__dirname, '..', '.backups'));
-let backupBusy = false;
 
 // ============================================================ Schema Introspection
 
@@ -880,34 +874,6 @@ const server = http.createServer(async (req, res) => {
       }
 
       return sendJson(res, 200, { data: csvRows.join('\n'), format, rowCount: clean.length });
-    }
-
-    // Keep old route aliases so a cached admin UI fails safely, not with HTML.
-    if (['/api/export/backup', '/api/export/zip'].includes(urlPath) && req.method === 'GET') {
-      if (backupBusy) return sendJson(res, 409, { error: 'عملیات بکاپ یا بازیابی دیگری در حال اجراست' });
-      backupBusy = true;
-      try {
-        const buffer = await createBackup(prisma);
-        res.writeHead(200, {
-          'Content-Type': 'application/gzip',
-          'Content-Disposition': `attachment; filename="vizitik-${new Date().toISOString().slice(0, 10)}.vizitik.json.gz"`,
-          'Content-Length': buffer.length,
-          'Cache-Control': 'no-store',
-          'X-Content-Type-Options': 'nosniff',
-        });
-        return res.end(buffer);
-      } finally { backupBusy = false; }
-    }
-    if (['/api/import/backup', '/api/import/zip'].includes(urlPath) && req.method === 'POST') {
-      if (req.headers['x-confirm-restore'] !== 'replace-all-data') return sendJson(res, 400, { error: 'تأیید صریح جایگزینی داده‌ها لازم است؛ صفحه را تازه‌سازی کنید' });
-      if (backupBusy) return sendJson(res, 409, { error: 'عملیات بکاپ یا بازیابی دیگری در حال اجراست' });
-      backupBusy = true;
-      try {
-        const { body, tooLarge } = await readBody(req, MAX_BODY_ZIP, true);
-        if (tooLarge) return sendJson(res, 413, { error: 'حداکثر اندازهٔ فایل ۵۰ مگابایت است' });
-        const result = await restoreBackup(prisma, body, BACKUP_DIR);
-        return sendJson(res, 200, { message: 'بازیابی کامل شد؛ بکاپ داده‌های قبلی روی سرور نگهداری شد', ...result });
-      } finally { backupBusy = false; }
     }
 
     // ============================================================ Fallback

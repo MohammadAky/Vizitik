@@ -124,10 +124,10 @@ test -f .env || cp .env.example .env
 # (متغیرهای بیلد PWA مثل VITE_API_URL جدا، در frontend-app/.env هستند؛
 #  نمونه‌اش: frontend-app/.env.example)
 
-# ۴. برای دیتابیس موجود ابتدا بکاپ بگیرید؛ مسیر توصیه‌شده از ریشه:
-# bash scripts/setup-local.sh
+# ۴. از ریشه: bash scripts/setup-local.sh  (نصب نبود را کامل می‌کند)
 npx prisma generate
-# db push فقط پس از بکاپ؛ هرگز --accept-data-loss یا --force-reset نزنید
+# روی دیتابیس موجود، قبل از هر db push خودت دستی بکاپ بگیر (mysqldump)؛
+# هرگز --accept-data-loss یا --force-reset نزنید
 
 # ۵. اجرای سرور بک‌اند در حالت توسعه
 npm run start:dev
@@ -187,31 +187,30 @@ php -S localhost:8000
 
 اجرای اول لوکال `.env` و کلیدهای تصادفی را می‌سازد و متوقف می‌شود؛ `DATABASE_URL` را برای
 یک دیتابیس موجود تنظیم کنید و دوباره اجرا کنید. Node 22+، Python 3، MariaDB/MySQL و
-ابزار `mariadb-dump` یا `mysqldump` لازم است. PWA روی 5173 با پراکسی هم‌ریشهٔ `/api` اجرا می‌شود.
+Node 22+، Python 3 و MariaDB/MySQL لازم است. PWA روی 5173 با پراکسی هم‌ریشهٔ `/api` اجرا می‌شود.
 
-آپدیت ابتدا در پوشهٔ موقت بیلد می‌کند؛ سپس بکاپ دیتابیس و تنظیمات می‌گیرد. شکست بکاپ یا
-تغییر مخرب اسکیما، عملیات را متوقف می‌کند. شکست فعال‌سازی/سلامت، فایل‌ها و وابستگی‌های نسخهٔ قبلی
-را برمی‌گرداند؛ **اسکیما به‌صورت خودکار به عقب برنمی‌گردد**. نسخه فقط پس از موفقیت کامل ثبت می‌شود.
-`--force` برای بازسازی کامل و `--no-pull` برای کد موجود در checkout است. آپدیت جزئی نسخهٔ سراسری را جلو نمی‌برد.
+`update.sh` دو چیدمان سرور را پشتیبانی می‌کند: چیدمان جدا (checkout گیت جایی جدا از
+`/opt/vizitik`) و چیدمان کلاسیک **in-place** (خودِ پوشهٔ نصب، همان checkout است).
+آپدیت هر بخش تغییر‌یافته را در یک پوشهٔ موقت روی همان فایل‌سیستم کپی و همان‌جا بیلد می‌کند؛
+تا وقتی بیلد موفق نشود هیچ چیزی در نصب زنده دست نمی‌خورد. شکست فعال‌سازی یا تست سلامت،
+فایل‌های نسخهٔ قبلی را برمی‌گرداند؛ **اسکیما به‌صورت خودکار به عقب برنمی‌گردد** و
+`prisma db push` فقط وقتی `schema.prisma` عوض شده باشد و هرگز با `--accept-data-loss` اجرا می‌شود.
+نسخه فقط پس از موفقیت کامل ثبت می‌شود؛ آپدیت جزئی (`--backend-only`/`--frontend-only`) نسخه را جلو نمی‌برد.
+`--force` برای بازسازی کامل، `--no-pull` برای همان کد موجود و `--check` پیش‌نمایش آفلاین است.
+اگر آپدیتی لازم نباشد، با پیام صریح `nothing to do` خارج می‌شود (هرگز بی‌صدا رد نمی‌شود).
 
-`deploy.sh` فقط نام سازگارِ نصب سرور است؛ `--full-reset` و `--only-clean` عمداً حذف شده‌اند.
+بکاپ/بازیابی خودکار جزو این پروژه نیست: قبل از آپدیت‌های حساس خودت با `mariadb-dump`
+یا `mysqldump` بکاپ بگیر و کپی رمزگذاری‌شدهٔ آن را بیرون از سرور نگه دار.
 
-### بکاپ و تست
-
-پنل ادمین خروجی `.vizitik.json.gz` می‌دهد: بکاپ داده‌ای نسخه‌دار، بازیابی تراکنشی، و بکاپ
-احتیاطی قبل از جایگزینی. فایل SQL/GZIP قدیمی را در پنل جدید آپلود نکنید؛ اول آفلاین بررسی شود.
-بکاپ شبانهٔ SQL و کپی `.env` در `/var/backups/vizitik`، با مجوز 600 نگهداری می‌شوند.
-بکاپ روی همان سرور کافی نیست؛ نسخهٔ رمزگذاری‌شدهٔ خارج از سرور هم نگه دارید.
+### تست‌ها
 
 ```bash
 (cd backend && npm ci --include=dev && npx prisma generate && npm run build)
-node --test admin/tests/backup.test.js
-python3 scripts/tests/database-backup.py
 python3 scripts/tests/setup-safety.py
-python3 scripts/tests/proxy-config.py
 python3 scripts/tests/update-regression.py
 python3 scripts/tests/update-rollback.py
 python3 scripts/tests/backend-typecheck.py
+# اختیاری، روی دیتابیس دوریختنی: RUN_DB_TESTS=1 TEST_DATABASE_URL=... node --test admin/tests/integration.test.js
 ```
 
 تست واقعی MariaDB و ورود HTTP در `admin/tests/integration.test.js` نگهداری شده و باید

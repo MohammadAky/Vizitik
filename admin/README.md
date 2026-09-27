@@ -36,21 +36,14 @@
 برای تغییر توکن روی سرور: `ADMIN_TOKEN=... ` را در `backend/.env` ویرایش و `systemctl restart vizitik-admin` را اجرا کنید.
 
 
-## بکاپ و بازیابی
+## بدون بکاپ/بازیابی
 
-`backup.js` بکاپ داده‌ای نسخه‌دار `.vizitik.json.gz` می‌سازد. endpointها:
-- `GET /api/export/backup` با `X-Admin-Token`
-- `POST /api/import/backup` با همان توکن، `X-Confirm-Restore: replace-all-data` و بدنهٔ باینری GZIP (نه FormData)
+پنل ادمین و اسکریپت‌های پروژه **بکاپ نمی‌گیرند و بازیابی نمی‌کنند**؛ اگر بکاپ می‌خواهی
+روی سرور با `mariadb-dump` (یا `mysqldump`) بگیر و همان‌جا هم نگه ندار:
 
-نسخه، فهرست جدول‌ها و ساختار ستون‌ها پیش از حذف بررسی می‌شوند. بکاپ احتیاطی در
-`BACKUP_DIR` ذخیره می‌شود؛ سپس جایگزینی همهٔ ردیف‌ها در یک تراکنش با FK روشن انجام می‌شود.
-SQL/ZIP قدیمی پذیرفته نمی‌شود. ساختار دیتابیس باید دقیقاً یکسان باشد؛ این ابزار migration نیست.
-پنل برای بازیابی کامل برنامه به هر ۱۳ جدول InnoDB نیاز دارد و جدول ناشناخته را نادیده نمی‌گیرد.
-قبل از restore، نوشتن کاربران/API/بات را متوقف کنید و پس از آن ورود و سلامت را بررسی کنید.
+```bash
+mariadb-dump --single-transaction --quick --skip-lock-tables -u vizitik -p hesabchin | gzip > ~/vizitik-$(date +%F).sql.gz
+```
 
-حد آپلود 50MiB، حد بازشدن 200MiB و timeout تراکنش ۱۲۰ ثانیه است. Nginx دامنهٔ ادمین
-باید `client_max_body_size 50m;` و `proxy_read_timeout 180s;` داشته باشد. فایل‌ها محرمانه‌اند.
-راهنمای کامل و فرمت SQL شبانه: [نصب و بازیابی](../docs/DEPLOY-UBUNTU.md).
-
-تست: از ریشه پس از نصب و بیلد بک‌اند، `node --test admin/tests/backup.test.js`.
-تست واقعی MySQL/MariaDB عمداً جدا و opt-in است؛ راهنما را ببینید.
+خروجی SQL پنل (`/api/export`) و خروجی CSV/JSON همچنان برای گرفتن گزارش است، نه بکاپ کامل.
+تست واقعی MySQL/MariaDB عمداً جدا و opt-in است؛ راهنما را ببینید: [DEPLOY-UBUNTU](../docs/DEPLOY-UBUNTU.md).

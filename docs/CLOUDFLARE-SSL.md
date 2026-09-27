@@ -5,7 +5,7 @@
 استفاده می‌کنیم: ربات Let's Encrypt به جای اتصال به پورت ۸۰، از API کلودفلر می‌خواهد
 یک رکورد موقت TXT بسازد؛ این یعنی **هیچ پورتی باید باز نباشد**.
 
-> اجرا روی سرور را با `sudo bash scripts/deploy.sh` انجام بده (همهٔ پروسه‌های قبلی را
+> اجرا روی سرور را با `sudo bash scripts/setup-server.sh` انجام بده (همهٔ پروسه‌های قبلی را
 > می‌بندد و بعد `setup-server.sh` را صدا می‌زند). این فایل فقط همان چند کلیکِ کلودفلر
 > و همان سؤال‌های اسکریپت را توضیح می‌دهد.
 
@@ -118,13 +118,13 @@ curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=vizitik.ir" \
 
 ```bash
 cd ~/Vizitik && git pull
-bash scripts/deploy.sh
+bash scripts/setup-server.sh
 ```
 
 اگر توکن را با دستور زیر بدهی، سؤالش تکرار نمی‌شود (و در لاگ هم نمی‌ماند):
 
 ```bash
-CF_API_TOKEN='توکن' HTTPS_MODE=dns bash scripts/deploy.sh
+CF_API_TOKEN='توکن' HTTPS_MODE=dns bash scripts/setup-server.sh
 ```
 
 سؤال‌هایی که می‌پرسد و جواب درست برای این سرور:

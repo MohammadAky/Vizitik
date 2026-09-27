@@ -12,7 +12,7 @@
 #        ADMIN_DOMAIN-> the admin SQL panel (admin/, proxied to 127.0.0.1:ADMIN_PORT)
 #      APP_DOMAIN defaults to app.$DOMAIN and ADMIN_DOMAIN to admin.$DOMAIN.
 #      Giving only APP_DOMAIN (no DOMAIN) keeps the classic single-site layout (PWA alone).
-#   7) HTTPS (Let's Encrypt) for all domains, firewall, daily backup cron job
+#   7) HTTPS (Let's Encrypt) for all domains, firewall, systemd services
 #
 # Usage (needs root):
 #   sudo bash scripts/setup-server.sh
@@ -92,7 +92,6 @@ ASK="${ASK:-1}"
 YES="${YES:-0}"
 ENABLE_HTTPS="${ENABLE_HTTPS:-1}"
 ENABLE_UFW="${ENABLE_UFW:-1}"
-ENABLE_BACKUP="${ENABLE_BACKUP:-1}"
 TEST_PHONE="${TEST_PHONE:-}"
 TEST_PASSWORD="${TEST_PASSWORD:-}"
 
@@ -325,7 +324,7 @@ print_config_summary() {
   echo "  database    : ${DB_USER}@${DB_HOST}/${DB_NAME} (password: $dbpass_state)"
   echo "  jwt secret  : ${#JWT_SECRET} characters"
   echo "  bale bot    : ${BALE_BOT_USERNAME:-<disabled>} token: $tok_state admin chat: ${BALE_ADMIN_CHAT_ID:-<none>}"
-  echo "  firewall    : $ENABLE_UFW   nightly backup: $ENABLE_BACKUP"
+  echo "  firewall    : $ENABLE_UFW"
   echo "  smoke test  : $test_state"
   local mt; mt=($(memory_totals))
   echo "  memory      : ${mt[0]} MB ram + ${mt[1]} MB swap (builds need ${MIN_TOTAL_MB} MB)"
@@ -445,7 +444,6 @@ collect_inputs() {
   fi
 
   ask_yes ENABLE_UFW "enable the UFW firewall (SSH and Nginx get allowed)" 1
-  ask_yes ENABLE_BACKUP "install a nightly database backup cron job" 1
 
   ask TEST_PHONE "phone of an existing account for the login test (empty = skip)" ""
   if [[ -n "$TEST_PHONE" ]]; then
@@ -475,7 +473,7 @@ environment overrides:
   MIN_TOTAL_MB CREATE_SWAP SWAP_FILE SWAP_MB NODE_HEAP_MB
   DB_HOST DB_NAME DB_USER DB_PASS
   BALE_BOT_USERNAME BALE_BOT_TOKEN BALE_ADMIN_CHAT_ID JWT_SECRET
-  ENABLE_HTTPS ENABLE_UFW ENABLE_BACKUP TEST_PHONE TEST_PASSWORD
+  ENABLE_HTTPS ENABLE_UFW TEST_PHONE TEST_PASSWORD
 TXT
 }
 
@@ -505,7 +503,7 @@ install_prereqs() {
     curl git nginx ufw mariadb-server \
     certbot python3-certbot-nginx \
     build-essential python3 make g++ \
-    ca-certificates gnupg jq rsync mariadb-client cron
+    ca-certificates gnupg jq mariadb-client
 
   local node_major=0
   if command -v node >/dev/null 2>&1; then
@@ -527,10 +525,8 @@ setup_database() {
   systemctl start mariadb
   if [[ -f "$INSTALL_DIR/backend/.env" ]]; then
     log "existing configuration found; preserving database, credentials and JWT secret"
-    # Do not restart MariaDB or ALTER USER on a reinstall. Protect the exact URL
-    # in the live .env, including legacy installs that have no DB_* variables.
-    python3 "$SCRIPT_DIR/database-backup.py" --env "$INSTALL_DIR/backend/.env" \
-      --output "${BACKUP_DIR:-/var/backups/vizitik}" --reason pre-install
+    # Do not restart MariaDB or ALTER USER on a reinstall. The live .env, the
+    # database and the JWT secret are left exactly as they are.
     return
   fi
   [[ "$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1" ]] || fail "For a remote DB, provision backend/.env first; setup never creates remote users"
@@ -565,8 +561,6 @@ copy_source() {
     rsync -a --exclude='.env' --exclude='.env.*' --exclude=node_modules \
       --exclude=dist --exclude='*.tgz' "$SRC_DIR/$tree/" "$INSTALL_DIR/$tree/"
   done
-  install -d -m 755 "$INSTALL_DIR/scripts"
-  install -m 755 "$SCRIPT_DIR/database-backup.py" "$INSTALL_DIR/scripts/database-backup.py"
 }
 
 # ------------------------------------------------------------------
@@ -604,7 +598,6 @@ DOMAIN="${DOMAIN}"
 APP_DOMAIN="${APP_DOMAIN}"
 ADMIN_DOMAIN="${ADMIN_DOMAIN}"
 BACKEND_PORT=${BACKEND_PORT}
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/vizitik}"
 EOF
   )
   fi
@@ -612,7 +605,6 @@ EOF
   if [[ -z "$BALE_BOT_TOKEN" ]]; then
     warn "BALE_BOT_TOKEN is empty; the bot will not send messages (fill it in $INSTALL_DIR/backend/.env and restart the service)"
   fi
-  python3 "$SCRIPT_DIR/database-backup.py" --env "$INSTALL_DIR/backend/.env" --output "${BACKUP_DIR:-/var/backups/vizitik}" --reason pre-schema
   env -u DATABASE_URL npx prisma db push --skip-generate
   run_here "backend build (tsc)" npm run build
   ok "backend built (dist/main.js)"
@@ -977,18 +969,6 @@ setup_firewall() {
 }
 
 # ------------------------------------------------------------------
-# 12) backup cron job
-# ------------------------------------------------------------------
-
-setup_backup() {
-  [[ "$ENABLE_BACKUP" == "1" ]] || return 0
-  bash "$SCRIPT_DIR/install-backup-cron.sh" "$INSTALL_DIR" "${BACKUP_DIR:-/var/backups/vizitik}"
-  python3 "$SCRIPT_DIR/database-backup.py" --env "$INSTALL_DIR/backend/.env" \
-    --output "${BACKUP_DIR:-/var/backups/vizitik}" --reason nightly
-  ok "nightly backup installed and tested (14 days; pre-change backups never auto-pruned)"
-}
-
-# ------------------------------------------------------------------
 # 13) summary and smoke test
 # ------------------------------------------------------------------
 
@@ -1069,7 +1049,6 @@ main() {
   setup_nginx
   setup_https
   setup_firewall
-  setup_backup
   final_summary
 }
 
