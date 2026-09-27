@@ -5,13 +5,10 @@ import { PrismaService } from '../prisma.service';
 /**
  * Lightweight liveness probe.
  *
- * - Render health check (render.yaml: healthCheckPath: /api/health)
- * - keep-alive pings on the free plan (scripts/keep-alive.sh)
+ * - deployment health checks (nginx/systemd/monitoring pings)
  *
- * Unauthenticated, but it deliberately touches the database (SELECT 1):
- *   - Render's health check then reflects the real DB state
- *   - the free-plan pinger also keeps a free Supabase project's
- *     connection alive so the project doesn't pause (7-day inactivity)
+ * Unauthenticated, but it deliberately touches the database (SELECT 1)
+ * so the response reflects the real DB state, not just process liveness.
  */
 @Controller('api')
 export class HealthController {
