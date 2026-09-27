@@ -4,13 +4,19 @@ const vm = require('node:vm');
 const path = require('node:path');
 let handler, orderArgs;
 const prisma = { order: { findMany: async args => { orderArgs = args; return []; } } };
+// server.js resolves its dependencies through require.resolve({ paths }) so it can
+// run from both the repo and /opt; this shim has to expose .resolve as well.
+function sandboxRequire(name) {
+  if (name === '@prisma/client') return { PrismaClient: function () { return prisma; } };
+  if (name === 'http') return { createServer(fn) { handler = fn; return { listen() {} }; } };
+  if (name === 'dotenv') return { config: () => ({ parsed: {} }) };
+  return require(name);
+}
+sandboxRequire.resolve = (name) => name;
 const context = vm.createContext({
-  require(name) {
-    if (name === '@prisma/client') return { PrismaClient: function () { return prisma; } };
-    if (name === 'http') return { createServer(fn) { handler = fn; return { listen() {} }; } };
-    return require(name);
-  },
+  require: sandboxRequire,
   process: { env: { ADMIN_TOKEN: 'test-only', ADMIN_STATIC_DIR: path.resolve(__dirname, '..') }, exit() { throw Error('unexpected exit'); }, on() {} },
+  module: { exports: {} },
   __dirname: path.resolve(__dirname, '..'), console, Buffer, URL, Date
 });
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8'), context);
@@ -37,6 +43,18 @@ async function request(url, token) {
   assert.equal(run("guardSql('SELECT * FROM users -- bypass').ok"), false);
   assert.equal(run("guardSql('DELETE FROM users', true).ok"), false);
   assert.equal(run("guardSql('INSERT INTO users VALUES (1)', false).ok"), false);
+  // /api/export may return much more than the 500-row editor preview
+  assert.equal(run("guardSql('SELECT * FROM users', false, 20000).sql"), 'SELECT * FROM users LIMIT 20000');
+  assert.equal(run("guardSql('SELECT * FROM users LIMIT 900', false, 20000).sql"), 'SELECT * FROM users LIMIT 900');
+  assert.equal(run('guardSql(\'SELECT * FROM users\').sql'), 'SELECT * FROM users LIMIT 500');
+
+  // history keeps the query type and the error message of failures
+  run("addToHistory('SELECT 1', false, 0, 5, 'SELECT', 'boom')");
+  const hist = JSON.parse(JSON.stringify(run('queryHistory')));
+  assert.equal(hist[0].success, false);
+  assert.equal(hist[0].type, 'SELECT');
+  assert.equal(hist[0].error, 'boom');
+
   const css = fs.readFileSync(path.join(__dirname, '../css/admin.css'), 'utf8');
   assert.match(css, /\[hidden\]\s*\{\s*display:\s*none\s*!important/);
   const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
@@ -65,5 +83,5 @@ async function request(url, token) {
   const tablesRes = await request('/api/tables', 'test-only');
   assert.equal(JSON.parse(tablesRes.body).tables.map((t) => t.rows).join(','), '7,3');
 
-  console.log('PASS: routing/auth, malformed URL, static boundaries, date/limit/customer filters, SQL guards, hidden rule, DOM IDs, exact table counts');
+  console.log('PASS: routing/auth, malformed URL, static boundaries, date/limit/customer filters, SQL guards, export limit, history records, hidden rule, DOM IDs, exact table counts');
 })().catch(e => { console.error(e); process.exitCode = 1; });

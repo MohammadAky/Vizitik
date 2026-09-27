@@ -60,6 +60,7 @@
       </nav>
       <div class="topbar-left">
         <span id="user-info" class="user-info"></span>
+        <button id="export-view" type="button" class="btn btn-ghost" title="خروجی گرفتن از داده‌های همین بخش">📤 خروجی</button>
         <button id="logout" type="button" class="btn btn-ghost">خروج</button>
       </div>
     </header>
@@ -159,7 +160,7 @@
                   </div>
                   <div id="schema-columns" class="schema-columns"></div>
                 </div>
-                <textarea id="sql-editor" dir="ltr" rows="8" spellcheck="false" placeholder="SELECT * FROM Product ORDER BY createdAt DESC"></textarea>
+                <textarea id="sql-editor" dir="ltr" rows="8" spellcheck="false" placeholder="SELECT * FROM products ORDER BY createdAt DESC"></textarea>
               </div>
               <div class="editor-actions">
                 <select id="table-pick" class="table-pick" aria-label="انتخاب سریع جدول">
@@ -188,15 +189,16 @@
 
             <div id="sql-status" class="status" role="status"></div>
 
-            <div class="results-header" id="results-header" hidden>
+            <div class="results-header" id="results-header">
               <div class="results-info">
-                <span id="results-count"></span>
+                <span id="results-count">هنوز کوئری‌ای اجرا نشده است</span>
                 <span id="results-time"></span>
               </div>
               <div class="results-actions">
-                <button id="export-csv" type="button" class="btn btn-ghost btn-sm">📥 CSV</button>
-                <button id="export-json" type="button" class="btn btn-ghost btn-sm">📥 JSON</button>
-                <button id="copy-results" type="button" class="btn btn-ghost btn-sm">📋 کپی</button>
+                <button id="export-csv" type="button" class="btn btn-ghost btn-sm" disabled>📥 CSV</button>
+                <button id="export-json" type="button" class="btn btn-ghost btn-sm" disabled>📥 JSON</button>
+                <button id="export-full" type="button" class="btn btn-ghost btn-sm" disabled title="همین کوئری را روی سرور دوباره اجرا می‌کند و کل نتیجه (تا ۲۰٬۰۰۰ ردیف) را می‌گیرد">📤 خروجی کامل</button>
+                <button id="copy-results" type="button" class="btn btn-ghost btn-sm" disabled>📋 کپی</button>
               </div>
             </div>
 
@@ -212,56 +214,57 @@
 
           <!-- Templates Sub-tab -->
           <div id="sqltab-templates" class="sql-subtab" hidden>
+            <p class="tab-hint">🔎 روی هر قالب کلیک کنید تا در ویرایشگر بارگذاری شود، سپس «اجرای کوئری» را بزنید. (نام جدول‌ها همان نام واقعی دیتابیس است: products، orders، customers و ...)</p>
             <div class="templates-grid">
-              <div class="template-card" data-template="products-all">
+              <div class="template-card" data-template="products-all" role="button" tabindex="0">
                 <h4>📦 همه محصولات</h4>
                 <p>لیست کامل محصولات با قیمت‌ها</p>
-                <code>SELECT * FROM Product ORDER BY brand, name</code>
+                <code>SELECT * FROM products ORDER BY brand, name</code>
               </div>
-              <div class="template-card" data-template="products-with-orders">
+              <div class="template-card" data-template="products-with-orders" role="button" tabindex="0">
                 <h4>📊 محصولات پرفروش</h4>
-                <p>محصولات به تعداد سفارش</p>
-                <code>SELECT p.name, p.brand, COUNT(oi.id) as orderCount FROM Product p LEFT JOIN OrderItem oi ON p.id = oi.productId GROUP BY p.id ORDER BY orderCount DESC</code>
+                <p>محصولات به ترتیب تعداد سفارش</p>
+                <code>SELECT p.name, p.brand, COUNT(oi.id) AS orderCount FROM products p LEFT JOIN order_items oi ON p.id = oi.productId GROUP BY p.id, p.name, p.brand ORDER BY orderCount DESC</code>
               </div>
-              <div class="template-card" data-template="orders-recent">
+              <div class="template-card" data-template="orders-recent" role="button" tabindex="0">
                 <h4>📋 سفارشات اخیر</h4>
-                <p>۱۰۰ سفارش آخر</p>
-                <code>SELECT o.*, c.name as customerName, u.firstName as visitorName FROM Order o JOIN Customer c ON o.customerId = c.id JOIN User u ON o.visitorId = u.id ORDER BY o.createdAt DESC LIMIT 100</code>
+                <p>۱۰۰ سفارش آخر با نام مشتری و ویزیتور</p>
+                <code>SELECT o.invoiceNumber, o.orderDate, o.status, o.finalAmount, c.name AS customerName, CONCAT(u.firstName, ' ', u.lastName) AS visitorName FROM orders o JOIN customers c ON o.customerId = c.id JOIN users u ON o.visitorId = u.id ORDER BY o.orderDate DESC LIMIT 100</code>
               </div>
-              <div class="template-card" data-template="orders-pending">
+              <div class="template-card" data-template="orders-pending" role="button" tabindex="0">
                 <h4>⏳ سفارشات در انتظار</h4>
-                <p>سفارشات تایید نشده</p>
-                <code>SELECT * FROM Order WHERE status = 'DRAFT' ORDER BY createdAt DESC</code>
+                <p>سفارشات پیش‌نویس (تایید نشده)</p>
+                <code>SELECT * FROM orders WHERE status = 'DRAFT' ORDER BY orderDate DESC</code>
               </div>
-              <div class="template-card" data-template="customers-debt">
+              <div class="template-card" data-template="customers-debt" role="button" tabindex="0">
                 <h4>💰 بدهکاران</h4>
-                <p>مشتریان با مانده حساب منفی</p>
-                <code>SELECT c.name, c.phone, le.balanceAfter as debt FROM Customer c JOIN CustomerLedger le ON c.id = le.customerId WHERE le.balanceAfter > 0 AND le.id = (SELECT MAX(id) FROM CustomerLedger WHERE customerId = c.id) ORDER BY debt DESC</code>
+                <p>مشتریانی که مانده حسابشان مثبت است (بدهکار)</p>
+                <code>SELECT c.name, c.phone, cl.balanceAfter AS debt FROM customers c JOIN customer_ledger cl ON cl.customerId = c.id WHERE cl.balanceAfter &gt; 0 AND cl.id = (SELECT cl2.id FROM customer_ledger cl2 WHERE cl2.customerId = c.id ORDER BY cl2.createdAt DESC LIMIT 1) ORDER BY debt DESC</code>
               </div>
-              <div class="template-card" data-template="payments-summary">
+              <div class="template-card" data-template="payments-summary" role="button" tabindex="0">
                 <h4>💳 خلاصه پرداخت‌ها</h4>
-                <p>پرداخت‌ها به ت.method</p>
-                <code>SELECT method, COUNT(*) as count, SUM(amount) as total FROM Payment GROUP BY method</code>
+                <p>تعداد و مجموع پرداخت‌ها به تفکیک روش</p>
+                <code>SELECT method, COUNT(*) AS paymentCount, SUM(amount) AS total FROM payments GROUP BY method ORDER BY total DESC</code>
               </div>
-              <div class="template-card" data-template="visitors-performance">
+              <div class="template-card" data-template="visitors-performance" role="button" tabindex="0">
                 <h4>🏃 عملکرد ویزیتورها</h4>
                 <p>تعداد سفارش و فروش هر ویزیتور</p>
-                <code>SELECT u.firstName, u.lastName, COUNT(o.id) as orderCount, SUM(o.finalAmount) as totalSales FROM User u LEFT JOIN Order o ON u.id = o.visitorId WHERE u.role = 'VISITOR' GROUP BY u.id ORDER BY totalSales DESC</code>
+                <code>SELECT CONCAT(u.firstName, ' ', u.lastName) AS visitorName, COUNT(o.id) AS orderCount, COALESCE(SUM(o.finalAmount), 0) AS totalSales FROM users u LEFT JOIN orders o ON o.visitorId = u.id WHERE u.role = 'VISITOR' GROUP BY u.id, u.firstName, u.lastName ORDER BY totalSales DESC</code>
               </div>
-              <div class="template-card" data-template="van-inventory">
+              <div class="template-card" data-template="van-inventory" role="button" tabindex="0">
                 <h4>🚚 موجودی ون</h4>
-                <p>موجودی فعلی ون‌ها</p>
-                <code>SELECT u.firstName, u.lastName, p.name as productName, vi.quantityCartons, vi.quantityUnits FROM VanInventory vi JOIN User u ON vi.userId = u.id JOIN Product p ON vi.productId = p.id ORDER BY u.firstName, p.name</code>
+                <p>موجودی فعلی ون ویزیتورها</p>
+                <code>SELECT u.firstName, u.lastName, p.name AS productName, vi.quantityCartons, vi.quantityUnits FROM van_inventory vi JOIN users u ON vi.userId = u.id JOIN products p ON vi.productId = p.id ORDER BY u.firstName, p.name</code>
               </div>
-              <div class="template-card" data-template="revenue-monthly">
+              <div class="template-card" data-template="revenue-monthly" role="button" tabindex="0">
                 <h4>📈 درآمد ماهانه</h4>
-                <p>درآمد هر ماه شمسی</p>
-                <code>SELECT DATE_FORMAT(orderDate, '%Y-%m') as month, COUNT(*) as orderCount, SUM(finalAmount) as revenue FROM Order WHERE status != 'CANCELLED' GROUP BY month ORDER BY month DESC</code>
+                <p>درآمد به تفکیک ماه میلادی (سفارش‌های لغوشده حساب نمی‌شوند)</p>
+                <code>SELECT DATE_FORMAT(orderDate, '%Y-%m') AS month, COUNT(*) AS orderCount, SUM(finalAmount) AS revenue FROM orders WHERE status &lt;&gt; 'CANCELLED' GROUP BY month ORDER BY month DESC</code>
               </div>
-              <div class="template-card" data-template="database-stats">
+              <div class="template-card" data-template="database-stats" role="button" tabindex="0">
                 <h4>📊 آمار دیتابیس</h4>
                 <p>تعداد ردیف هر جدول</p>
-                <code>SELECT TABLE_NAME as tableName, TABLE_ROWS as rowCount FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_ROWS DESC</code>
+                <code>SELECT TABLE_NAME AS tableName, TABLE_ROWS AS rowCount FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_ROWS DESC</code>
               </div>
             </div>
           </div>
@@ -301,7 +304,8 @@
               <p>محصولات سراسری کاتالوگ — همه‌ی ویزیتورها این‌ها را می‌بینند.</p>
             </div>
             <div class="view-header-actions">
-              <button id="import-products" type="button" class="btn btn-ghost">📥 ورودی</button>
+              <input id="import-file" type="file" accept=".csv,.json,text/csv,application/json" hidden />
+              <button id="import-products" type="button" class="btn btn-ghost" title="افزودن گروهی محصولات از فایل CSV یا JSON">📥 ورودی (CSV/JSON)</button>
               <button id="export-products" type="button" class="btn btn-ghost">📤 خروجی</button>
               <button id="add-product" type="button" class="btn btn-primary">+ افزودن محصول</button>
             </div>
@@ -497,11 +501,7 @@
             <div class="settings-card">
               <h3>🔍 تنظیمات SQL</h3>
               <div class="setting-item">
-                <label class="setting-label">
-                  <input type="checkbox" id="setting-auto-limit" checked />
-                  <span>افزودن خودکار LIMIT به SELECT</span>
-                </label>
-                <p class="setting-desc">حداکثر ۵۰۰ ردیف به کوئری‌های SELECT اضافه شود</p>
+                <p class="setting-desc">🔒 هر کوئری SELECT در ویرایشگر حداکثر ۵۰۰ ردیف برمی‌گرداند (محدودیت سمت سرور). برای گرفتن کل داده‌ها از دکمه «خروجی کامل» استفاده کنید که تا ۲۰٬۰۰۰ ردیف می‌گیرد.</p>
               </div>
               <div class="setting-item">
                 <label class="setting-label">
@@ -539,6 +539,7 @@
               <div class="setting-item">
                 <label class="setting-label">تعداد ردیف در هر صفحه</label>
                 <input type="number" id="setting-page-size" class="setting-input" value="50" min="10" max="500" dir="ltr" />
+                <p class="setting-desc">هر بار این تعداد ردیف در لیست‌های محصولات/سفارشات/مشتریان نمایش داده می‌شود؛ بقیه با دکمه «نمایش بیشتر» می‌آید</p>
               </div>
             </div>
 
@@ -557,7 +558,7 @@
                   <input type="checkbox" id="setting-export-headers" checked />
                   <span>شامل کردن هدرها در خروجی</span>
                 </label>
-                <p class="setting-desc">نام ستون‌ها در ردیف اول فایل خروجی نمایش داده شود</p>
+                <p class="setting-desc">نام ستون‌ها در ردیف اول فایل CSV نوشته شود (برای JSON بی‌اثر است)</p>
               </div>
             </div>
 
@@ -578,6 +579,41 @@
       </section>
     </div>
   </main>
+
+  <!-- Per-visitor Pricing Modal -->
+  <div id="user-product-modal" class="modal" hidden>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="user-product-title">قیمت اختصاصی ویزیتور</h3>
+        <button id="close-user-product-modal" type="button" class="btn btn-ghost btn-sm">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="user-product-hint" class="modal-hint"></p>
+        <div id="user-product-list" class="user-product-list"></div>
+        <div class="form-grid up-form">
+          <label class="form-field">ویزیتور
+            <select id="up-user" class="filter-select"></select>
+          </label>
+          <label class="form-field">قیمت کارتن (تومان)
+            <input id="up-carton" type="number" dir="ltr" min="0" step="any" placeholder="خالی = قیمت پیش‌فرض" />
+          </label>
+          <label class="form-field">قیمت واحد (تومان)
+            <input id="up-unit" type="number" dir="ltr" min="0" step="any" placeholder="خالی = قیمت پیش‌فرض" />
+          </label>
+          <label class="form-field">وضعیت برای این ویزیتور
+            <select id="up-active" class="filter-select">
+              <option value="1">فعال (در لیست محصولاتش باشد)</option>
+              <option value="0">غیرفعال (پنهان باشد)</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="up-save" type="button" class="btn btn-primary">💾 ذخیره</button>
+        <button id="up-close" type="button" class="btn btn-ghost">بستن</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Bookmark Modal -->
   <div id="bookmark-modal" class="modal" hidden>

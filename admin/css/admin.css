@@ -1640,3 +1640,112 @@ body {
 
 /* Author display rules must never override the HTML hidden state. */
 [hidden] { display: none !important; }
+
+/* ============================================================ v2 fixes */
+
+/* SQL results toolbar + lists that used to hide their export buttons */
+.results-header {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.results-actions {
+  flex-wrap: wrap;
+}
+
+.results-actions .btn {
+  white-space: nowrap;
+}
+
+.tab-hint {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+}
+
+.list-more-row td {
+  padding: 12px;
+  text-align: center;
+  background: var(--bg-secondary);
+}
+
+.list-more-row .btn {
+  white-space: nowrap;
+}
+
+/* «درآمد کل» is a money amount, not a small counter */
+#stat-revenue {
+  font-size: 20px;
+}
+
+/* Clickable ready-made query cards */
+.template-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Per-visitor pricing modal */
+.modal-hint {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+}
+
+.modal-footer {
+  display: flex;
+  gap: 10px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+}
+
+.user-product-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.user-product-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  font-size: 13px;
+}
+
+.user-product-item .up-name {
+  font-weight: 700;
+  min-width: 130px;
+}
+
+.user-product-item .up-price {
+  color: var(--text-secondary);
+}
+
+.user-product-item .up-active {
+  color: var(--primary-dark);
+  font-weight: 700;
+}
+
+.user-product-item .up-active.off {
+  color: var(--danger);
+}
+
+.up-form {
+  margin-top: 8px;
+}
+
+.bookmark-empty {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}

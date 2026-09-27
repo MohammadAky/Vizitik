@@ -43,6 +43,8 @@ const TOKEN = process.env.ADMIN_TOKEN || '';
 const STATIC_DIR = process.env.ADMIN_STATIC_DIR || __dirname;
 const FONTS_DIR = process.env.ADMIN_FONTS_DIR || path.join(__dirname, '..', 'landing', 'fonts');
 const MAX_LIMIT = 500;
+// Exports are allowed to be much bigger than the 500-row editor preview.
+const EXPORT_MAX_LIMIT = Math.max(MAX_LIMIT, parseInt(process.env.ADMIN_EXPORT_LIMIT || '20000', 10));
 // Under nginx proxy_read_timeout (60s) so we answer with a clean JSON error
 // before the gateway times the request out (nginx 504 / Cloudflare 524).
 const QUERY_TIMEOUT_MS = Math.max(1000, parseInt(process.env.ADMIN_QUERY_TIMEOUT_MS || '55000', 10));
@@ -132,13 +134,15 @@ function plain(v) {
   return String(v);
 }
 
-function addToHistory(sql, success, rowCount, ms) {
+function addToHistory(sql, success, rowCount, ms, type, error) {
   queryHistory.unshift({
     id: Date.now(),
     sql: sql.trim(),
     success,
     rowCount,
     ms,
+    type: type || null,
+    error: success ? null : (error || 'اجرا نشد'),
     timestamp: new Date().toISOString()
   });
   if (queryHistory.length > MAX_HISTORY) {
@@ -177,7 +181,7 @@ function classifyQuery(sql) {
   return 'UNKNOWN';
 }
 
-function guardSql(raw, allowWrite = false) {
+function guardSql(raw, allowWrite = false, maxLimit = MAX_LIMIT) {
   const sql = String(raw || '').trim().replace(/;\s*$/, '');
   if (!sql) return { ok: false, error: 'کوئری خالی است' };
 
@@ -194,14 +198,14 @@ function guardSql(raw, allowWrite = false) {
     // Apply LIMIT for SELECT queries
     if (queryType === 'SELECT') {
       const offsetLimit = sql.match(/\blimit\s+(\d+)\s+offset\s+(\d+)\s*$/i);
-      if (offsetLimit) return { ok: true, sql: sql.replace(/\blimit\s+\d+\s+offset\s+\d+\s*$/i, `LIMIT ${Math.min(Number(offsetLimit[1]), MAX_LIMIT)} OFFSET ${offsetLimit[2]}`), type: queryType, requiresConfirmation: false };
+      if (offsetLimit) return { ok: true, sql: sql.replace(/\blimit\s+\d+\s+offset\s+\d+\s*$/i, `LIMIT ${Math.min(Number(offsetLimit[1]), maxLimit)} OFFSET ${offsetLimit[2]}`), type: queryType, requiresConfirmation: false };
       const limit = sql.match(/\blimit\s+(\d+)\s*(,\s*(\d+))?\s*$/i);
       if (limit) {
         if (limit[3] !== undefined) {
           return {
             ok: true,
-            sql: parseInt(limit[3], 10) > MAX_LIMIT
-              ? sql.replace(/\blimit\s+(\d+)\s*,\s*\d+\s*$/i, `LIMIT ${limit[1]}, ${MAX_LIMIT}`)
+            sql: parseInt(limit[3], 10) > maxLimit
+              ? sql.replace(/\blimit\s+(\d+)\s*,\s*\d+\s*$/i, `LIMIT ${limit[1]}, ${maxLimit}`)
               : sql,
             type: queryType,
             requiresConfirmation: false
@@ -209,14 +213,14 @@ function guardSql(raw, allowWrite = false) {
         }
         return {
           ok: true,
-          sql: parseInt(limit[1], 10) > MAX_LIMIT
-            ? sql.replace(/\blimit\s+\d+\s*$/i, `LIMIT ${MAX_LIMIT}`)
+          sql: parseInt(limit[1], 10) > maxLimit
+            ? sql.replace(/\blimit\s+\d+\s*$/i, `LIMIT ${maxLimit}`)
             : sql,
           type: queryType,
           requiresConfirmation: false
         };
       }
-      return { ok: true, sql: `${sql} LIMIT ${MAX_LIMIT}`, type: queryType, requiresConfirmation: false };
+      return { ok: true, sql: `${sql} LIMIT ${maxLimit}`, type: queryType, requiresConfirmation: false };
     }
 
     return { ok: true, sql, type: queryType, requiresConfirmation: false };
@@ -631,37 +635,44 @@ const server = http.createServer(async (req, res) => {
       catch { return sendJson(res, 400, { error: 'بدنه‌ی درخواست JSON نیست' }); }
 
       const allowWrite = payload.allowWrite === true;
+      const silent = payload.silent === true;
       const guarded = guardSql(payload.sql, allowWrite);
       if (!guarded.ok) return sendJson(res, 400, { error: guarded.error });
 
       const t0 = Date.now();
       let result;
 
-      if (guarded.type === 'SELECT' || guarded.type === 'SHOW' || guarded.type === 'DESCRIBE' || guarded.type === 'EXPLAIN') {
-        const rows = await withTimeout(prisma.$queryRawUnsafe(guarded.sql), 'کوئری');
-        const clean = (rows || []).map((r) => plain(r));
-        result = {
-          columns: clean.length ? Object.keys(clean[0]) : [],
-          rows: clean,
-          rowCount: clean.length,
-          ms: Date.now() - t0,
-          sql: guarded.sql,
-          type: guarded.type,
-          success: true
-        };
-      } else {
-        // Write operation
-        const affected = await withTimeout(prisma.$executeRawUnsafe(guarded.sql), 'عملیات نوشتن');
-        result = {
-          affectedRows: affected,
-          ms: Date.now() - t0,
-          sql: guarded.sql,
-          type: guarded.type,
-          success: true
-        };
+      try {
+        if (guarded.type === 'SELECT' || guarded.type === 'SHOW' || guarded.type === 'DESCRIBE' || guarded.type === 'EXPLAIN') {
+          const rows = await withTimeout(prisma.$queryRawUnsafe(guarded.sql), 'کوئری');
+          const clean = (rows || []).map((r) => plain(r));
+          result = {
+            columns: clean.length ? Object.keys(clean[0]) : [],
+            rows: clean,
+            rowCount: clean.length,
+            ms: Date.now() - t0,
+            sql: guarded.sql,
+            type: guarded.type,
+            success: true
+          };
+        } else {
+          // Write operation
+          const affected = await withTimeout(prisma.$executeRawUnsafe(guarded.sql), 'عملیات نوشتن');
+          result = {
+            affectedRows: affected,
+            ms: Date.now() - t0,
+            sql: guarded.sql,
+            type: guarded.type,
+            success: true
+          };
+        }
+
+      } catch (queryErr) {
+        if (!silent) addToHistory(guarded.sql, false, 0, Date.now() - t0, guarded.type, queryErr && queryErr.message);
+        throw queryErr;
       }
 
-      addToHistory(guarded.sql, true, result.rowCount || result.affectedRows || 0, result.ms);
+      if (!silent) addToHistory(guarded.sql, true, result.rowCount || result.affectedRows || 0, result.ms, guarded.type);
       return sendJson(res, 200, result);
     }
 
@@ -842,7 +853,7 @@ const server = http.createServer(async (req, res) => {
 
       if (!payload.sql) return sendJson(res, 400, { error: 'کوئری الزامی است' });
 
-      const guarded = guardSql(payload.sql, false);
+      const guarded = guardSql(payload.sql, false, EXPORT_MAX_LIMIT);
       if (!guarded.ok) return sendJson(res, 400, { error: guarded.error });
 
       const format = payload.format || 'csv';
