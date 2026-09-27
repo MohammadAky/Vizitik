@@ -9,7 +9,6 @@
 > می‌خوابند و نتیجه‌اش صفحهٔ بدون استایل و آیکون‌هایی است که به شکل متن دیده می‌شوند.
 
 ---
-پیام تست
 ## 📋 فهرست مطالب
 1. [معرفی پروژه](#-معرفی-پروژه)
 2. [معماری و پشته فناوری](#-معماری-و-پشته-فناوری)
@@ -216,26 +215,6 @@ sudo bash scripts/deploy.sh --yes --full-reset # + پاک‌کردن /opt/viziti
 - گرفتن گواهی SSL از مسیر کلودفلر (رکوردها، توکن API، حالت SSL، عیب‌یابی ۵۲۱/۵۲۲/۵۲۵):
   `docs/CLOUDFLARE-SSL.md`
 
-## 🚀 استقرار روی Render (با دامنهٔ شخصی)
-مجموعه‌ای از سرویس‌ها از همین ریپو با یک `render.yaml` (بلوپرینت) ساخته می‌شود:
-بک‌اند + PWA **هم‌ریشه** (بک‌اند خودِ بیلد PWA را سرو می‌کند، مثل Nginx روی VPS)،
-پنل ادمین، و لندینگ به‌عنوان Static Site. دیتابیس MySQL باید خارج از Render
-باشد (VPS خودت یا MySQL به‌صورت Docker روی Render) — Render MySQL مدیریت‌شده
-ندارد و اسکیما MySQL باید دست‌نخورده بماند.
-```bash
-# Blueprint: Render → New → Blueprint → اتصال ریپو → تنظیم DATABASE_URL → prisma db push
-```
-> **اگر ساختِ بلوپرینت روی Render خطا داد، این سه مورد را چک کن:**
-> - `buildCommand must be a string` → مقدار `true` باید در کوتیشن باشد (`'true'`)، وگرنه YAML
->   آن را بولین می‌خواند و Render رد می‌کند.
-> - `Publish directory … does not exist` → Render مسیر `staticPublishPath` را **نسبت به
->   `rootDir`** تفسیر می‌کند؛ پس `rootDir: landing` + `staticPublishPath: landing` به
->   `landing/landing` اشاره می‌کند. در `render.yaml` همین ریپو برای لندینگ عمداً `rootDir`
->   نگذاشته شده و `staticPublishPath: ./landing` است.
-> - خطای `prisma db push` در مرحلهٔ بیلد → `DATABASE_URL` را برای **هر دو** سرویس
->   (`vizitik-app` و `vizitik-admin`) در داشبورد ست کن؛ دیتابیس باید MySQL بیرونی باشد
->   (Render دیتابیس مدیریت‌شدهٔ MySQL ندارد) و اتصال از IP عمومی برقرار می‌شود.
-
 ## 🤖 یکپارچه‌سازی با ربات بله (Bale Messenger Bot)
 ### مسیر درستِ کد تایید (ثبت‌نام و بازیابی رمز)
 کد فقط به گفتگوی بلهٔ **همان شماره** می‌رود؛ هرگز به‌صورت پیش‌فرض به چت مدیر کپی نمی‌شود
@@ -260,53 +239,45 @@ sudo bash scripts/deploy.sh --yes --full-reset # + پاک‌کردن /opt/viziti
 vizitik/
 ├── backend/                       # بک‌اند پروژه با NestJS و Prisma
 │   ├── prisma/
-│   │   ├── schema.prisma          # مدل‌های پایگاه‌داده (MySQL)
-│   │   └── seed.ts                # سیدر اولیه کالاها و مشتریان
+│   │   └── schema.prisma          # مدل‌های پایگاه‌داده (MySQL)
 │   ├── src/
 │   │   ├── auth/                  # ماژول احراز هویت، JWT و OTP بله
+│   │   ├── bale/                  # ماژول ربات پیام‌رسان بله
 │   │   ├── customers/             # ماژول مشتریان و تسویه حساب
 │   │   ├── orders/                # ماژول صدور و ویرایش فاکتورها
 │   │   ├── products/              # ماژول مدیریت کالاها و قیمت‌گذاری
 │   │   ├── reports/               # گزارشات آماری فروش و تسویه
 │   │   ├── van-inventory/         # مدیریت بارگیری خودرو (بدون افزونگی)
+│   │   ├── health/                # پروب سلامت /api/health
+│   │   ├── common/                # ابزار مشترک (نرمال‌سازی کارتن/دانه)
 │   │   ├── prisma.service.ts
+│   │   ├── app.module.ts / app.config.ts / env.ts
 │   │   └── main.ts
+│   ├── .env.example
 │   ├── package.json
 │   └── tsconfig.json
 │
-├── frontend/                      # فرانت‌اند وب و PWA با PHP و JS
-│   ├── css/
-│   │   ├── style.css              # استایل عمومی، فریم اپ، تم و توست
-│   │   ├── new-order.css          # استایل صفحه ثبت سفارش گرم
-│   │   ├── payment.css            # استایل صفحه تسویه و فاکتور حرارتی
-│   │   ├── orders.css             # استایل صفحه مدیریت و اصلاح فاکتورها
-│   │   ├── collections.css        # استایل وصول مطالبات و چک‌ها
-│   │   ├── products.css           # استایل لیست کالاها و دانلود کاتالوگ
-│   │   └── van-loading.css        # استایل بارگیری خودرو
-│   ├── js/
-│   │   ├── dashboard.js
-│   │   ├── new-order.js           # لاجیک سفارش، کارتن/دانه و سبد
-│   │   ├── payment.js             # لاجیک تخفیف پلکانی و پرینت فاکتور
-│   │   ├── orders.js              # لاجیک اصلاح تسویه و چاپ مجدد
-│   │   ├── collections.js
-│   │   ├── products.js
-│   │   └── van-loading.js
-│   ├── dashboard.php              # داشبورد اصلی ویزیتور
-│   ├── new-order.php              # صفحه انتخاب اقلام از بار خودرو
-│   ├── payment.php                # صفحه تخفیف و تسویه پرداخت
-│   ├── orders.php                 # صفحه مدیریت و اصلاح فاکتورها
-│   ├── collections.php            # وصول مطالبات و ثبت دریافت وجه
-│   ├── products.php               # کاتالوگ کالاها و تغییر قیمت
-│   ├── van-loading.php            # بارگیری خودرو و قفل موجودی
-│   ├── index.php                  # صفحه ورود به حساب
-│   ├── register.php               # صفحه ثبت‌نام
-│   ├── settings.php               # تنظیمات حساب و تغییر رمز
-│   ├── about.php                  # درباره سیستم
-│   └── help.php                   # راهنما و پشتیبانی
+├── frontend/                      # فرانت‌اند وب با PHP (رندر سمت‌سرور)
+│   ├── css/                       # استایل عمومی و استایل اختصاصی هر صفحه
+│   ├── js/                        # لاجیک سمت کلاینت هر صفحه
+│   ├── fonts/                     # فونت وزیرمتن و آیکون‌های Material (self-host)
+│   ├── *.php                      # ورود، داشبورد، ثبت سفارش، تسویه، اصلاح فاکتور و...
+│   └── auth_helper.php            # نشست، توکن و تابع apiCall()
+│
+├── frontend-app/                  # PWA موبایل (React + Vite، آفلاین‌محور)
+│   ├── src/screens/               # صفحات React (Dashboard، NewOrder، Payment، ...)
+│   ├── src/lib/                   # هستهٔ آفلاین: api، db (IndexedDB)، sync، pricing
+│   ├── src/styles/                # CSS اختصاصی هر صفحه
+│   ├── public/fonts/              # فونت‌های self-host
+│   └── vite.config.js             # پیکربندی Vite + PWA (service worker)
 │
 ├── admin/                         # پنل ادمین (Node + Prisma): SQL، کاتالوگ، قیمت‌ها
 ├── landing/                       # صفحهٔ معرفی (استاتیک)
-├── render.yaml                    # بلوپرینت Render (app + admin + landing)
+├── documents/                     # دامپ SQL اولیهٔ دیتابیس (hesabchin.sql)
+├── docs/                          # مستندات استقرار، SSL و نقشهٔ راه
+├── scripts/                       # اسکریپت‌های deploy/update/setup و تست‌های رگرسیون
+├── .gitattributes                 # یکسان‌سازی LF در همهٔ سیستم‌عامل‌ها
+├── .gitignore
 └── README.md                      # مستندات جامع پروژه
 ```
 
