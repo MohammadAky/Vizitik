@@ -2,7 +2,7 @@
 #
 # What it does:
 #   1) installs prerequisites (Nginx, Node, MariaDB, certbot, build tools)
-#   2) starts and hardens MariaDB, creates the database, imports the dump
+#   2) starts and hardens MariaDB, creates an empty database (NEVER imports sample data)
 #   3) builds the NestJS backend and writes backend/.env
 #   4) builds the PWA frontend (Vite) and writes frontend-app/.env
 #   5) installs a permanent systemd service for the backend
@@ -60,7 +60,7 @@ SRC_DIR="${SRC_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 DB_NAME="${DB_NAME:-vizitik_db}"
 DB_USER="${DB_USER:-vizitik}"
 DB_PASS="${DB_PASS:-CHANGE_ME_STRONG_PASSWORD}"
-DB_HOST="localhost"
+DB_HOST="${DB_HOST:-localhost}"
 
 BALE_BOT_TOKEN="${BALE_BOT_TOKEN:-}"
 BALE_BOT_USERNAME="${BALE_BOT_USERNAME:-}"
@@ -74,14 +74,14 @@ ADMIN_TOKEN="${ADMIN_TOKEN:-}"   # generated while asking, if this is empty
 ADMIN_PORT="${ADMIN_PORT:-3001}"
 CERT_EMAIL="${CERT_EMAIL:-}"
 
-BACKEND_PORT="${BACKEND_PORT:-3000}"
+BACKEND_PORT="${BACKEND_PORT:-${PORT:-3000}}"
 WITH_WWW="${WITH_WWW:-0}"
 # HTTPS_MODE=http      classic HTTP-01 challenge (needs port 80 reachable from anywhere)
 # HTTPS_MODE=dns       DNS-01 challenge through a Cloudflare API token (works when the
 #                      hoster only serves traffic from Iran and blocks foreign probes)
 HTTPS_MODE="${HTTPS_MODE:-}"
 CF_API_TOKEN="${CF_API_TOKEN:-}"
-NODEJS_MAJOR=20
+NODEJS_MAJOR="${NODEJS_MAJOR:-22}"
 
 # ------------------------------------------------------------------
 # Behaviour switches - each one is also offered as a question
@@ -220,17 +220,8 @@ memory_guard() {
 
 # a lockfile means npm ci: it wipes node_modules first, so a half finished and
 # killed install from the previous run cannot poison this one
-npm_install_in() {  # $1 = directory
-  local dir="$1" rc=0
-  if [[ -f "$dir/package-lock.json" ]]; then
-    ( cd "$dir" && npm ci --no-audit --no-fund --no-progress --loglevel=error --production=false ) || rc=$?
-    if (( rc == 0 )); then return 0; fi
-    if (( rc == 137 )) || (( rc == 143 )); then
-      report_step_rc "$rc" "npm ci in $dir"        # out of memory: no point retrying
-    fi
-    warn "npm ci failed (exit $rc); retrying with a plain npm install"
-  fi
-  run_in "$dir" "npm install in $dir" npm install --no-audit --no-fund --no-progress --loglevel=error --production=false
+npm_install_in() {
+  run_in "$1" "npm ci in $1" npm ci --include=dev --no-audit --no-fund --no-progress
 }
 
 urlencode() {
@@ -343,7 +334,10 @@ print_config_summary() {
 collect_inputs() {
   log "questions - press Enter to keep the value shown in brackets"
 
+  local initial_install="$INSTALL_DIR"
   ask INSTALL_DIR "install directory" "/opt/vizitik"
+  [[ "$INSTALL_DIR" == "$initial_install" ]] || fail "Set INSTALL_DIR before starting the script so the correct existing .env is loaded"
+  [[ "$INSTALL_DIR" == /* && "$INSTALL_DIR" != / && "$INSTALL_DIR" != *[[:space:]\\\"\']* ]] || fail "Use an absolute install path without spaces or quotes"
 
   ask DOMAIN "public domain of the app (empty = no https)" ""
   if [[ -n "$DOMAIN" ]] && ! [[ "$DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*\.)+[A-Za-z]{2,}$ ]]; then
@@ -386,7 +380,7 @@ collect_inputs() {
   fi
 
   if [[ "$ENABLE_HTTPS" == "1" ]]; then
-    if [[ -z "$HTTPS_MODE" ]]; then
+    if [[ -z "$HTTPS_MODE" ]] && can_ask; then
       echo
       echo "  how should Let's Encrypt prove that $DOMAIN belongs to you?"
       echo "    1) http - needs port 80 reachable from outside (default)"
@@ -411,6 +405,7 @@ collect_inputs() {
     fail "BACKEND_PORT must be a number between 1025 and 65535"
   fi
 
+  if [[ ! -f "$INSTALL_DIR/backend/.env" ]]; then
   ask DB_HOST "database host" "localhost"
   ask DB_NAME "database name" "vizitik_db"
   if ! [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
@@ -423,6 +418,9 @@ collect_inputs() {
   if [[ -z "$DB_PASS" ]]; then fail "a database password is required (export DB_PASS or answer the prompt)"; fi
   if [[ "$DB_PASS" == CHANGE_ME* ]]; then fail "DB_PASS still contains the CHANGE_ME placeholder"; fi
   if (( ${#DB_PASS} < 8 )); then warn "the database password is short - 8 characters or more is better"; fi
+
+  [[ "$DB_USER" =~ ^[A-Za-z0-9_]+$ ]] || fail "invalid database username"
+  fi
 
   ask BALE_BOT_USERNAME "Bale bot username without @ (empty = bot stays off)" ""
   if [[ -n "$BALE_BOT_USERNAME" ]]; then
@@ -503,18 +501,17 @@ install_prereqs() {
   log "installing and updating prerequisites"
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
-  apt-get upgrade -y
   apt-get install -y \
     curl git nginx ufw mariadb-server \
     certbot python3-certbot-nginx \
     build-essential python3 make g++ \
-    ca-certificates gnupg jq
+    ca-certificates gnupg jq rsync mariadb-client cron
 
   local node_major=0
   if command -v node >/dev/null 2>&1; then
     node_major="$(node -v | sed 's/v//;s/\..*//')"
   fi
-  if [[ "$node_major" -lt 18 ]]; then
+  if [[ "$node_major" -lt 22 ]]; then
     warn "Node missing or too old; installing Node $NODEJS_MAJOR from nodesource..."
     curl -fsSL "https://deb.nodesource.com/setup_${NODEJS_MAJOR}.x" | bash -
     apt-get install -y nodejs
@@ -527,35 +524,29 @@ install_prereqs() {
 # ------------------------------------------------------------------
 
 setup_database() {
-  log "setting up MariaDB"
+  systemctl start mariadb
+  if [[ -f "$INSTALL_DIR/backend/.env" ]]; then
+    log "existing configuration found; preserving database, credentials and JWT secret"
+    # Do not restart MariaDB or ALTER USER on a reinstall. Protect the exact URL
+    # in the live .env, including legacy installs that have no DB_* variables.
+    python3 "$SCRIPT_DIR/database-backup.py" --env "$INSTALL_DIR/backend/.env" \
+      --output "${BACKUP_DIR:-/var/backups/vizitik}" --reason pre-install
+    return
+  fi
+  [[ "$DB_HOST" == "localhost" || "$DB_HOST" == "127.0.0.1" ]] || fail "For a remote DB, provision backend/.env first; setup never creates remote users"
   systemctl enable --now mariadb
-  systemctl restart mariadb
-  sleep 2
-
-  if mysql -u root -e "SELECT 1" >/dev/null 2>&1; then
-    warn "MySQL root has no password; run 'mysql_secure_installation' later"
-  fi
-
+  local count
+  count="$(mysql -u root -Nse "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = '${DB_NAME}'")"
+  [[ "$count" == "0" ]] || fail "Database $DB_NAME already has tables but no installed .env. Restore the original .env first; refusing to guess credentials or import data."
+  local escaped_pass="${DB_PASS//\\/\\\\}"
+  escaped_pass="${escaped_pass//\'/\'\'}"
   mysql -u root <<SQL
+SET SESSION sql_mode = '';
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
-ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${escaped_pass}';
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
-FLUSH PRIVILEGES;
 SQL
-  ok "database "${DB_NAME}" and user "${DB_USER}" are ready"
-
-  local dump="$SRC_DIR/documents/hesabchin.sql"
-  if [[ -f "$dump" ]]; then
-    log "importing initial schema dump"
-    local tmp="/tmp/vizitik_import.sql"
-    sed '/CREATE DATABASE/,/^USE `hesabchin`;/d' "$dump" > "$tmp"
-    mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$tmp"
-    rm -f "$tmp"
-    ok "schema dump imported"
-  else
-    warn "documents/hesabchin.sql not found; tables will only be created by prisma db push"
-  fi
+  ok "empty database ready; sample SQL is intentionally NEVER imported"
 }
 
 # ------------------------------------------------------------------
@@ -563,27 +554,19 @@ SQL
 # ------------------------------------------------------------------
 
 copy_source() {
-  log "copying sources to $INSTALL_DIR"
+  [[ -d "$SRC_DIR/backend" && -d "$SRC_DIR/frontend-app" ]] || fail "invalid source tree: $SRC_DIR"
+  [[ "$(realpath -m "$INSTALL_DIR")" != "$(realpath -m "$SRC_DIR")" ]] || fail "INSTALL_DIR must differ from the source checkout"
   mkdir -p "$INSTALL_DIR"
-  if [[ -d "$SRC_DIR/backend" && -d "$SRC_DIR/frontend-app" ]]; then
-    rm -rf "$INSTALL_DIR/backend" "$INSTALL_DIR/frontend-app" "$INSTALL_DIR/landing" "$INSTALL_DIR/admin"
-    cp -r "$SRC_DIR/backend" "$SRC_DIR/frontend-app" "$INSTALL_DIR/"
-    if [[ -d "$SRC_DIR/landing" ]]; then
-      cp -r "$SRC_DIR/landing" "$INSTALL_DIR/"
-      ok "backend, frontend-app and landing copied"
-    else
-      rm -rf "$INSTALL_DIR/landing"
-      warn "landing/ not found in $SRC_DIR - the root domain will have no page"
-    fi
-    if [[ -d "$SRC_DIR/admin" ]]; then
-      cp -r "$SRC_DIR/admin" "$INSTALL_DIR/"
-      ok "admin panel sources copied"
-    else
-      warn "admin/ not found in $SRC_DIR - the admin panel will not be deployed"
-    fi
-  else
-    fail "repo structure not found in $SRC_DIR (backend and frontend-app are required)"
-  fi
+  local tree
+  for tree in backend frontend-app landing admin; do
+    [[ -d "$SRC_DIR/$tree" ]] || continue
+    mkdir -p "$INSTALL_DIR/$tree"
+    # No rm -rf and no --delete: preserve secrets, builds and recovery copies.
+    rsync -a --exclude='.env' --exclude='.env.*' --exclude=node_modules \
+      --exclude=dist --exclude='*.tgz' "$SRC_DIR/$tree/" "$INSTALL_DIR/$tree/"
+  done
+  install -d -m 755 "$INSTALL_DIR/scripts"
+  install -m 755 "$SCRIPT_DIR/database-backup.py" "$INSTALL_DIR/scripts/database-backup.py"
 }
 
 # ------------------------------------------------------------------
@@ -601,7 +584,8 @@ build_backend() {
 
   # backend/.env is the single source of truth for the API, Prisma and the
   # admin panel (everything runs from the backend directory)
-  cat > "$INSTALL_DIR/backend/.env" <<EOF
+  if [[ ! -f "$INSTALL_DIR/backend/.env" ]]; then
+  (umask 077; cat > "$INSTALL_DIR/backend/.env" <<EOF
 DATABASE_URL="mysql://${DB_USER}:${DB_PASS_URL}@${DB_HOST}:3306/${DB_NAME}"
 NODE_ENV=production
 JWT_SECRET="${JWT_SECRET}"
@@ -615,18 +599,21 @@ ADMIN_PORT=${ADMIN_PORT}
 ADMIN_TOKEN="${ADMIN_TOKEN}"
 ADMIN_STATIC_DIR="${INSTALL_DIR}/admin"
 ADMIN_FONTS_DIR="${INSTALL_DIR}/landing/fonts"
-VITE_API_URL="/api"
+INSTALL_DIR="${INSTALL_DIR}"
+DOMAIN="${DOMAIN}"
+APP_DOMAIN="${APP_DOMAIN}"
+ADMIN_DOMAIN="${ADMIN_DOMAIN}"
+BACKEND_PORT=${BACKEND_PORT}
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/vizitik}"
 EOF
-  # drop the old unified root .env if a previous version of the script
-  # created it - backend/.env is the only env file now
-  if [[ -f "$INSTALL_DIR/.env" ]]; then
-    rm -f "$INSTALL_DIR/.env"
-    ok "removed the old unified $INSTALL_DIR/.env (replaced by backend/.env)"
+  )
   fi
+  chmod 600 "$INSTALL_DIR/backend/.env"
   if [[ -z "$BALE_BOT_TOKEN" ]]; then
     warn "BALE_BOT_TOKEN is empty; the bot will not send messages (fill it in $INSTALL_DIR/backend/.env and restart the service)"
   fi
-  npx prisma db push --skip-generate || warn "prisma db push failed; check the tables manually"
+  python3 "$SCRIPT_DIR/database-backup.py" --env "$INSTALL_DIR/backend/.env" --output "${BACKUP_DIR:-/var/backups/vizitik}" --reason pre-schema
+  env -u DATABASE_URL npx prisma db push --skip-generate
   run_here "backend build (tsc)" npm run build
   ok "backend built (dist/main.js)"
 }
@@ -643,7 +630,7 @@ build_admin() {
   fi
   log "installing the admin panel"
   mkdir -p "$INSTALL_DIR/backend/admin"
-  cp "$INSTALL_DIR/admin/server.js" "$INSTALL_DIR/backend/admin/server.js"
+  cp "$INSTALL_DIR/admin/"*.js "$INSTALL_DIR/backend/admin/"
   ok "admin panel installed (static: $INSTALL_DIR/admin, script: backend/admin/server.js)"
 }
 
@@ -690,7 +677,7 @@ EOF
   systemctl enable vizitik-backend
   systemctl restart vizitik-backend
   sleep 2
-  systemctl is-active --quiet vizitik-backend && ok "service is active" || warn "service did not start; check: journalctl -u vizitik-backend -n 50"
+  systemctl is-active --quiet vizitik-backend && ok "service is active" || fail "service did not start; check: journalctl -u vizitik-backend -n 50"
 
   if [[ -n "$ADMIN_DOMAIN" && -f "$INSTALL_DIR/backend/admin/server.js" ]]; then
     log "creating the admin panel systemd service"
@@ -718,7 +705,7 @@ EOF
     systemctl restart vizitik-admin
     sleep 1
     systemctl is-active --quiet vizitik-admin && ok "admin service is active on 127.0.0.1:${ADMIN_PORT}" \
-      || warn "admin service did not start; check: journalctl -u vizitik-admin -n 50"
+      || fail "admin service did not start; check: journalctl -u vizitik-admin -n 50"
   fi
 }
 
@@ -795,7 +782,8 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 60s;
+        proxy_read_timeout 180s;
+        client_max_body_size 50m;
     }
 }
 EOF
@@ -817,7 +805,8 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_read_timeout 60s;
+        proxy_read_timeout 180s;
+        client_max_body_size 50m;
     }
 }
 EOF
@@ -992,16 +981,11 @@ setup_firewall() {
 # ------------------------------------------------------------------
 
 setup_backup() {
-  if [[ "$ENABLE_BACKUP" != "1" ]]; then warn "backup cron skipped (ENABLE_BACKUP=0)"; return 0; fi
-  log "creating the daily database backup cron job"
-  mkdir -p /var/backups
-  local cron="/etc/cron.d/vizitik-backup"
-  cat > "$cron" <<EOF
-SHELL=/bin/bash
-0 2 * * * root mysqldump -u ${DB_USER} -p'${DB_PASS}' ${DB_NAME} > /var/backups/${DB_NAME}-\$(date +\%F).sql && find /var/backups -name '${DB_NAME}-*.sql' -mtime +7 -delete
-EOF
-  chmod 644 "$cron"
-  ok "backups in /var/backups (7 days kept)"
+  [[ "$ENABLE_BACKUP" == "1" ]] || return 0
+  bash "$SCRIPT_DIR/install-backup-cron.sh" "$INSTALL_DIR" "${BACKUP_DIR:-/var/backups/vizitik}"
+  python3 "$SCRIPT_DIR/database-backup.py" --env "$INSTALL_DIR/backend/.env" \
+    --output "${BACKUP_DIR:-/var/backups/vizitik}" --reason nightly
+  ok "nightly backup installed and tested (14 days; pre-change backups never auto-pruned)"
 }
 
 # ------------------------------------------------------------------
@@ -1010,6 +994,9 @@ EOF
 
 final_summary() {
   log "final checks"
+  curl --fail --silent --retry 10 --retry-connrefused --retry-delay 1 \
+    "http://127.0.0.1:${BACKEND_PORT}/api/health" | grep -q '"db":"ok"' \
+    || fail "API/database health check failed"
   local url="http://localhost"
   [[ -n "$DOMAIN" ]] && url="https://$DOMAIN"
 
@@ -1067,6 +1054,8 @@ main() {
   fi
 
   require_root
+  exec 9>/run/lock/vizitik-deploy.lock
+  flock -n 9 || fail "another install/update is running"
   distro_check
   collect_inputs
   memory_guard

@@ -5,18 +5,20 @@
 
 ## 📋 نیازمندی‌ها (System Requirements)
 
-- **Node.js**: نسخه 18 یا بالاتر (تست‌شده روی Node v20 و v24)
+- **Node.js**: نسخه 22 یا بالاتر
 - **NPM**: نسخه 9 یا بالاتر
-- **MySQL/MariaDB**: همان چیزی که `backend/prisma/schema.prisma` با `provider = "mysql"` انتظار دارد (ساختار از `documents/hesabchin.sql` یا `prisma db push`)
+- **MySQL/MariaDB**: همان چیزی که `backend/prisma/schema.prisma` با `provider = "mysql"` انتظار دارد (ساختار از `prisma db push` پس از بکاپ؛ فایل SQL نمونه روی دیتابیس موجود ممنوع است)
 - **TypeScript**: نسخه 5.7+
 
 ---
+
+> مسیر توصیه‌شده: از ریشه `bash scripts/setup-local.sh --run`؛ برای سرور [راهنمای امن](../docs/DEPLOY-UBUNTU.md) را بخوانید.
 
 ## 🚀 راهنمای سریع راه‌اندازی (Quick Start)
 
 ### ۱. نصب پکیج‌ها:
 ```bash
-npm install
+npm ci --include=dev
 ```
 
 ### ۲. تنظیم متغیرهای محیطی:
@@ -33,8 +35,9 @@ JWT_EXPIRES_IN="30d"
 
 ### ۳. سینک دیتابیس و تولید پریسما:
 ```bash
-npx prisma db push
 npx prisma generate
+# از ریشهٔ مخزن، setup-local.sh بکاپ را پیش از سینک اسکیما می‌گیرد:
+# bash scripts/setup-local.sh
 ```
 
 ### ۴. اجرای سرور در حالت توسعه (Live Reload):

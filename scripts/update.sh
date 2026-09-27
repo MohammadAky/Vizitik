@@ -1,547 +1,214 @@
 #!/usr/bin/env bash
-#
-# Update existing deployment
-#
-# The live install ($INSTALL_DIR, default /opt/vizitik) is NOT a git checkout —
-# setup-server.sh only copies the deployable trees there. So this script:
-#   1) pulls the source checkout ($SRC_DIR, default: the repo this script lives in)
-#   2) re-syncs the deployable trees (backend, frontend-app, landing, admin)
-#      into $INSTALL_DIR, preserving backend/.env, frontend-app/.env and node_modules
-#   3) rebuilds only what changed (backend and/or the PWA), restarts what needs it,
-#      and records the deployed revision.
-#
-# PHP site (frontend/) needs no build: files served from a checkout are live
-# right after the pull; when served from $INSTALL_DIR the sync covers it.
-#
-# Usage:
-#   sudo bash scripts/update.sh
-#
-# Options:
-#   --check           Show what would be done, change nothing
-#   --backend-only    Only rebuild backend
-#   --frontend-only   Only rebuild frontend
-#   --restart-only    Restart services without rebuilding
-#   --force           Rebuild everything regardless of changes
-#   --no-pull         Skip the git pull, deploy the checkout as it is
-#   -y, --yes         Skip confirmations
-#
-set -uo pipefail
-
+# Safe in-place update: stage/build first, back up DB+env, apply only non-lossy
+# Prisma changes, activate, health-check, then record revision. Never reset DB.
+set -euo pipefail
+ORIGINAL_ARGS=("$@")
+SELF_HASH="$(sha256sum "${BASH_SOURCE[0]}" | cut -d' ' -f1)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="${SRC_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/vizitik}"
-BACKEND_PORT="${BACKEND_PORT:-3000}"
-SETUP_SVC="vizitik-backend"
-ADMIN_SVC="vizitik-admin"
-
-log()  { echo -e "\n\033[1;36m> $*\033[0m"; }
-ok()   { echo -e "\033[1;32m  OK  $*\033[0m"; }
-info() { echo -e "\033[0;36m  ..  $*"; }
-warn() { echo -e "\033[1;33m  WARN $*"; }
-err()  { echo -e "\033[1;31m  FAIL $*" >&2; }
-skip() { echo -e "  --  $*"; }
-have() { command -v "$1" >/dev/null 2>&1; }
-
-CHECK=0; YES=0; DO_BACKEND=1; DO_FRONTEND=1; DO_PULL=1; RESTART_ONLY=0; FORCE=0
-LEGACY=0 # 1 when $INSTALL_DIR itself is the git checkout (files in place after pull)
-REVISION_FILE="$INSTALL_DIR/.vizitik-revision"
-DEPLOYED_REV="$(cat "$REVISION_FILE" 2>/dev/null | tr -d ' \n' || true)"
-
-while [[ $# -gt 0 ]]; do
+CHECK=0; PULL=1; FORCE=0; RESTART=0; YES=0
+BACKEND=1; FRONTEND=1; PARTIAL=0
+fail() { echo "ERROR: $*" >&2; exit 1; }
+while (($#)); do
   case "$1" in
     --check|--dry-run) CHECK=1 ;;
-    --backend-only)    DO_FRONTEND=0 ;;
-    --frontend-only)   DO_BACKEND=0 ;;
-    --restart-only)    RESTART_ONLY=1; DO_PULL=0; DO_BACKEND=0; DO_FRONTEND=0 ;;
-    -f|--force)        FORCE=1 ;;
-    --no-pull)         DO_PULL=0 ;;
-    -y|--yes)          YES=1 ;;
-    -h|--help)
-      cat <<TXT
-usage: sudo bash scripts/update.sh [options]
-
-  --check           print what would be done, change nothing
-  --backend-only    skip the PWA build
-  --frontend-only   skip the backend build
-  --restart-only    restart services without rebuilding
-  -f, --force       rebuild both sides from the checkout
-  --no-pull         deploy the checkout as it is (no git pull)
-  -y, --yes         no confirmations
-
-  SRC_DIR       source checkout to deploy (default: parent of scripts/)
-  INSTALL_DIR   live install dir        (default: /opt/vizitik)
-TXT
+    --no-pull) PULL=0 ;;
+    --force|-f) FORCE=1 ;;
+    --yes|-y) YES=1 ;;
+    --backend-only) FRONTEND=0; PARTIAL=1 ;;
+    --frontend-only) BACKEND=0; PARTIAL=1 ;;
+    --restart-only) RESTART=1; PULL=0 ;;
+    --help|-h)
+      echo 'Usage: sudo bash scripts/update.sh [--check] [--no-pull] [--force] [--yes] [--backend-only|--frontend-only|--restart-only]'
+      echo 'INSTALL_DIR=/opt/vizitik SRC_DIR=checkout BACKUP_DIR=/var/backups/vizitik'
+      echo '--check is offline/read-only. Partial updates do not advance the global revision.'
       exit 0 ;;
-    *) err "unknown argument: $1"; exit 2 ;;
+    *) fail "unknown argument: $1" ;;
   esac
   shift
 done
-
-run() {
-  local label="$1"; shift
-  if [[ "$CHECK" == "1" ]]; then
-    # keep the preview readable: shell snippets are printed as their label only
-    local cmd="$*"
-    if [[ "$cmd" == *$'\n'* ]]; then
-      echo "      would run: $label"
-    else
-      echo "      would run: $cmd"
+[[ -d "$SRC_DIR/.git" ]] || fail "source is not a git checkout"
+[[ "$INSTALL_DIR" == /* && "$INSTALL_DIR" != / ]] || fail "unsafe INSTALL_DIR"
+if [[ "$CHECK" == 0 ]]; then
+  [[ $(id -u) == 0 ]] || fail 'run with sudo'
+  [[ -f "$INSTALL_DIR/backend/.env" ]] || fail 'no installed backend/.env; use setup-server.sh first'
+  [[ ! -d "$INSTALL_DIR/.git" ]] || fail 'legacy checkout-in-place detected: preserve .env and migrate to a separate INSTALL_DIR first'
+  exec 9>/run/lock/vizitik-deploy.lock
+  flock -n 9 || fail 'another install/update is running'
+  if [[ "$YES" == 0 ]]; then
+    read -r -p "Update $INSTALL_DIR (DB backup required)? [y/N] " answer
+    [[ "$answer" =~ ^[Yy]$ ]] || exit 1
+  fi
+  if [[ "$PULL" == 1 ]]; then
+    [[ -z "$(git -C "$SRC_DIR" status --porcelain)" ]] || fail 'source has local changes; use --no-pull to deploy them explicitly'
+    git -C "$SRC_DIR" pull --ff-only
+    if [[ "$(sha256sum "$SCRIPT_DIR/update.sh" | cut -d' ' -f1)" != "$SELF_HASH" ]]; then
+      flock -u 9
+      exec 9>&-
+      exec bash "$SCRIPT_DIR/update.sh" "${ORIGINAL_ARGS[@]}" --no-pull --yes
     fi
-    return 0
   fi
-  "$@"
-}
-
-# ------------------------------------------------------------------
-# 1) Git checkout — the source checkout gets the pull
-# ------------------------------------------------------------------
-update_checkout() {
-  PULLED=0
-  NEW_REV=""
-  OLD_REV=""
-
-  # legacy: if the install dir itself is a git checkout, pull there
-  if [[ -d "$INSTALL_DIR/.git" ]]; then
-    LEGACY=1
-    info "install dir is a git checkout — pulling there"
-    local branch
-    branch="$(git -C "$INSTALL_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"
-    OLD_REV="$(git -C "$INSTALL_DIR" rev-parse HEAD 2>/dev/null)"
-    local doff
-    doff="git -C $INSTALL_DIR"
-    if [[ "$CHECK" == "1" ]]; then
-      if $doff fetch origin "$branch" >/dev/null 2>&1; then
-        NEW_REV="$($doff rev-parse FETCH_HEAD 2>/dev/null)"
-        local ahead
-        ahead="$($doff rev-list --count "$OLD_REV..$NEW_REV" 2>/dev/null || echo 0)"
-        [[ "$ahead" -gt 0 ]] && { PULLED=1; info "check mode: $ahead commit(s) pending on origin/$branch"; }
-      fi
-    elif git -C "$INSTALL_DIR" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
-      if run "pull" git -C "$INSTALL_DIR" pull --ff-only; then
-        NEW_REV="$(git -C "$INSTALL_DIR" rev-parse HEAD)"
-        [[ "$NEW_REV" != "$OLD_REV" ]] && PULLED=1
-      fi
-    else
-      if run "pull" git -C "$INSTALL_DIR" pull --ff-only origin "$branch"; then
-        NEW_REV="$(git -C "$INSTALL_DIR" rev-parse HEAD)"
-        [[ "$NEW_REV" != "$OLD_REV" ]] && PULLED=1
-      fi
-    fi
-    if [[ "$PULLED" == "0" ]]; then
-      [[ -n "${NEW_REV:-}" && "$NEW_REV" == "$DEPLOYED_REV" ]] && { info "already at latest"; return 0; }
-      NEW_REV="${NEW_REV:-$(git -C "$INSTALL_DIR" rev-parse HEAD 2>/dev/null)}"
-      OLD_REV="$DEPLOYED_REV"
-    fi
-    return 0
-  fi
-
-  # normal mode: pull the source checkout (~/Vizitik)
-  [[ -d "$SRC_DIR/.git" ]] || { err "no git checkout at $SRC_DIR — clone the repo there first"; exit 1; }
-  [[ "$DO_PULL" == "0" ]] && { skip "pull skipped (--no-pull)"; }
-
-  OLD_REV="$(git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null)"
-  if [[ "$DO_PULL" == "1" ]]; then
-    info "source checkout: $SRC_DIR"
-    local branch
-    branch="$(git -C "$SRC_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"
-    if [[ "$CHECK" == "1" ]]; then
-      # read-only: fetch and preview what a real run would pull
-      if git -C "$SRC_DIR" fetch origin "$branch" >/dev/null 2>&1; then
-        NEW_REV="$(git -C "$SRC_DIR" rev-parse FETCH_HEAD 2>/dev/null)"
-        local ahead
-        ahead="$(git -C "$SRC_DIR" rev-list --count "$OLD_REV..$NEW_REV" 2>/dev/null || echo 0)"
-        if [[ "$ahead" -gt 0 ]]; then
-          PULLED=1
-          info "check mode: $ahead commit(s) pending on origin/$branch:"
-          git -C "$SRC_DIR" log --oneline "$OLD_REV..$NEW_REV" | sed 's/^/        /'
-        else
-          info "check mode: up to date with origin/$branch"
-        fi
-      else
-        warn "check mode: could not fetch origin (offline?) — assuming the checkout as-is"
-      fi
-    elif git -C "$SRC_DIR" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
-      if ! run "pull" git -C "$SRC_DIR" pull --ff-only; then
-        err "git pull failed in $SRC_DIR"
-        err "if the VPS has local commits, push or merge them first (git pull refuses to fast-forward)"
-        exit 2
-      fi
-      NEW_REV="$(git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null)"
-      [[ "$NEW_REV" != "$OLD_REV" ]] && { PULLED=1; ok "pulled: $(git -C "$SRC_DIR" log --oneline "$OLD_REV..$NEW_REV" | sed 's/^/        /')"; }
-    else
-      if ! run "pull" git -C "$SRC_DIR" pull --ff-only origin "$branch"; then
-        err "git pull failed in $SRC_DIR (no upstream tracking?)"
-        exit 2
-      fi
-      NEW_REV="$(git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null)"
-      [[ "$NEW_REV" != "$OLD_REV" ]] && { PULLED=1; ok "pulled: $(git -C "$SRC_DIR" log --oneline "$OLD_REV..$NEW_REV" | sed 's/^/        /')"; }
-    fi
-  else
-    NEW_REV="$OLD_REV"
-  fi
-
-  if [[ "$PULLED" == "0" && "${OLD_REV:-}" == "$DEPLOYED_REV" ]]; then
-    info "already at latest"
-    return 0
-  fi
-  # classification base: what was pulled this run (OLD_REV), or when nothing
-  # was pulled, the last recorded deployed revision
-  [[ "$PULLED" == "1" ]] || OLD_REV=""
-}
-
-# ------------------------------------------------------------------
-# 2) Classify changes
-# ------------------------------------------------------------------
-classify_changes() {
-  CHANGED=""
-  if [[ "$FORCE" == "1" ]]; then
-    CHANGED="backend frontend deps schema php landing admin"
-    info "--force: rebuilding all"
-    return 0
-  fi
-  if [[ -z "$NEW_REV" ]]; then
-    CHANGED="none"
-    return 0
-  fi
-  if [[ -z "$OLD_REV" && -z "$DEPLOYED_REV" ]]; then
-    CHANGED="backend frontend"
-    warn "no deployed revision found; rebuilding all"
-    return 0
-  fi
-
-  local base="${OLD_REV:-$DEPLOYED_REV}"
-  local files
-  files="$(git -C "$SRC_DIR" diff --name-only "$base..$NEW_REV" 2>/dev/null || git -C "$INSTALL_DIR" diff --name-only "$base..$NEW_REV" 2>/dev/null)"
-  [[ -z "$files" ]] && { CHANGED="none"; return 0; }
-
-  local parts=()
-  echo "$files" | grep -q '^backend/' && parts+=("backend")
-  echo "$files" | grep -q '^frontend-app/' && parts+=("frontend")
-  echo "$files" | grep -q '^frontend/' && parts+=("php")
-  echo "$files" | grep -q '^landing/' && parts+=("landing")
-  echo "$files" | grep -q '^admin/' && parts+=("admin")
-  echo "$files" | grep -Eq '^backend/package(-lock)?\.json$|^frontend-app/package(-lock)?\.json$' && parts+=("deps")
-  echo "$files" | grep -q '^backend/prisma/schema.prisma' && parts+=("schema")
-  [[ ${#parts[@]} -eq 0 ]] && parts=("none")
-  CHANGED="${parts[*]}"
-  info "changed: $CHANGED"
-
-  if [[ "$CHANGED" != *backend* && "$CHANGED" != *schema* && "$CHANGED" != *deps* ]]; then
-    [[ "$DO_BACKEND" == "1" ]] && skip "no backend changes"
-    DO_BACKEND=0
-  fi
-  if [[ "$CHANGED" != *frontend* && "$CHANGED" != *deps* ]]; then
-    [[ "$DO_FRONTEND" == "1" ]] && skip "no PWA changes"
-    DO_FRONTEND=0
-  fi
-}
-
-# ------------------------------------------------------------------
-# 2b) Sync deployable trees from the source checkout
-# ------------------------------------------------------------------
-sync_trees() {
-  if [[ "$LEGACY" == "1" ]]; then
-    skip "install dir is the checkout — files are in place after the pull"
-    return 0
-  fi
-  log "syncing source trees to $INSTALL_DIR"
-  local t
-  for t in backend frontend-app landing admin; do
-    if [[ ! -d "$SRC_DIR/$t" ]]; then
-      skip "$t (not in checkout)"
-      continue
-    fi
-    local dest="$INSTALL_DIR/$t"
-    if [[ "$CHECK" == "1" ]]; then
-      # --check promises to change nothing, so do not create directories here
-      [[ -d "$dest" ]] || echo "      would create: $dest"
-    else
-      [[ -d "$dest" ]] || mkdir -p "$dest"
-    fi
-
-    # preserve the live .env, node_modules and built dist while replacing the
-    # rest of the tree with the fresh source
-    # (the dist backups from update_backend - backend.dist.*.tgz - are kept too,
-    #  otherwise the rollback copy would be wiped by every sync)
-    run "clean+copy" bash -c "
-      d='$dest'; s='$SRC_DIR/$t';
-      [[ -d \"\$d/node_modules\" ]] && mv \"\$d/node_modules\" \"\$d/.nm.keep\" 2>/dev/null || true;
-      [[ -f \"\$d/.env\" ]] && cp \"\$d/.env\" \"\$d/.env.keep\" 2>/dev/null || true;
-      [[ -d \"\$d/dist\" ]] && mv \"\$d/dist\" \"\$d/.dist.keep\" 2>/dev/null || true;
-      for a in \"\$d\"/backend.dist.*.tgz; do [[ -e \"\$a\" ]] && mv \"\$a\" \"\$a.keep\" 2>/dev/null; done;
-      find \"\$d\" -mindepth 1 -maxdepth 1 ! -name '.nm.keep' ! -name '.env.keep' ! -name '.dist.keep' ! -name '*.tgz.keep' -exec rm -rf {} + 2>/dev/null;
-      cp -r \"\$s/.\" \"\$d/\";
-      [[ -f \"\$d/.env.keep\" ]] && { mv \"\$d/.env.keep\" \"\$d/.env\"; } || rm -f \"\$d/.env.keep\";
-      [[ -d \"\$d/.nm.keep\" ]] && { mv \"\$d/.nm.keep\" \"\$d/node_modules\"; rm -rf \"\$d/node_modules/.vite\"; } || true;
-      [[ -d \"\$d/.dist.keep\" ]] && mv \"\$d/.dist.keep\" \"\$d/dist\" || true;
-      for a in \"\$d\"/*.tgz.keep; do [[ -e \"\$a\" ]] && mv \"\$a\" \"\${a%.keep}\" 2>/dev/null; done;
-      true
-    "
-    [[ "$CHECK" == "1" ]] || ok "$t synced"
+fi
+NEW_REV="$(git -C "$SRC_DIR" rev-parse HEAD)"
+DEPLOYED_REV="$(cat "$INSTALL_DIR/.vizitik-revision" 2>/dev/null || true)"
+if [[ "$FORCE" == 1 || -z "$DEPLOYED_REV" ]] || ! git -C "$SRC_DIR" cat-file -e "$DEPLOYED_REV^{commit}" 2>/dev/null; then
+  files=$'backend/\nfrontend-app/\nadmin/\nlanding/\nscripts/'
+else
+  # Include uncommitted tracked changes and untracked files when --no-pull.
+  files="$(git -C "$SRC_DIR" diff --name-only "$DEPLOYED_REV"; git -C "$SRC_DIR" ls-files --others --exclude-standard)"
+fi
+parts=(); trees=()
+if [[ "$BACKEND" == 1 ]] && grep -q '^backend/' <<< "$files"; then parts+=(backend); trees+=(backend); fi
+if [[ "$FRONTEND" == 1 ]] && grep -q '^frontend-app/' <<< "$files"; then parts+=(frontend); trees+=(frontend-app); fi
+if [[ "$PARTIAL" == 0 ]]; then
+  for tree in admin landing scripts; do
+    if grep -q "^$tree/" <<< "$files"; then parts+=("$tree"); trees+=("$tree"); fi
   done
-
-  # the admin panel runs from backend/admin/server.js (systemd WorkingDirectory)
-  if [[ -f "$SRC_DIR/admin/server.js" && -d "$INSTALL_DIR/backend" ]]; then
-    run "admin script" bash -c "mkdir -p '$INSTALL_DIR/backend/admin' && cp '$SRC_DIR/admin/server.js' '$INSTALL_DIR/backend/admin/server.js'"
-    [[ "$CHECK" == "1" ]] || ok "admin panel script synced"
-  fi
-}
-
-# ------------------------------------------------------------------
-# 3) Memory guard
-# ------------------------------------------------------------------
-memory_guard() {
-  local avail
-  avail="$(awk '/MemAvailable/{r=int($2/1024)} /SwapFree/{s=int($2/1024)} END{print r+s}' /proc/meminfo 2>/dev/null)"
-  avail="${avail:-0}"
-  info "memory available: ${avail} MB"
-  if [[ "$avail" -lt 1200 ]]; then
-    local heap=$(( avail * 6 / 10 ))
-    (( heap < 384 )) && heap=384
-    export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${heap}"
-    warn "tight on memory: heap capped at ${heap} MB"
-  fi
-}
-
-# ------------------------------------------------------------------
-# 4) Builds
-# ------------------------------------------------------------------
-needs_deps() { [[ " $CHANGED " == *" deps "* ]]; }
-
-npm_install_in() {
-  local dir="$1"
-  [[ -d "$dir" ]] || return 0
-  # Fingerprint of the manifest+lock: a stale node_modules (e.g. wiped on the
-  # VPS, or installed from an older package.json) must be reinstalled even
-  # when the pulled diff contains no dependency files.
-  local marker="$INSTALL_DIR/.deps-$(basename "$dir").sha"
-  local hash
-  hash="$(cat "$dir/package.json" "$dir/package-lock.json" 2>/dev/null | sha256sum | cut -d' ' -f1)"
-  if [[ "$hash" != "$(cat "$marker" 2>/dev/null)" || ! -d "$dir/node_modules" ]]; then
-    run "npm" bash -c "cd '$dir' && npm ci --no-audit --no-fund --no-progress --loglevel=error 2>/dev/null || npm install --no-audit --no-fund --no-progress --loglevel=error"
-    [[ "$CHECK" == "1" ]] || echo "$hash" > "$marker"
-  else
-    skip "dependencies unchanged"
-  fi
-}
-
-# `nest build` deletes dist/ before it starts compiling (deleteOutDir in
-# nest-cli.json), so a type error would leave the install without anything to
-# start. Keep the last good build and put it back when the new one fails.
-archive_backend_dist() {
-  local be="$1"
-  [[ -d "$be/dist" ]] || return 0
-  if [[ "$CHECK" == "1" ]]; then
-    echo "      would keep a copy of $be/dist"
-    return 0
-  fi
-  local stamp
-  stamp="$(date +%s)"
-  if tar -C "$be" -czf "$be/backend.dist.$stamp.tgz" dist >/dev/null 2>&1; then
-    info "kept a copy of the current build (backend.dist.$stamp.tgz)"
-  else
-    warn "could not archive $be/dist (continuing without a rollback copy)"
-    return 0
-  fi
-  # keep only the three newest archives
-  local old
-  ls -1t "$be"/backend.dist.*.tgz 2>/dev/null | tail -n +4 | while read -r old; do
-    rm -f "$old"
+fi
+CHANGED="${parts[*]}"
+echo "changed: ${CHANGED:-none}"
+if [[ "$CHECK" == 1 ]]; then
+  echo 'check mode: offline preview of the current checkout; no fetch, copy, database or service changes'
+  [[ "$RESTART" == 0 ]] || echo 'would restart services and require /api/health HTTP 200'
+  for tree in "${trees[@]}"; do
+    echo "would stage $tree"
+    [[ "$tree" != backend && "$tree" != frontend-app ]] || echo "would npm ci --include=dev and build $tree in staging"
   done
+  [[ -n "$CHANGED" ]] && echo 'would back up DB + .env before activation; abort on any backup/schema/build/health error'
+  [[ -n "$CHANGED" || "$RESTART" == 1 ]] || echo 'nothing changed'
+  exit 0
+fi
+# Read only non-secret deployment values. Never source/eval a dotenv file.
+read_setting() {
+  python3 - "$SCRIPT_DIR" "$INSTALL_DIR/backend/.env" "$1" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from importlib.machinery import SourceFileLoader
+module = SourceFileLoader('backup', sys.argv[1] + '/database-backup.py').load_module()
+print(module.read_env(sys.argv[2]).get(sys.argv[3], ''))
+PY
 }
-
-restore_backend_dist() {
-  local be="$1" newest
-  newest="$(ls -1t "$be"/backend.dist.*.tgz 2>/dev/null | head -1)"
-  [[ -n "$newest" ]] || return 1
-  rm -rf "$be/dist"
-  if tar -C "$be" -xzf "$newest" >/dev/null 2>&1 && [[ -f "$be/dist/main.js" ]]; then
-    warn "backend build failed - restored the previous build from $(basename "$newest")"
-    return 0
-  fi
+BACKEND_PORT="${BACKEND_PORT:-$(read_setting PORT)}"; BACKEND_PORT="${BACKEND_PORT:-3000}"
+ADMIN_PORT="${ADMIN_PORT:-$(read_setting ADMIN_PORT)}"; ADMIN_PORT="${ADMIN_PORT:-3001}"
+BACKUP_DIR="${BACKUP_DIR:-$(read_setting BACKUP_DIR)}"; BACKUP_DIR="${BACKUP_DIR:-/var/backups/vizitik}"
+health() {
+  local i
+  for i in {1..30}; do
+    if curl --fail --silent --max-time 3 "http://127.0.0.1:$BACKEND_PORT/api/health" | grep -q '"db":"ok"'; then return 0; fi
+    sleep 1
+  done
   return 1
 }
-
-update_backend() {
-  [[ "$DO_BACKEND" == "1" ]] || return 0
-  log "backend"
-  local be="$INSTALL_DIR/backend"
-  npm_install_in "$be" || exit 1
-
-  if [[ " $CHANGED " == *" schema "* ]] || [[ ! -d "$be/node_modules/.prisma" ]]; then
-    run "prisma generate" bash -c "cd '$be' && npx prisma generate"
-  fi
-  if [[ " $CHANGED " == *" schema "* ]]; then
-    run "prisma db push" bash -c "cd '$be' && npx prisma db push --skip-generate"
-  fi
-
-  archive_backend_dist "$be"
-  if ! run "build" bash -c "cd '$be' && npm run build"; then
-    err "backend build failed"
-    if restore_backend_dist "$be"; then
-      if have systemctl && systemctl list-unit-files "$SETUP_SVC.service" >/dev/null 2>&1; then
-        run systemctl restart "$SETUP_SVC"
-        sleep 2
-        if systemctl is-active --quiet "$SETUP_SVC"; then
-          ok "$SETUP_SVC is serving the previous build again"
-        else
-          warn "$SETUP_SVC did not come back up - check: journalctl -u $SETUP_SVC -n 30"
-        fi
-      fi
-      echo "      the TypeScript errors above are the cause; fix them and run update.sh again"
+health_admin() {
+  systemctl cat vizitik-admin.service >/dev/null 2>&1 || return 0
+  local i
+  for i in {1..15}; do
+    if curl --fail --silent --max-time 3 "http://127.0.0.1:$ADMIN_PORT/api/health" | grep -q '"ok":true'; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
+restart_services() {
+  systemctl restart vizitik-backend
+  if systemctl cat vizitik-admin.service >/dev/null 2>&1; then systemctl restart vizitik-admin; fi
+}
+if [[ "$RESTART" == 1 ]]; then restart_services; health || fail 'API/database health check failed'; health_admin || fail 'admin health check failed'; exit 0; fi
+[[ -n "$CHANGED" ]] || { echo 'nothing changed'; health || fail 'API/database is unhealthy'; exit 0; }
+command -v rsync >/dev/null || fail 'install rsync first'
+# Keep staging on the same filesystem so renames are atomic per tree.
+STAGE="$(mktemp -d "$INSTALL_DIR/.update.XXXXXXXX")"
+activated=(); SUCCESS=0; SERVICES_STOPPED=0; NGINX_CHANGED=0; CRON_CHANGED=0
+cleanup() {
+  local rc=$? tree
+  trap - EXIT INT TERM
+  if [[ "$SUCCESS" == 0 && "$CRON_CHANGED" == 1 ]]; then
+    cp -p "$STAGE/cron.previous" /etc/cron.d/vizitik-backup
+    if [[ -f "$STAGE/backup-wrapper.previous" ]]; then
+      cp -p "$STAGE/backup-wrapper.previous" /usr/local/sbin/vizitik-backup
     else
-      err "no previous build to restore - the API stays down until the build succeeds"
-      echo "      rebuild manually:  cd $be && npm run build"
-    fi
-    exit 1
-  fi
-  ok "backend built"
-}
-
-update_frontend() {
-  [[ "$DO_FRONTEND" == "1" ]] || return 0
-  log "PWA frontend"
-  local fe="$INSTALL_DIR/frontend-app"
-  local tmp="$INSTALL_DIR/.frontend-app.new"
-  run "clean" rm -rf "$tmp"
-  run "copy" bash -c "mkdir -p '$tmp' && tar -C '$fe' --exclude=./node_modules --exclude=./dist -cf - . | tar -C '$tmp' -xf -"
-  npm_install_in "$tmp" || exit 1
-
-  if ! run "vite build" bash -c "cd '$tmp' && npm run build"; then
-    err "PWA build failed"
-    run "clean" rm -rf "$tmp"
-    exit 1
-  fi
-
-  if [[ "$CHECK" == "1" ]]; then
-    echo "      would swap: $tmp/dist -> $fe/dist (old dist kept as dist.prev until success)"
-    return 0
-  fi
-
-  local prev="$INSTALL_DIR/frontend-app/dist.prev"
-  mv "$fe/dist" "$prev" 2>/dev/null || true
-  mv "$tmp/dist" "$fe/dist" || { mv "$prev" "$fe/dist" 2>/dev/null || true; err "PWA swap failed"; exit 1; }
-  rm -rf "$tmp" "$prev"
-  ok "PWA rebuilt"
-}
-
-# ------------------------------------------------------------------
-# 5) Service restart
-# ------------------------------------------------------------------
-restart_service() {
-  # --check must not touch services: it only previews what would happen
-  local need_restart=0
-  [[ "$RESTART_ONLY" == "1" || "$DO_BACKEND" == "1" ]] && need_restart=1
-  [[ " $CHANGED " == *" admin "* ]] && need_restart=1
-  [[ "$need_restart" == "1" ]] || return 0
-  if [[ "$CHECK" == "1" ]]; then
-    log "restarting services"
-    [[ "$DO_BACKEND" == "1" || "$RESTART_ONLY" == "1" ]] && echo "      would run: systemctl restart $SETUP_SVC"
-    [[ "$RESTART_ONLY" == "1" ]] && echo "      would run: systemctl restart $ADMIN_SVC"
-    return 0
-  fi
-  log "restarting services"
-
-  if have systemctl; then
-    if [[ "$DO_BACKEND" == "1" || "$RESTART_ONLY" == "1" ]]; then
-      # Stop any stray processes on the port
-      local pids
-      pids="$(ss -ltnp 2>/dev/null | awk -v port=":$BACKEND_PORT" '$4 ~ port"$" {print}' | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | sort -u)"
-      local main
-      main="$(systemctl show -p MainPID "$SETUP_SVC" 2>/dev/null | cut -d= -f2)"
-      local strays=""
-      for p in $pids; do
-        [[ "$p" == "$main" ]] || strays+="$p "
-      done
-      if [[ -n "${strays// /}" ]]; then
-        info "stopping stray processes"
-        kill $strays 2>/dev/null || true
-        sleep 1
-      fi
-
-      run "restart" systemctl restart "$SETUP_SVC"
-      sleep 2
-      if systemctl is-active --quiet "$SETUP_SVC"; then
-        ok "$SETUP_SVC is active"
-      else
-        err "$SETUP_SVC failed to start"
-        journalctl -u "$SETUP_SVC" -n 20 --no-pager 2>/dev/null | sed 's/^/        /'
-        exit 1
-      fi
-    fi
-
-    if [[ " $CHANGED " == *" admin "* || "$RESTART_ONLY" == "1" ]] && systemctl is-active --quiet "$ADMIN_SVC" 2>/dev/null; then
-      run "restart admin" systemctl restart "$ADMIN_SVC"
-      ok "$ADMIN_SVC restarted"
-    fi
-  else
-    warn "no systemctl; restart the services manually"
-  fi
-}
-
-# ------------------------------------------------------------------
-# 6) Verification
-# ------------------------------------------------------------------
-verify() {
-  [[ "$CHECK" == "1" ]] && return 0
-  log "verification"
-
-  if have curl; then
-    local code
-    code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "http://127.0.0.1:${BACKEND_PORT}/" 2>/dev/null)"
-    if [[ "$code" =~ ^[0-9]{3}$ && "$code" != "000" ]]; then
-      ok "API responds on port $BACKEND_PORT (http $code)"
-    else
-      warn "API did not respond on port $BACKEND_PORT"
+      rm -f /usr/local/sbin/vizitik-backup
     fi
   fi
-
-  if [[ -n "$NEW_REV" ]]; then
-    echo "$NEW_REV" > "$REVISION_FILE" 2>/dev/null
-    ok "revision recorded: $(echo "$NEW_REV" | cut -c1-7)"
+  if [[ "$SUCCESS" == 0 && "$NGINX_CHANGED" == 1 ]]; then
+    cp -p "$STAGE/nginx.previous" /etc/nginx/sites-available/vizitik
+    nginx -t && systemctl reload nginx || true
   fi
+  if [[ "$SUCCESS" == 0 && ${#activated[@]} -gt 0 ]]; then
+    echo 'Activation failed: restoring previous application files (database is NOT reset)' >&2
+    systemctl stop vizitik-backend vizitik-admin 2>/dev/null || true
+    for ((i=${#activated[@]}-1; i>=0; i--)); do
+      tree="${activated[i]}"
+      rm -rf "${INSTALL_DIR:?}/$tree"
+      [[ ! -d "$STAGE/previous/$tree" ]] || mv "$STAGE/previous/$tree" "$INSTALL_DIR/$tree"
+    done
+    if [[ -d "$INSTALL_DIR/admin" ]]; then
+      mkdir -p "$INSTALL_DIR/backend/admin"
+      cp "$INSTALL_DIR/admin/"*.js "$INSTALL_DIR/backend/admin/" || true
+    fi
+    restart_services || true
+    echo "Inspect logs and the pre-update backup in $BACKUP_DIR. Schema changes are not automatically reversed." >&2
+  fi
+  if [[ "$SUCCESS" == 0 && "$SERVICES_STOPPED" == 1 && ${#activated[@]} == 0 ]]; then restart_services || true; fi
+  rm -rf "$STAGE"
+  exit "$rc"
 }
-
-# ------------------------------------------------------------------
-# Main
-# ------------------------------------------------------------------
-main() {
-  if [[ "$CHECK" == "1" ]]; then
-    echo -e "\033[1;33m  check mode: nothing will be changed\033[0m"
-  elif [[ "$(id -u)" -ne 0 ]]; then
-    err "run as root: sudo bash scripts/update.sh"
-    exit 1
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+mkdir "$STAGE/previous"
+for tree in "${trees[@]}"; do
+  mkdir "$STAGE/$tree"
+  rsync -a --exclude=node_modules --exclude=dist --exclude='.env' --exclude='.env.*' --exclude='*.tgz' "$SRC_DIR/$tree/" "$STAGE/$tree/"
+  # Preserve all deployment-specific dotenv variants; never copy checkout secrets.
+  if [[ -d "$INSTALL_DIR/$tree" ]]; then
+    while IFS= read -r -d '' config; do cp -p "$config" "$STAGE/$tree/"; done < <(find "$INSTALL_DIR/$tree" -maxdepth 1 -name '.env*' -type f -print0)
   fi
-
-  log "Update - $(date '+%Y-%m-%d %H:%M')"
-  NEW_REV=""; OLD_REV=""
-  update_checkout
-  classify_changes
-
-  if [[ "$RESTART_ONLY" == "1" ]]; then
-    restart_service || exit 1
-    verify
-    exit 0
+  if [[ "$tree" == backend || "$tree" == frontend-app ]]; then
+    (cd "$STAGE/$tree"; npm ci --include=dev --no-audit --no-fund
+      if [[ "$tree" == backend ]]; then npx prisma generate; fi
+      npm run build)
   fi
-
-  if [[ "$CHANGED" == "none" || -z "$CHANGED" ]]; then
-    log "nothing changed"
-    ok "already running $(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || git -C "$INSTALL_DIR" rev-parse --short HEAD 2>/dev/null)"
-    verify
-    exit 0
-  fi
-
-  # sync the deployable trees so the build runs against fresh sources
-  sync_trees
-
-  memory_guard
-  update_backend
-  update_frontend
-  restart_service || exit 1
-  verify || exit 1
-
-  log "done"
-  echo "  hard reload (Ctrl+Shift+R) to pick up the new build"
-}
-
-main "$@"
+done
+python3 "$SCRIPT_DIR/database-backup.py" --env "$INSTALL_DIR/backend/.env" --output "$BACKUP_DIR" --reason pre-update
+if [[ -d "$STAGE/backend" ]]; then
+  # No --accept-data-loss / --force-reset, and any error aborts the update.
+  (cd "$STAGE/backend"; env -u DATABASE_URL npx prisma db push --skip-generate)
+fi
+# Stop writers only for the short activation window. Backups use consistent snapshots.
+SERVICES_STOPPED=1
+systemctl stop vizitik-backend
+if systemctl cat vizitik-admin.service >/dev/null 2>&1; then systemctl stop vizitik-admin; fi
+for tree in "${trees[@]}"; do
+  [[ ! -d "$INSTALL_DIR/$tree" ]] || mv "$INSTALL_DIR/$tree" "$STAGE/previous/$tree"
+  activated+=("$tree")
+  mv "$STAGE/$tree" "$INSTALL_DIR/$tree"
+done
+if [[ -d "$INSTALL_DIR/admin" ]]; then
+  mkdir -p "$INSTALL_DIR/backend/admin"
+  cp "$INSTALL_DIR/admin/"*.js "$INSTALL_DIR/backend/admin/"
+fi
+restart_services
+health || fail 'API/database health check failed after activation'
+health_admin || fail 'admin service health check failed'
+# Upgrade legacy backup cron and the upload limit without rewriting TLS config.
+if [[ "$PARTIAL" == 0 && -f /etc/nginx/sites-available/vizitik ]] && systemctl cat vizitik-admin.service >/dev/null 2>&1; then
+  cp -p /etc/nginx/sites-available/vizitik "$STAGE/nginx.previous"
+  NGINX_CHANGED=1
+  python3 "$SCRIPT_DIR/configure-backup-proxy.py" /etc/nginx/sites-available/vizitik "$ADMIN_PORT"
+  nginx -t
+  systemctl reload nginx
+fi
+if [[ "$PARTIAL" == 0 && -f /etc/cron.d/vizitik-backup ]]; then
+  cp -p /etc/cron.d/vizitik-backup "$STAGE/cron.previous"
+  [[ ! -f /usr/local/sbin/vizitik-backup ]] || cp -p /usr/local/sbin/vizitik-backup "$STAGE/backup-wrapper.previous"
+  CRON_CHANGED=1
+  bash "$SCRIPT_DIR/install-backup-cron.sh" "$INSTALL_DIR" "$BACKUP_DIR"
+fi
+# Only record clean, full deployments; otherwise a later update must reconsider files.
+if [[ "$PARTIAL" == 0 && -z "$(git -C "$SRC_DIR" status --porcelain)" ]]; then
+  printf '%s\n' "$NEW_REV" > "$INSTALL_DIR/.vizitik-revision.new"
+  mv "$INSTALL_DIR/.vizitik-revision.new" "$INSTALL_DIR/.vizitik-revision"
+fi
+SUCCESS=1
+echo 'Update successful; database health verified. Pre-update backup retained.'

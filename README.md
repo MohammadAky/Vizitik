@@ -102,7 +102,7 @@
 ## 🛠 راهنمای راه‌اندازی سریع
 
 ### ۱. پیش‌نیازها
-- Node.js نسخه 18 یا بالاتر
+- Node.js نسخه 22 یا بالاتر
 - PHP نسخه 8.0 یا بالاتر به همراه اکستنشن‌های `curl` و `json`
 - دیتابیس MySQL / MariaDB
 
@@ -119,13 +119,15 @@ npm install
 
 # ۳. تنظیم متغیرهای محیطی — یک فایل .env در پوشهٔ بک‌اند
 #    (همین‌جا داخل backend/ هستیم؛ دیگر لازم نیست دوباره cd بزنی)
-cp .env.example .env
+test -f .env || cp .env.example .env
 # DATABASE_URL، JWT_SECRET، ADMIN_TOKEN و BALE_BOT_TOKEN را در backend/.env پر کنید
 # (متغیرهای بیلد PWA مثل VITE_API_URL جدا، در frontend-app/.env هستند؛
 #  نمونه‌اش: frontend-app/.env.example)
 
-# ۴. اجرای مایگریشن‌های پریزما و ساخت جداول
-npx prisma db push
+# ۴. برای دیتابیس موجود ابتدا بکاپ بگیرید؛ مسیر توصیه‌شده از ریشه:
+# bash scripts/setup-local.sh
+npx prisma generate
+# db push فقط پس از بکاپ؛ هرگز --accept-data-loss یا --force-reset نزنید
 
 # ۵. اجرای سرور بک‌اند در حالت توسعه
 npm run start:dev
@@ -169,51 +171,53 @@ php -S localhost:8000
 
 ---
 
-## 🧰 اسکریپت‌های مخزن
-هر سه اسکریپت قابل اجرا از ریشهٔ مخزن‌اند و متن کنسولشان انگلیسی/ASCII است:
+## 🧰 نصب، اجرا و آپدیت امن
 
-| فایل | چه کار می‌کند | کِی اجرا می‌شود |
-|---|---|---|
-| `scripts/deploy.sh` | اولین استقرار: اول پروسه/سرویس‌های جا‌مانده (سرویس قبلی، pm2، `node dist/main.js`، `php -S`، `certbot` گیرکرده، Apache پنل هاست روی پورت ۸۰) را می‌بندد، RAM/disk و رکوردهای DNS را چک می‌کند، `git pull` می‌زند و بعد `setup-server.sh` را صدا می‌کند | یک بار روی سرور تازه؛ یا هر وقت خواستی از صفرِ تمیز بروی |
-| `scripts/setup-server.sh` | همه‌چیزِ سرور: پیش‌نیازها، MariaDB و ایمپورت `documents/hesabchin.sql`، کپی به `/opt/vizitik`، بیلد بک‌اند و PWA، سرویس systemd، vhost نگینکس، گواهی Let's Encrypt، UFW، کرون بکاپ؛ swap لازم را می‌سازد و خطای certbot را طبقه‌بندی می‌کند | فقط از داخل `deploy.sh` (یا مستقیم اگر می‌دانی چه می‌کنی) |
-| `scripts/update.sh` | **اپدیت بعد از هر تغییر کد**: `git pull`، تشخیص اینکه diff به کدام سمت خوردہ، بیلد همان سمت، تعویض atomic نسخهٔ PWA، ری‌استارت سرویس، تست سلامت، و در شکست بازگشت به بیلد قبلی | هر بار که چیزی را push می‌کنی |
+> **مهم:** فایل `documents/hesabchin.sql` حاوی `DROP TABLE` است؛ آن را روی دیتابیس موجود اجرا نکنید.
+> نصب و آپدیت جدید آن را ایمپورت نمی‌کنند و `.env` موجود را بازنویسی نمی‌کنند.
+
+| کار | دستور از ریشهٔ مخزن |
+|---|---|
+| نصب لوکال و اجرا | `bash scripts/setup-local.sh --run` |
+| اجرای مجدد لوکال | `bash scripts/run-dev.sh` |
+| نصب سرور Ubuntu/Debian | `sudo bash scripts/setup-server.sh` |
+| آپدیت سرور | `sudo bash scripts/update.sh` |
+| پیش‌نمایش آپدیت، بدون تغییر/شبکه | `bash scripts/update.sh --check` |
+| فقط راه‌اندازی مجدد سرویس‌ها | `sudo bash scripts/update.sh --restart-only` |
+
+اجرای اول لوکال `.env` و کلیدهای تصادفی را می‌سازد و متوقف می‌شود؛ `DATABASE_URL` را برای
+یک دیتابیس موجود تنظیم کنید و دوباره اجرا کنید. Node 22+، Python 3، MariaDB/MySQL و
+ابزار `mariadb-dump` یا `mysqldump` لازم است. PWA روی 5173 با پراکسی هم‌ریشهٔ `/api` اجرا می‌شود.
+
+آپدیت ابتدا در پوشهٔ موقت بیلد می‌کند؛ سپس بکاپ دیتابیس و تنظیمات می‌گیرد. شکست بکاپ یا
+تغییر مخرب اسکیما، عملیات را متوقف می‌کند. شکست فعال‌سازی/سلامت، فایل‌ها و وابستگی‌های نسخهٔ قبلی
+را برمی‌گرداند؛ **اسکیما به‌صورت خودکار به عقب برنمی‌گردد**. نسخه فقط پس از موفقیت کامل ثبت می‌شود.
+`--force` برای بازسازی کامل و `--no-pull` برای کد موجود در checkout است. آپدیت جزئی نسخهٔ سراسری را جلو نمی‌برد.
+
+`deploy.sh` فقط نام سازگارِ نصب سرور است؛ `--full-reset` و `--only-clean` عمداً حذف شده‌اند.
+
+### بکاپ و تست
+
+پنل ادمین خروجی `.vizitik.json.gz` می‌دهد: بکاپ داده‌ای نسخه‌دار، بازیابی تراکنشی، و بکاپ
+احتیاطی قبل از جایگزینی. فایل SQL/GZIP قدیمی را در پنل جدید آپلود نکنید؛ اول آفلاین بررسی شود.
+بکاپ شبانهٔ SQL و کپی `.env` در `/var/backups/vizitik`، با مجوز 600 نگهداری می‌شوند.
+بکاپ روی همان سرور کافی نیست؛ نسخهٔ رمزگذاری‌شدهٔ خارج از سرور هم نگه دارید.
 
 ```bash
-# روی سرور، بعد از هر push
-sudo bash scripts/update.sh              # pull + بیلد همان چیزی که عوض شده + ری‌استارت
-sudo bash scripts/update.sh --check      # فقط بگو چه کاری انجام می‌دهی
-sudo bash scripts/update.sh --restart-only
-sudo bash scripts/update.sh --force-deps # اگر package-lock تغییر کرده ولی بیلد نصب نگه داشته
+(cd backend && npm ci --include=dev && npx prisma generate && npm run build)
+node --test admin/tests/backup.test.js
+python3 scripts/tests/database-backup.py
+python3 scripts/tests/setup-safety.py
+python3 scripts/tests/proxy-config.py
+python3 scripts/tests/update-regression.py
+python3 scripts/tests/update-rollback.py
+python3 scripts/tests/backend-typecheck.py
 ```
 
-> **اگر بیلد بک‌اند بشکند، سرویس نمی‌میرد:** `nest build` قبل از کامپایل `dist/` را پاک
-> می‌کند، پس `update.sh` یک کپی از بیلد سالم قبلی (`backend.dist.<زمان>.tgz`) نگه می‌دارد
-> و در صورت شکست همان را برمی‌گرداند و سرویس را روی نسخهٔ قبلی بالا می‌آورد. سه نسخهٔ آخر
-> نگه داشته می‌شوند.
-
-**تست‌ها** (بدون سرور و بدون سرویس اجرا می‌شوند، همه باید PASS بدهند):
-```bash
-python3 scripts/tests/update-regression.py   # تشخیص تغییرات update.sh روی یک checkout موقت
-python3 scripts/tests/update-rollback.py     # نگه‌داشتن/برگرداندن بیلد سالم بک‌اند
-python3 scripts/tests/backend-typecheck.py   # خطای TS2345 «unknown» برنگردد
-node    admin/tests/regression.cjs           # پنل ادمین
-```
-
-## 🚢 استقرار روی سرور (Ubuntu / Debian)
-یک اسکریپت همه‌چیز را انجام می‌دهد؛ `deploy.sh` اول پروسه‌ها و سرویس‌های جا‌مانده از
-اجراهای قبلی را می‌بندد، سرویس‌های پنل هاست که پورت ۸۰ را گرفته‌اند (مثل Apache) را
-غیرفعال می‌کند، حافظه/دیِسک را چک می‌کند، `git pull` می‌زند و بعد `setup-server.sh`
-را صدا می‌کند (نصب MariaDB، بیلد بک‌اند و PWA، سرویس systemd، نگینکس، گواهی SSL،
-UFW و بکاپ شبانه):
-```bash
-sudo bash scripts/deploy.sh                    # تعاملی؛ تک‌تک مقدارها را می‌پرسد
-bash scripts/deploy.sh --dry-run               # (بدون root) فقط گزارش: چه چیزی بسته می‌شود و چه تنظیمی اعمال می‌شود
-sudo bash scripts/deploy.sh --only-clean       # بستن اجراهای قبلی، بدون deploy
-sudo bash scripts/deploy.sh --yes --full-reset # + پاک‌کردن /opt/vizitik و vhost (دیتابیس و گواهی می‌مانند)
-```
-- راهنمای کامل: `docs/DEPLOY-UBUNTU.md`
-- گرفتن گواهی SSL از مسیر کلودفلر (رکوردها، توکن API، حالت SSL، عیب‌یابی ۵۲۱/۵۲۲/۵۲۵):
-  `docs/CLOUDFLARE-SSL.md`
+تست واقعی MariaDB و ورود HTTP در `admin/tests/integration.test.js` نگهداری شده و باید
+دستی اجرا شود؛ اجرای خودکار CI در این نسخه فعال نیست. دستور اجرا و محدودیت‌ها در
+[راهنمای نصب و بازیابی](docs/DEPLOY-UBUNTU.md) آمده‌اند.
+برای SSL کلودفلر: [CLOUDFLARE-SSL.md](docs/CLOUDFLARE-SSL.md).
 
 ## 🤖 یکپارچه‌سازی با ربات بله (Bale Messenger Bot)
 ### مسیر درستِ کد تایید (ثبت‌نام و بازیابی رمز)

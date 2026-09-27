@@ -16,8 +16,9 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const zlib = require('zlib');
-const { PrismaClient } = require('@prisma/client');
+const { createBackup, restoreBackup } = require('./backup');
+// Reuse the generated backend client in a checkout and in the server layout.
+const { PrismaClient } = require(require.resolve('@prisma/client', { paths: [path.join(__dirname, '../backend'), path.join(__dirname, '..')] }));
 
 // ------------------------------------------------------------------
 // Environment: backend/.env is the single source of truth for the
@@ -25,32 +26,18 @@ const { PrismaClient } = require('@prisma/client');
 // backend/.env.example). Values already set (systemd EnvironmentFile,
 // shell) always win.
 // ------------------------------------------------------------------
-function loadEnvFile(file) {
-  let lines = [];
-  try { lines = fs.readFileSync(file, 'utf8').split(/\r?\n/); } catch { return; }
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#')) continue;
-    const eq = line.indexOf('=');
-    if (eq <= 0) continue;
-    const key = line.slice(0, eq).trim();
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || process.env[key] !== undefined) continue;
-    let val = line.slice(eq + 1).trim();
-    if (val.length > 1 && ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'")))) val = val.slice(1, -1);
-    process.env[key] = val;
-  }
-}
+const dotenv = require(require.resolve('dotenv', { paths: [path.join(__dirname, '../backend'), path.join(__dirname, '..')] }));
 // the script runs from admin/ in a checkout and from backend/admin/ on the
 // server - both layouts resolve to the same backend/.env
 const backendEnv = [
   path.join(__dirname, '..', 'backend', '.env'),  // checkout: repo/admin → repo/backend/.env
   path.join(__dirname, '..', '.env'),             // server:   backend/admin → backend/.env
 ].find((f) => fs.existsSync(f));
-if (backendEnv) loadEnvFile(backendEnv);
+if (backendEnv) dotenv.config({ path: backendEnv });
 
 // Port: on the server the panel and the API share backend/.env, which contains
 // the API's PORT (3000) - so ADMIN_PORT must win over PORT there.
-const PORT = parseInt(process.env.ADMIN_PORT || process.env.PORT || '3001', 10);
+const PORT = parseInt(process.env.ADMIN_PORT || '3001', 10);
 // Stays 127.0.0.1 by default (only nginx may reach it). Set HOST=0.0.0.0 to expose it.
 const HOST = process.env.HOST || '127.0.0.1';
 const TOKEN = process.env.ADMIN_TOKEN || '';
@@ -111,7 +98,7 @@ function authorized(req) {
   return crypto.timingSafeEqual(a, b);
 }
 
-function readBody(req, max) {
+function readBody(req, max, binary = false) {
   // Reads the whole body and reports it. An oversized body is *drained*, not
   // destroyed: destroying the socket mid-request makes nginx answer
   // "502 Bad Gateway" instead of delivering our 413 JSON to the client.
@@ -124,7 +111,7 @@ function readBody(req, max) {
       if (size > max) tooLarge = true;
       else chunks.push(c);
     });
-    req.on('end', () => resolve({ body: Buffer.concat(chunks).toString('utf8'), tooLarge }));
+    req.on('end', () => resolve({ body: (binary ? Buffer.concat(chunks) : Buffer.concat(chunks).toString('utf8')), tooLarge }));
     req.on('error', reject);
   });
 }
@@ -262,115 +249,10 @@ function guardSql(raw, allowWrite = false) {
   return { ok: false, error: 'نوع کوئری پشتیبانی نمی‌شود. فقط SELECT, INSERT, UPDATE, DELETE, SHOW, DESCRIBE مجاز هستند.' };
 }
 
-// ============================================================ Backup / Restore (ZIP)
-
-const ALLOWED_BACKUP_TABLES = [
-  'users', 'products', 'user_products', 'customers',
-  'customer_ledger', 'van_inventory', 'orders', 'order_items',
-  'order_discount_steps', 'payments', 'checks',
-  'invoice_settings', 'invoice_counters'
-];
-
-/**
- * گرفتن خروجی ZIP از تمام دیتابیس — یک فایل SQL زیپ‌شده که شامل
- * (CREATE TABLE IF NOT EXISTS ... ) + INSERT INTO برای همه جداول است.
- * خروجی به صورت raw SQL dump در یک gzip است که با .zip سرور می‌رود.
- */
-async function createDatabaseZip() {
-  // Get list of tables, filtered to our allowlist
-  const allTables = await prisma.$queryRawUnsafe(
-    'SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME'
-  );
-  const filtered = (allTables || []).filter(t => ALLOWED_BACKUP_TABLES.includes(t.name));
-
-  const parts = [];
-  parts.push('-- Vizitik database backup\n');
-  parts.push(`-- Generated: ${new Date().toISOString()}\n`);
-  parts.push(`-- Database: ${process.env.DB_NAME || 'vizitik_db'}\n`);
-  parts.push('--\n\n');
-
-  for (const tbl of filtered) {
-    // 1) CREATE TABLE
-    const [createRow] = await prisma.$queryRawUnsafe(`SHOW CREATE TABLE \`${tbl}\``);
-    const createStmt = createRow['Create Table'];
-    parts.push(`${createStmt};\n\n`);
-
-    // 2) INSERT statements
-    const rows = await prisma.$queryRawUnsafe(`SELECT * FROM \`${tbl}\``);
-    if (rows && rows.length > 0) {
-      const columns = Object.keys(rows[0]);
-      for (const row of rows) {
-        const values = columns.map(col => {
-          const val = row[col];
-          if (val === null || val === undefined) return 'NULL';
-          if (val instanceof Date) return `'${val.toISOString().replace('T', ' ').replace('Z', '')}'`;
-          if (typeof val === 'number') return val;
-          if (Buffer.isBuffer(val)) return `'${val.toString('hex')}'`;
-          // escape string
-          return `'${String(val).replace(/'/g, "''")}'`;
-        });
-        parts.push(`INSERT INTO \`${tbl}\` (${columns.map(c => `\`${c}\``).join(', ')}) VALUES (${values.join(', ')});\n`);
-      }
-      parts.push('\n');
-    }
-  }
-
-  const sqlBuffer = Buffer.from(parts.join(''), 'utf8');
-  const gzipBuffer = zlib.gzipSync(sqlBuffer);
-  return gzipBuffer;
-}
-
-/**
- * بازیابی دیتابیس از یک فایل SQL (برداشته‌شده از ZIP/gzip).
- * ابتدا DROP TABLE‌های موجود در لیست را می‌زند، سپس SQL را اجرا می‌کند.
- */
-async function restoreDatabaseFromSql(sqlBuffer) {
-  // Decompress if gzip
-  let sql;
-  try {
-    sql = zlib.gunzipSync(sqlBuffer).toString('utf8');
-  } catch {
-    // not gzipped, use as-is
-    sql = sqlBuffer.toString('utf8');
-  }
-
-  const errors = [];
-  const statements = sql.split(/;\s*\n/).filter(s => s.trim());
-
-  for (const stmt of statements) {
-    const trimmed = stmt.trim();
-    if (!trimmed || trimmed.startsWith('--')) continue;
-
-    const isCreate = /^CREATE\s+TABLE/i.test(trimmed);
-    const isDrop = /^DROP\s+TABLE/i.test(trimmed);
-
-    if (isDrop) {
-      // Only allow DROP for tables in our allowlist
-      const match = trimmed.match(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?`?(\w+)`?/i);
-      if (match && ALLOWED_BACKUP_TABLES.includes(match[1])) {
-        await prisma.$executeRawUnsafe(trimmed);
-      }
-      continue;
-    }
-
-    if (isCreate) {
-      await prisma.$executeRawUnsafe(trimmed);
-      continue;
-    }
-
-    // INSERT statements
-    if (/^INSERT\s+INTO/i.test(trimmed)) {
-      try {
-        await prisma.$executeRawUnsafe(trimmed);
-      } catch (err) {
-        // collect but continue
-        errors.push(`${trimmed.substring(0, 120)}... → ${err.message}`);
-      }
-    }
-  }
-
-  return errors;
-}
+// Never place safety backups in the web-served admin/ directory.
+const BACKUP_DIR = process.env.BACKUP_DIR || (process.env.NODE_ENV === 'production'
+  ? '/var/backups/vizitik' : path.resolve(__dirname, '..', '.backups'));
+let backupBusy = false;
 
 // ============================================================ Schema Introspection
 
@@ -1000,44 +882,33 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { data: csvRows.join('\n'), format, rowCount: clean.length });
     }
 
-      // ============================================================ Database ZIP Backup / Restore
-
-      // Download full database as ZIP (SQL dump gzipped)
-      if (urlPath === '/api/export/zip' && req.method === 'GET') {
-        try {
-          const zipBuffer = await createDatabaseZip();
-          res.writeHead(200, {
-            'Content-Type': 'application/zip',
-            'Content-Disposition': `attachment; filename="vizitik-backup-${new Date().toISOString().slice(0, 10)}.zip"`,
-            'Content-Length': zipBuffer.length,
-            'Cache-Control': 'no-store'
-          });
-          res.end(zipBuffer);
-        } catch (err) {
-          console.error('[admin] Backup error:', err);
-          return sendJson(res, 500, { error: 'خطا در تهیه‌ی پشتیبان: ' + err.message });
-        }
-      }
-
-      // Upload and restore database from ZIP
-      if (urlPath === '/api/import/zip' && req.method === 'POST') {
-        const { body: raw, tooLarge } = await readBody(req, MAX_BODY_ZIP);
-        if (tooLarge) return sendJson(res, 413, { error: 'فایل ZIP بیش از حد بزرگ است (حداکثر ۵۰ مگابایت)' });
-
-        try {
-          const errors = await restoreDatabaseFromSql(Buffer.from(raw, 'binary'));
-          if (errors.length > 0) {
-            return sendJson(res, 207, {
-              message: `بازیابی با ${errors.length} خطا جزئی انجام شد`,
-              errors: errors.slice(0, 5)
-            });
-          }
-          return sendJson(res, 200, { message: 'بازیابی دیتابیس با موفقیت انجام شد' });
-        } catch (err) {
-          console.error('[admin] Restore error:', err);
-          return sendJson(res, 500, { error: 'خطا در بازیابی: ' + err.message });
-        }
-      }
+    // Keep old route aliases so a cached admin UI fails safely, not with HTML.
+    if (['/api/export/backup', '/api/export/zip'].includes(urlPath) && req.method === 'GET') {
+      if (backupBusy) return sendJson(res, 409, { error: 'عملیات بکاپ یا بازیابی دیگری در حال اجراست' });
+      backupBusy = true;
+      try {
+        const buffer = await createBackup(prisma);
+        res.writeHead(200, {
+          'Content-Type': 'application/gzip',
+          'Content-Disposition': `attachment; filename="vizitik-${new Date().toISOString().slice(0, 10)}.vizitik.json.gz"`,
+          'Content-Length': buffer.length,
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+        });
+        return res.end(buffer);
+      } finally { backupBusy = false; }
+    }
+    if (['/api/import/backup', '/api/import/zip'].includes(urlPath) && req.method === 'POST') {
+      if (req.headers['x-confirm-restore'] !== 'replace-all-data') return sendJson(res, 400, { error: 'تأیید صریح جایگزینی داده‌ها لازم است؛ صفحه را تازه‌سازی کنید' });
+      if (backupBusy) return sendJson(res, 409, { error: 'عملیات بکاپ یا بازیابی دیگری در حال اجراست' });
+      backupBusy = true;
+      try {
+        const { body, tooLarge } = await readBody(req, MAX_BODY_ZIP, true);
+        if (tooLarge) return sendJson(res, 413, { error: 'حداکثر اندازهٔ فایل ۵۰ مگابایت است' });
+        const result = await restoreBackup(prisma, body, BACKUP_DIR);
+        return sendJson(res, 200, { message: 'بازیابی کامل شد؛ بکاپ داده‌های قبلی روی سرور نگهداری شد', ...result });
+      } finally { backupBusy = false; }
+    }
 
     // ============================================================ Fallback
 
@@ -1053,11 +924,15 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-if (!TOKEN) {
-  console.error('ADMIN_TOKEN is empty - refusing to start. Set it in backend/.env');
-  process.exit(1);
+if (require.main === module) {
+  if (!TOKEN) {
+    console.error('ADMIN_TOKEN is empty - refusing to start. Set it in backend/.env');
+    process.exit(1);
+  }
+  server.on('error', err => { console.error('[admin] listen failed:', err); process.exit(1); });
+  server.listen(PORT, HOST, () => console.log(`vizitik admin listening on http://${HOST}:${PORT}`));
+  for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, () => {
+    server.close(async () => { await prisma.$disconnect(); process.exit(0); });
+  });
 }
-
-server.listen(PORT, HOST, () => {
-  console.log(`vizitik admin listening on http://${HOST}:${PORT}`);
-});
+module.exports = { server, readBody };

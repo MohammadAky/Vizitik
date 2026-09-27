@@ -1,113 +1,115 @@
 #!/usr/bin/env python3
-"""Exercise the backend-dist rollback in update.sh.
-
-`nest build` wipes dist/ before compiling (deleteOutDir in nest-cli.json), so a
-type error used to leave the install with nothing to start. update.sh therefore
-archives the current build first and puts it back when the new build fails.
-
-The two functions are extracted from the real scripts/update.sh (not copied), so
-this test fails if they are renamed or their behaviour changes.
+"""Run the actual updater with isolated source/install dirs and fake OS commands.
+No system services, production database, or checkout are modified.
 """
 import os
-import pathlib
-import re
+from pathlib import Path
 import subprocess
-import sys
 import tempfile
+import unittest
 
-update_sh = pathlib.Path(__file__).resolve().parents[1] / 'update.sh'
-source = update_sh.read_text(encoding='utf-8')
-
-
-def extract(name):
-    match = re.search(rf'^{name}\(\) \{{.*?^\}}', source, re.M | re.S)
-    if not match:
-        print(f'FAIL: {name}() is gone from update.sh', file=sys.stderr)
-        sys.exit(1)
-    return match.group(0)
+SCRIPT = Path(__file__).resolve().parents[1] / 'update.sh'
 
 
-HARNESS = f'''set -uo pipefail
-CHECK=0
-have() {{ command -v "$1" >/dev/null 2>&1; }}
-run()  {{ "$@"; }}
-info() {{ echo "  ..  $*"; }}
-warn() {{ echo "  WARN $*"; }}
-err()  {{ echo "  FAIL $*" >&2; }}
-{extract('archive_backend_dist')}
-{extract('restore_backend_dist')}
-'''
-
-failures = []
+def git(cwd, *args):
+    return subprocess.check_output(['git', '-C', str(cwd), *args], text=True).strip()
 
 
-def check(condition, message):
-    if not condition:
-        failures.append(message)
+class UpdateTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.src = self.root / 'source'
+        self.live = self.root / 'installed'
+        self.bin = self.root / 'bin'
+        self.bin.mkdir()
+        for root, text in [(self.src, 'new'), (self.live, 'old')]:
+            for tree in ['backend', 'frontend-app', 'admin', 'landing', 'scripts']:
+                (root / tree).mkdir(parents=True)
+                (root / tree / 'marker').write_text(text)
+            (root / 'admin/server.js').write_text(text)
+        (self.src / 'backend/.env').write_text('DO_NOT_DEPLOY=source-secret')
+        (self.live / 'backend/.env').write_text('DATABASE_URL="mysql://test:secret@127.0.0.1/test_db"\nJWT_SECRET=original\nPORT=3000\n')
+        self.original_env = (self.live / 'backend/.env').read_bytes()
+        git(self.src, 'init', '-q')
+        git(self.src, 'config', 'user.name', 'Test')
+        git(self.src, 'config', 'user.email', 'test@example.invalid')
+        git(self.src, 'add', '.')
+        git(self.src, 'commit', '-qm', 'fixture')
+        self.env = {**os.environ, 'SRC_DIR': str(self.src), 'INSTALL_DIR': str(self.live),
+                    'BACKUP_DIR': str(self.root / 'backups'), 'PATH': str(self.bin) + ':' + os.environ['PATH'],
+                    'LOG': str(self.root / 'commands'), 'FAIL': ''}
+        tools = {
+            'id': 'echo 0',
+            'flock': 'exit 0',  # parallel test runners do not share the deploy lock
+            'npm': 'echo "npm $PWD $*" >> "$LOG"; [[ "$FAIL" != build ]]',
+            'npx': 'echo "npx $*" >> "$LOG"; [[ "$FAIL" != schema || "$*" != *"db push"* ]]',
+            'mariadb-dump': 'echo "dump" >> "$LOG"; echo "-- dump"; [[ "$FAIL" != backup ]]',
+            'systemctl': 'echo "systemctl $*" >> "$LOG"; exit 0',
+            'curl': '[[ "$FAIL" != health ]] && echo \'{"db":"ok","ok":true}\'',
+            'sleep': ':',
+        }
+        for name, body in tools.items():
+            file = self.bin / name
+            file.write_text('#!/usr/bin/env bash\n' + body + '\n')
+            file.chmod(0o755)
+        rsync = self.bin / 'rsync'
+        rsync.write_text('''#!/usr/bin/env python3
+import shutil, sys
+shutil.copytree(sys.argv[-2], sys.argv[-1], dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns('node_modules', 'dist', '.env', '.env.*', '*.tgz'))
+''')
+        rsync.chmod(0o755)
+
+    def run_update(self, fail='', args=()):
+        return subprocess.run(['bash', str(SCRIPT), '--yes', '--no-pull', *args], env={**self.env, 'FAIL': fail}, text=True, capture_output=True)
+
+    def assert_original(self):
+        self.assertEqual((self.live / 'backend/.env').read_bytes(), self.original_env)
+        self.assertEqual((self.live / 'backend/marker').read_text(), 'old')
+        self.assertEqual((self.live / 'admin/server.js').read_text(), 'old')
+        self.assertFalse((self.live / '.vizitik-revision').exists())
+
+    def test_build_failure_leaves_live_install_and_services_untouched(self):
+        proc = self.run_update('build')
+        self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assert_original()
+        self.assertNotIn('systemctl stop', (self.root / 'commands').read_text())
+
+    def test_backup_failure_never_applies_schema(self):
+        proc = self.run_update('backup')
+        self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assert_original()
+        self.assertNotIn('db push', (self.root / 'commands').read_text())
+
+    def test_schema_failure_is_fatal_before_activation(self):
+        proc = self.run_update('schema')
+        self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assert_original()
+        self.assertNotIn('systemctl stop', (self.root / 'commands').read_text())
+        self.assertEqual(len(list((self.root / 'backups').glob('*.sql.gz'))), 1)
+
+    def test_health_failure_rolls_back_files_dependencies_and_secrets(self):
+        proc = self.run_update('health')
+        self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assert_original()
+        self.assertIn('restoring previous application files', proc.stderr)
+
+    def test_success_preserves_env_and_records_revision_after_health(self):
+        proc = self.run_update()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual((self.live / 'backend/.env').read_bytes(), self.original_env)
+        self.assertEqual((self.live / 'backend/marker').read_text(), 'new')
+        self.assertEqual((self.live / '.vizitik-revision').read_text().strip(), git(self.src, 'rev-parse', 'HEAD'))
+        self.assertEqual((self.live / 'backend/admin/server.js').read_text(), 'new')
+        self.assertEqual(list(self.live.glob('.update.*')), [])
+
+    def test_partial_update_does_not_hide_pending_changes(self):
+        proc = self.run_update(args=['--frontend-only'])
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assert_original()
+        self.assertEqual((self.live / 'frontend-app/marker').read_text(), 'new')
 
 
-def run(script, cwd):
-    proc = subprocess.run(['bash', '-c', script], cwd=str(cwd), text=True, capture_output=True)
-    return proc
-
-
-def make_dist(backend, marker):
-    (backend / 'dist' / 'assets').mkdir(parents=True, exist_ok=True)
-    (backend / 'dist' / 'main.js').write_text(marker, encoding='utf-8')
-    (backend / 'dist' / 'assets' / 'app.js').write_text(marker, encoding='utf-8')
-
-
-def archives(backend):
-    return sorted(p.name for p in backend.glob('backend.dist.*.tgz'))
-
-
-with tempfile.TemporaryDirectory() as tmp:
-    root = pathlib.Path(tmp)
-    backend = root / 'backend'
-    backend.mkdir()
-
-    # --- case 1: a failed build restores the previous dist -----------------
-    make_dist(backend, 'good-build')
-    proc = run(HARNESS + '\narchive_backend_dist "$PWD"\n', backend)
-    check(proc.returncode == 0, f'case 1: archive failed\n{proc.stdout}{proc.stderr}')
-    check(len(archives(backend)) == 1, f'case 1: expected one archive, got {archives(backend)}')
-
-    # what `nest build` does before failing: delete dist, produce nothing
-    subprocess.run(['rm', '-rf', str(backend / 'dist')], check=True)
-    proc = run(HARNESS + '\nrestore_backend_dist "$PWD"\n', backend)
-    check(proc.returncode == 0, f'case 1: restore reported failure\n{proc.stdout}{proc.stderr}')
-    main_js = backend / 'dist' / 'main.js'
-    check(main_js.exists() and main_js.read_text(encoding='utf-8') == 'good-build',
-          'case 1: restored dist/main.js is missing or wrong')
-    check((backend / 'dist' / 'assets' / 'app.js').exists(),
-          'case 1: restore dropped the nested files')
-
-    # --- case 2: nothing to restore ---------------------------------------
-    empty = root / 'empty'
-    empty.mkdir()
-    proc = run(HARNESS + '\nrestore_backend_dist "$PWD"\n', empty)
-    check(proc.returncode != 0, 'case 2: restore must fail when there is no archive')
-    check(not (empty / 'dist').exists(), 'case 2: restore created a dist out of nowhere')
-
-    # --- case 3: only the three newest archives are kept -------------------
-    prune = root / 'prune'
-    prune.mkdir()
-    stored = prune / 'stored'
-    stored.mkdir()
-    for i, stamp in enumerate((100, 200, 300, 400)):
-        (prune / f'backend.dist.{stamp}.tgz').write_text('old', encoding='utf-8')
-        os.utime(prune / f'backend.dist.{stamp}.tgz', (stamp, stamp))
-    make_dist(prune, 'fresh-build')
-    proc = run(HARNESS + '\narchive_backend_dist "$PWD"\n', prune)
-    check(proc.returncode == 0, f'case 3: archive failed\n{proc.stdout}{proc.stderr}')
-    kept = archives(prune)
-    check(len(kept) == 3, f'case 3: expected three archives after pruning, got {kept}')
-    check('backend.dist.100.tgz' not in kept and 'backend.dist.200.tgz' not in kept,
-          f'case 3: the oldest archives were not pruned: {kept}')
-
-if failures:
-    for failure in failures:
-        print('FAIL:', failure, file=sys.stderr)
-    sys.exit(1)
-
-print('PASS: update.sh archives the backend build and restores it after a failed build')
+if __name__ == '__main__': unittest.main()
