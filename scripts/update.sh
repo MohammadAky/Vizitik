@@ -143,7 +143,11 @@ if [[ -f "$REVISION_FILE" ]]; then DEPLOYED_REV="$(tr -d ' \n' < "$REVISION_FILE
 if [[ -d "$SRC_DIR/.git" ]]; then HEAD_REV="$(git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null || true)"; fi
 
 if [[ "$RESTART_ONLY" == 0 && "$PULL" == 1 && "$CHECK" == 0 ]]; then
-  if [[ -n "$(git -C "$SRC_DIR" status --porcelain)" ]]; then
+  # Only edits to tracked files block the pull. Ignored or untracked leftovers
+  # (caches, logs, .env files, an old .vizitik-revision) are normal on a server
+  # and are left alone; if the pull would overwrite any of them, git itself
+  # stops and the error below is shown.
+  if [[ -n "$(git -C "$SRC_DIR" status --porcelain --untracked-files=no)" ]]; then
     fail "the checkout has local changes; commit or stash them, or run with --no-pull to deploy them as they are"
   fi
   log "pulling $SRC_DIR"
@@ -433,7 +437,7 @@ for tree in "${PART_TREES[@]}"; do
   mv "$STAGE/$tree" "$INSTALL_DIR/$tree"
 done
 # the admin panel runs from backend/admin/server.js (systemd WorkingDirectory)
-if [[ -d "$INSTALL_DIR/admin" ]]; then
+if compgen -G "$INSTALL_DIR/admin/*.js" >/dev/null; then
   mkdir -p "$INSTALL_DIR/backend/admin"
   cp "$INSTALL_DIR/admin/"*.js "$INSTALL_DIR/backend/admin/"
 fi
