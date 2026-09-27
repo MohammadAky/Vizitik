@@ -680,33 +680,96 @@ a { color: var(--turquoise-dark); }
 .cta-box p { color: #C7D4DC; margin: 0 0 18px; }
 /* ---------------- Footer ---------------- */
 .site-footer {
-  background: var(--navy);
+  position: relative;
+  background:
+    radial-gradient(700px 320px at 88% -10%, rgba(45, 212, 191, .12), transparent 60%),
+    var(--navy);
   color: #C7D4DC;
-  padding: 40px 0;
+  padding: 56px 0 0;
 }
-.footer-inner {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
+.footer-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr 1fr;
+  gap: 36px;
+  padding-bottom: 44px;
 }
+.footer-col { display: flex; flex-direction: column; }
+.footer-about { gap: 16px; }
 .footer-brand {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-size: .9rem;
-}
-.footer-brand .brand-mark { background: rgba(255,255,255,.06); }
-.footer-links { display: flex; flex-wrap: wrap; gap: 22px; }
-.footer-links a {
-  color: #C7D4DC;
+  width: fit-content;
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 800;
   text-decoration: none;
-  padding: 6px 2px;
-  min-height: 32px;
+  transition: opacity .2s ease;
 }
-.footer-links a:hover { color: var(--turquoise); }
-.footer-copy { margin: 0; font-size: .82rem; color: #7E93A2; }
+.footer-brand:hover { opacity: .85; }
+.footer-brand .brand-mark { background: rgba(255, 255, 255, .08); }
+.footer-desc { margin: 0; font-size: .9rem; line-height: 1.9; color: #9FB2C0; max-width: 44ch; }
+.footer-title { margin: 0 0 16px; font-size: .95rem; font-weight: 700; color: #fff; }
+.footer-title::after {
+  content: "";
+  display: block;
+  width: 34px;
+  height: 3px;
+  margin-top: 8px;
+  border-radius: 3px;
+  background: var(--turquoise);
+}
+.footer-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.footer-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  color: #C7D4DC;
+  font-size: .92rem;
+  text-decoration: none;
+  transition: color .2s ease;
+}
+.footer-links a::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--turquoise);
+  opacity: .4;
+  transition: opacity .2s ease;
+}
+.footer-links a:hover { color: #fff; }
+.footer-links a:hover::before { opacity: 1; }
+.footer-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  padding: 18px 0 22px;
+  border-top: 1px solid rgba(255, 255, 255, .10);
+}
+.footer-copy { margin: 0; font-size: .84rem; color: #7E93A2; }
+.footer-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 0;
+  color: #C7D4DC;
+  font-size: .84rem;
+  text-decoration: none;
+  transition: color .2s ease;
+}
+.footer-top:hover { color: var(--turquoise); }
+.footer-top-arrow {
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid currentColor;
+  border-left: 2px solid currentColor;
+  transform: rotate(45deg);
+}
 
 /* ---------------- Responsive ---------------- */
 @media (max-width: 960px) {
@@ -716,6 +779,8 @@ a { color: var(--turquoise-dark); }
   .feature-lead { grid-template-columns: 1fr; padding: 36px 28px; }
   .feature-list { grid-template-columns: repeat(2, 1fr); }
   .install-grid { grid-template-columns: 1fr; gap: 36px; }
+  .footer-grid { grid-template-columns: 1fr 1fr; }
+  .footer-about { grid-column: 1 / -1; }
 }
 
 @media (max-width: 860px) {
@@ -762,7 +827,13 @@ a { color: var(--turquoise-dark); }
   .hero-visual { flex-direction: column; }
   .phone { transform: none; }
   .cta-box { padding: 48px 22px; }
-  .footer-inner { flex-direction: column; text-align: center; justify-content: center; }
+  .footer-grid { grid-template-columns: 1fr; gap: 30px; text-align: center; }
+  .footer-about { grid-column: auto; }
+  .footer-brand { margin-inline: auto; }
+  .footer-desc { margin-inline: auto; }
+  .footer-title::after { margin-inline: auto; }
+  .footer-links { align-items: center; }
+  .footer-bottom { justify-content: center; text-align: center; }
   .timeline-step:not(:last-child)::before { top: 66px; }
 }
 

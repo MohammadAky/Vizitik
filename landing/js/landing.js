@@ -8,7 +8,8 @@
   function bindLink(selector, url) {
     if (!url) {
       document.querySelectorAll(selector).forEach(function (el) {
-        el.remove();
+        /* اگر لینک داخل <li> باشد، خودِ آیتم هم حذف می‌شود تا ردِ خالی نماند */
+        (el.closest('li') || el).remove();
       });
       return;
     }
@@ -24,6 +25,12 @@
   bindLink('[data-app-link]', config.appUrl);
   bindLink('[data-support-link]', config.supportUrl);
   bindLink('[data-terms-link]', config.termsUrl);
+
+  /* ستون فوتر که پس از حذف لینک‌ها کاملاً خالی شد، حذف می‌شود */
+  document.querySelectorAll('.footer-col').forEach(function (col) {
+    var links = col.querySelector('.footer-links');
+    if (links && !links.querySelector('a')) col.remove();
+  });
 
   /* --- منوی موبایل --- */
   var toggle = document.getElementById('menu-toggle');
