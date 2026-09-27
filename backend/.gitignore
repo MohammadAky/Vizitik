@@ -1,41 +1,28 @@
-# Dependencies
-node_modules/
-# NOTE: package-lock.json IS tracked (reproducible npm ci on the VPS)
+# ============================================================
+#  backend/.gitignore
+# ============================================================
+#  The root .gitignore already covers the shared rules (node_modules,
+#  .env*, logs, IDE/OS files). This file only adds backend-specific
+#  entries so the folder still behaves if it is worked on standalone.
+#  NOTE: package-lock.json IS tracked (reproducible `npm ci` on the server).
+#  `prisma/schema.prisma` is always tracked; the generated Prisma client
+#  lives in node_modules/ and is ignored with it.
 
-# Build outputs
-dist/
-build/
-out/
-.next/
-
-# Environment variables
+# Secrets
 .env
 .env.local
 .env.*.local
+*.env
+!.env.example
+
+# Build output (nest build)
+dist/
 
 # Logs
 logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
-# IDE & Editor
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-.idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# OS metadata
-.DS_Store
-Thumbs.db
-
-# TypeScript Cache
+# Caches & coverage
+.cache/
+coverage/
 *.tsbuildinfo
