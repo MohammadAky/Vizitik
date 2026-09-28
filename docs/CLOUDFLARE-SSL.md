@@ -55,8 +55,13 @@ dig +short NS vizitik.ir @8.8.8.8
 
 | Type | Name | IPv4 address | Proxy status | TTL |
 |---|---|---|---|---|
-| `A` | `@` | `185.231.115.154` | **Proxied** (ابر نارنجی) | Auto |
-| `A` | `www` | `185.231.115.154` | **Proxied** (ابر نارنجی) | Auto |
+| `A` | `@` | `<ORIGIN_IP>` | **Proxied** (ابر نارنجی) | Auto |
+| `A` | `www` | `<ORIGIN_IP>` | **Proxied** (ابر نارنجی) | Auto |
+
+
+> 🔒 **آی‌پی سرور (origin) عمداً در این سند نوشته نشده و با `<ORIGIN_IP>` جایگزین شده است.**
+> با ابر نارنجی کلودفلر، نقطه‌ی قوت همین پنهان‌بودن IP است؛ اگر IP را در جایی عمومی بنویسی
+> (مخزن، Issue، اسکرین‌شات) می‌شود هدف مستقیم اسکنرها. IP واقعی را از پنل سرورت بردار.
 
 - هر `CNAME` یا `A` قدیمی که به IP دیگری می‌رفت پاک کن. رکورد `AAAA` لازم نیست.
 - با ابر **نارنجی** پورت‌های ورودی لازم نیست باز باشند؛ کلودفلر از سمت خودش مخاطب را
@@ -170,8 +175,8 @@ sudo certbot certificates | head -20
 # Should say: Name: vizitik.ir, Domains: vizitik.ir www.vizitik.ir, Expiry Date: ... (90 days)
 
 # گواهیِ بین کلودفلر و سرور باید Let's Encrypt باشد (نه گواهی خود کلودفلر):
-curl -sk --resolve vizitik.ir:443:185.231.115.154 -o /dev/null -w '%{http_code}\n' https://vizitik.ir/
-echo | openssl s_client -connect 185.231.115.154:443 -servername vizitik.ir 2>/dev/null | grep -E 'issuer|subject'
+curl -sk --resolve vizitik.ir:443:<ORIGIN_IP> -o /dev/null -w '%{http_code}\n' https://vizitik.ir/
+echo | openssl s_client -connect <ORIGIN_IP>:443 -servername vizitik.ir 2>/dev/null | grep -E 'issuer|subject'
 # issuer = Let's Encrypt ⇒ درست است
 
 ss -ltnp | grep -E ':(80|443)'      # nginx هر دو را دارد
@@ -196,5 +201,5 @@ Unregister + Clear site data) تا نسخهٔ قدیمیِ کش‌شده از ب
   و `sudo chmod 600` همان فایل.
 - اگر روزی چالش DNS با پیام رکورد تکراری گیر کرد: در کلودفلر رکورد
   `_acme-challenge.vizitik.ir` (TXT) را دستی پاک کن.
-- بعد از بالا آمدن، برای اطمینان از بسته‌بودن API: `curl -s -o /dev/null -w '%{http_code}\n' http://185.231.115.154:3000/api/auth/send-code`
+- بعد از بالا آمدن، برای اطمینان از بسته‌بودن API: `curl -s -o /dev/null -w '%{http_code}\n' http://<ORIGIN_IP>:3000/api/auth/send-code`
   باید **connect timeout/connection refused** بدهد، نه پاسخ؛ API فقط از `127.0.0.1` گوش می‌کند.
