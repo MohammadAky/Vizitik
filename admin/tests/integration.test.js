@@ -1,7 +1,7 @@
 'use strict';
 // DESTRUCTIVE only to a disposable database named vizitik_test. Never point this
-// suite at a live database. CI provisions a fresh MariaDB service for it, and it
-// is skipped unless RUN_DB_TESTS=1 is set.
+// suite at a live database. It is skipped unless RUN_DB_TESTS=1 is set, and it is
+// meant to be run by hand (see docs/DEPLOY-UBUNTU.md).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const configured = process.env.RUN_DB_TESTS === '1';
