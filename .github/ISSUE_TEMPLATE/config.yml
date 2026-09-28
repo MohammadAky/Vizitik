@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔐 گزارش امنیتی (خصوصی)
+    url: https://github.com/MohammadAky/Vizitik/security/advisories/new
+    about: برای آسیب‌پذیری‌ها Issue عمومی نسازید؛ از گزارش خصوصی استفاده کنید.
+  - name: 📘 مستندات نصب و آپدیت
+    url: https://github.com/MohammadAky/Vizitik/blob/main/docs/DEPLOY-UBUNTU.md
+    about: راهنمای نصب سرور، آپدیت امن، بکاپ و بازیابی.

@@ -1,5 +1,8 @@
 # ویزیتیک (Vizitik)
 
+[![license: MIT](https://img.shields.io/badge/license-MIT-2dd4bf.svg)](LICENSE)
+[![Node 22+](https://img.shields.io/badge/node-22%2B-2dd4bf.svg)](.nvmrc)
+
 سامانه توزیع مویرگی و پخش گرم بستنی/مواد غذایی برای ویزیتورهای موبایلی: بارگیری ون،
 ثبت سفارش با تفکیک **کارتن و دانه**، تخفیف پلکانی، تسویه چندحالته (نقد، پوز، چک، نسیه)،
 دفتر حساب مشتری، چاپ فاکتور ۸۰ میلی‌متری و اعلان‌های ربات بله.
@@ -110,11 +113,13 @@ documents/     دامپ SQL اولیه (hesabchin.sql)
 
 | سند | موضوع |
 |---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | نقشه‌ی اجزا، ماژول‌ها، جدول‌ها و جریان داده |
 | [docs/DEPLOY-UBUNTU.md](docs/DEPLOY-UBUNTU.md) | نصب، آپدیت، بکاپ و بازیابی امن، تست‌ها |
 | [docs/CLOUDFLARE-SSL.md](docs/CLOUDFLARE-SSL.md) | گواهی SSL با DNS-01 کلودفلر |
 | [admin/README.md](admin/README.md) | پنل ادمین: endpoint ها، امنیت، خروجی‌گیری |
 | [docs/MOBILE_PWA_ROADMAP.md](docs/MOBILE_PWA_ROADMAP.md) | نقشه‌ی راه اپ موبایل |
 | [backend/.env.example](backend/.env.example) | توضیح تک‌تک متغیرهای محیطی |
+| [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md) | مشارکت، گزارش امنیتی، تاریخ تغییرات |
 
 ## مجوز
 

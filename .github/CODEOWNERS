@@ -1,0 +1,9 @@
+# مالک پیش‌فرض همه‌ی مسیرها
+* @MohammadAky
+
+# بخش‌های حساس: هر تغییر اینجا بازبینی جدا لازم دارد
+/scripts/ @MohammadAky
+/admin/ @MohammadAky
+/backend/prisma/ @MohammadAky
+/SECURITY.md @MohammadAky
+/docs/DEPLOY-UBUNTU.md @MohammadAky

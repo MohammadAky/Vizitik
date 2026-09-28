@@ -1,0 +1,39 @@
+name: 💡 پیشنهاد قابلیت
+description: یک ایده یا تغییر برای ویزیتیک پیشنهاد کنید
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: part
+    attributes:
+      label: مربوط به کدام بخش است؟
+      options:
+        - بک‌اند (backend/)
+        - PWA ویزیتور (frontend-app/)
+        - پنل ادمین (admin/)
+        - سایت قدیمی PHP (frontend/)
+        - اسکریپت‌های نصب/آپدیت (scripts/)
+        - مستندات
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: چه مشکلی را حل می‌کند؟
+      description: به‌جای راه‌حل، اول نیاز واقعی پشتش را بنویسید
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: راه‌حل پیشنهادی
+      description: اگر ایده‌ی مشخصی دارید بنویسید؛ اگر نه، خالی بگذارید
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: گزینه‌های دیگر
+      description: راه‌های دیگری که به آن‌ها فکر کرده‌اید، یا کارهای دستی که الان انجام می‌دهید
+    validations:
+      required: false

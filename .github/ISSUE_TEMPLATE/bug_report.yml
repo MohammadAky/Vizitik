@@ -1,0 +1,57 @@
+name: 🐞 گزارش باگ
+description: یک رفتار نادرست را گزارش کنید
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ممنون از گزارش. لطفاً محتوای `.env`، توکن‌ها یا دیتای واقعی مشتریان را اینجا نگذارید
+        (مسائل امنیتی را از [گزارش خصوصی](https://github.com/MohammadAky/Vizitik/security/advisories/new) بفرستید).
+  - type: dropdown
+    id: part
+    attributes:
+      label: کدام بخش؟
+      options:
+        - بک‌اند (backend/)
+        - PWA ویزیتور (frontend-app/)
+        - پنل ادمین (admin/)
+        - سایت قدیمی PHP (frontend/)
+        - اسکریپت‌های نصب/آپدیت (scripts/)
+        - مستندات (docs/, README)
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: چه اتفاقی افتاد؟
+      description: انتظار داشتید چه بشود و در عوض چه شد؟
+      placeholder: مثلاً «آپدیت کامل شد ولی تغییر اعمال نشد» یا «دکمه‌ی خروجی در این بخش دیده نمی‌شود»
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: مراحل بازتولید
+      placeholder: |
+        ۱. ...
+        ۲. ...
+        ۳. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: خطا / لاگ
+      description: متن کامل خطا یا خروجی دستور (بدون توکن و رمز)
+      render: shell
+    validations:
+      required: false
+  - type: input
+    id: env
+    attributes:
+      label: محیط
+      description: نسخه‌ی Node، سیستم‌عامل و اینکه لوکال بود یا سرور
+      placeholder: "Node 22.11 · Ubuntu 24.04 · سرور (آپدیت)"
+    validations:
+      required: true

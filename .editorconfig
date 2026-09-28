@@ -1,0 +1,31 @@
+# قالب‌بندی یکسان در همه‌ی ویرایشگرها و IDE ها
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# اسکریپت‌های شل و فایل‌های پایتون
+[*.{sh,py}]
+indent_size = 4
+
+[*.py]
+max_line_length = 120
+
+# فایل‌های ترجمه/داده‌ی حجیم نباید دستکاری شوند
+[*.{sql,md}]
+trim_trailing_whitespace = false
+
+[*.md]
+indent_size = 2
+
+# ویندوزی‌ها CRLF می‌مانند (مطابق .gitattributes)
+[*.{bat,cmd}]
+end_of_line = crlf
+
+[Makefile]
+indent_style = tab
