@@ -1,6 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
+  "license": "MIT",
   "description": "Vizitik Backend API - Ice Cream Distribution Management",
   "scripts": {
     "start:dev": "nest start --watch",

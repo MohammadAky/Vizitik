@@ -2,6 +2,7 @@
   "name": "vizitik-admin",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Vizitik Admin Panel - SQL management, product catalog, users and customers",
   "main": "server.js",
   "scripts": {
