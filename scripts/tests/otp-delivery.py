@@ -116,6 +116,46 @@ def check(label, got, expected, detail=""):
         failures.append(f"{label}: expected {expected!r}, got {got!r} {detail}")
 
 
+# --- the two sides must agree on what a phone number is -----------------------
+# The bot may receive ⁦+98 901 181 8219⁩ or ⁦۰۹۰۱۱۸۱۸۲۱۹⁩ and the app may send any
+# other spelling of the same number; a mismatch here is "the code never arrives".
+PHONE_JS = r"""
+const { normalizePhone, looksLikeMobile } = require('%PHONE%');
+const cases = [
+  ['09011818219', '09011818219'], ['۰۹۰۱۱۸۱۸۲۱۹', '09011818219'],
+  ['+98 901 181 8219', '09011818219'], ['0098-901-181-8219', '09011818219'],
+  ['989011818219', '09011818219'], ['9011818219', '09011818219'],
+  ['0912 181 8219', '09121818219'], ['+989121818219', '09121818219'],
+];
+let out = { normalize: [], looks: [] };
+for (const [given, want] of cases) {
+  const got = normalizePhone(given);
+  if (got !== want) out.normalize.push(given + ' -> ' + got + ' (want ' + want + ')');
+}
+out.looks = [
+  looksLikeMobile('09011818219') === true,
+  looksLikeMobile('۰۹۰۱۱۸۱۸۲۱۹') === true,
+  looksLikeMobile('/start 09011818219') === true,
+  looksLikeMobile('0912-181-8219') === true,
+  looksLikeMobile('12345') === false,
+  looksLikeMobile('سلام شماره‌ام 09011818219 است') === false,
+];
+process.stdout.write('RESULT:' + JSON.stringify(out) + '\n');
+""".replace("%PHONE%", str(BACKEND / "dist" / "common" / "phone.js"))
+
+
+def check_phone_helpers():
+    p = subprocess.run(["node", "-e", PHONE_JS], capture_output=True, text=True, timeout=60, cwd=str(BACKEND))
+    if p.returncode != 0:
+        failures.append("phone helpers: node failed - " + (p.stderr or "").strip()[-160:])
+        return
+    data = json.loads(p.stdout.split("RESULT:", 1)[1].strip())
+    for bad in data["normalize"]:
+        failures.append("normalizePhone: " + bad)
+    if not all(data["looks"]):
+        failures.append("looksLikeMobile: " + str(data["looks"]) + " (expected all true except the last two)")
+
+
 server = HTTPServer(("127.0.0.1", 0), Handler)
 PORT = server.server_address[1]
 threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -139,10 +179,12 @@ MODE["value"] = "401"
 check("bale/401-ok-flag", run_node("bale").get("ok"), False)
 
 server.shutdown()
+check_phone_helpers()
 
 if failures:
     print("FAIL: OTP delivery can report success without delivering")
     for f in failures:
         print("  -", f)
     sys.exit(1)
-print("PASS: a refused Bale message is reported as not delivered (401 / ok:false / blocked / 502 / no token / unknown chat)")
+print("PASS: refusals are reported as not delivered (401 / ok:false / blocked / 502 / no token / unknown chat)")
+print("PASS: both sides agree on the phone number (۰۹… / +98 / 0098 / 98… / 9… and a typed number in the chat)")

@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit, OnModuleDestroy, Inject, Logger } from "@nest
 import { PrismaService } from "../prisma.service";
 import { OtpStore } from "../auth/otp.store";
 import { APP, BOT } from "../app.config";
+import { normalizePhone, looksLikeMobile } from "../common/phone";
 
 @Injectable()
 export class BaleService implements OnModuleInit, OnModuleDestroy {
@@ -382,6 +383,14 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
     this.logger.log(`📩 پیام جدید از [${fromName}] (${chatId}): ${text || "[اشتراک شماره]"}`);
 
+    // ۰. کاربری که به‌جای لمس دکمه، شماره‌اش را تایپ می‌کند هم باید ثبت شود.
+    // (قبلاً فقط پیام خوش‌آمد می‌گرفت، چت به شماره وصل نمی‌شد و کد ورود هیچ‌وقت به
+    //  گفتگو نمی‌رسید - در حالی که در لاگ «شماره ارسال شد» دیده می‌شد.)
+    if (text && !message.contact && looksLikeMobile(text)) {
+      await this.handleSharedNumber(chatId, text, fromName);
+      return;
+    }
+
     // ۱. در صورت ارسال /start یا متن
     if (text && !message.contact) {
       const welcomeText =
@@ -408,107 +417,112 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
     // ۲. در صورت اشتراک‌گذاری شماره موبایل (Contact)
     if (message.contact) {
-      let rawPhone = String(message.contact.phone_number || "").replace(/[^0-9]/g, "");
-      let normalizedPhone = rawPhone;
-
-      if (rawPhone.startsWith("98") && rawPhone.length === 12) {
-        normalizedPhone = "0" + rawPhone.substring(2);
-      } else if (rawPhone.length === 10 && rawPhone.startsWith("9")) {
-        normalizedPhone = "0" + rawPhone;
-      }
-
-      this.logger.log(`📱 شماره تماس دریافت شد: ${normalizedPhone} (چت‌آیدی: ${chatId})`);
-
-      // هر کد تاییدی که این شماره در برنامه درخواست کرده و هنوز تحویل نگرفته،
-      // همین‌جا و فقط به همین چت تحویل داده می‌شود (به چت مدیر هرگز فرستاده نمی‌شود)
-      this.otp.rememberChat(normalizedPhone, chatId);
-      const claimed = this.otp.claimForChat(normalizedPhone, chatId);
-      if (claimed) {
-        const purpose = claimed.purpose === "register" ? "ثبت‌نام ویزیتور" : "بازیابی رمز عبور";
-        const sent: any = await this.sendMessage(
-          chatId,
-          `🔑 *کد تایید ${purpose}*\n\n\`${claimed.code}\`\n\n⏱ فقط ۲ دقیقه اعتبار دارد؛ در برنامه واردش کن.`,
-        );
-        if (sent && sent.ok === false) {
-          this.logger.error(
-            `تحویل کد ${purpose} به چت ${chatId} ناموفق بود: ${String(sent.description || sent.error_code || "").slice(0, 120)}`,
-          );
-        } else {
-          this.logger.log(`✅ کد ${purpose} به چت ${chatId} تحویل داده شد.`);
-        }
-      }
-
-      let matchedRole = "";
-      let matchedName = "";
-
-      try {
-        // الف: بررسی جدول مشتریان (فروشگاه‌ها)
-        const customer = await this.prisma.customer.findFirst({
-          where: {
-            OR: [
-              { phone: normalizedPhone },
-              { phone: normalizedPhone.replace(/^0/, "") },
-              { phone: "+98" + normalizedPhone.replace(/^0/, "") },
-            ],
-          },
-        });
-
-        if (customer) {
-          await this.prisma.customer.update({
-            where: { id: customer.id },
-            data: { baleChatId: String(chatId) },
-          });
-          matchedRole = "مشتری";
-          matchedName = customer.name;
-          this.logger.log(`✅ مشتری [${customer.name}] در دیتابیس به چت‌آیدی ${chatId} متصل شد.`);
-        }
-
-        // ب: بررسی جدول ویزیتورها و کاربران
-        const user = await this.prisma.user.findFirst({
-          where: {
-            OR: [{ phone: normalizedPhone }, { phone: normalizedPhone.replace(/^0/, "") }],
-          },
-        });
-
-        if (user) {
-          await this.prisma.user.update({
-            where: { id: user.id },
-            data: { baleChatId: String(chatId) },
-          });
-          if (!matchedRole) {
-            matchedRole = "ویزیتور";
-            matchedName = `${user.firstName} ${user.lastName}`;
-          }
-          this.logger.log(
-            `✅ ویزیتور [${user.firstName} ${user.lastName}] به چت‌آیدی ${chatId} متصل شد.`,
-          );
-        }
-      } catch (dbErr: any) {
-        this.logger.warn(`خطا در تطبیق دیتابیس: ${dbErr.message}`);
-      }
-
-      let confirmationText = "";
-      if (matchedRole === "مشتری") {
-        confirmationText =
-          `✅ *فروشگاه محترم ${matchedName}؛*\n\n` +
-          `شماره موبایل شما (*${normalizedPhone}*) با موفقیت تایید و به سیستم ${APP.nameFa} متصل شد.\n` +
-          `از این پس فاکتورهای رسمی، ریز اقلام، مانده حساب و جشنواره‌های تخفیف مستقیماً به این صفحه ارسال خواهند شد. 🍦`;
-      } else if (matchedRole === "ویزیتور") {
-        confirmationText =
-          `✅ *ویزیتور گرامی (${matchedName})؛*\n\n` +
-          `اکانت بله شما با موفقیت متصل شد.\n` +
-          `تمامی فاکتورهای صادره، گزارش‌های فروش و کدهای ورود به این چت ارسال خواهند شد. 🚀`;
-      } else {
-        confirmationText = claimed
-          ? `✅ شماره *${normalizedPhone}* به این گفتگو متصل شد.\nکد تایید در پیام بالا ارسال شده است؛ آن را در برنامه وارد کن.`
-          : `✅ شماره موبایل شما (*${normalizedPhone}*) با موفقیت در سیستم تایید شد.\n\n` +
-            `به محض صدور فاکتور یا تعریف فروشگاه شما توسط ویزیتور، اعلان‌ها در این چت فعال خواهند شد.\n` +
-            `اگر در حال ساخت حساب جدیدی: حالا در برنامه «دریافت کد» را بزن تا کد ۵ رقمی همین‌جا بیاید. ✨`;
-      }
-
-      const removeKeyboard = { remove_keyboard: true };
-      await this.sendMessage(chatId, confirmationText, removeKeyboard);
+      await this.handleSharedNumber(chatId, message.contact.phone_number, fromName);
+      return;
     }
+  }
+
+  /**
+   * یک شماره به این گفتگو وصل شد (کارت مخاطب یا شمارهٔ تایپ‌شده).
+   * کد در انتظار همین‌جا به همین چت تحویل داده می‌شود و بعد نقش شماره
+   * (فروشگاه یا ویزیتور) در دیتابیس تشخیص داده می‌شود.
+   */
+  private async handleSharedNumber(chatId: string | number, rawPhone: any, fromName = "") {
+    const normalizedPhone = normalizePhone(rawPhone);
+
+    this.logger.log(
+      `📱 شماره ${normalizedPhone} از [${fromName || "کاربر"}] دریافت و به چت‌آیدی ${chatId} وصل شد.`,
+    );
+
+    // هر کد تاییدی که این شماره در برنامه درخواست کرده و هنوز تحویل نگرفته،
+    // همین‌جا و فقط به همین چت تحویل داده می‌شود (به چت مدیر هرگز فرستاده نمی‌شود)
+    this.otp.rememberChat(normalizedPhone, chatId);
+    const claimed = this.otp.claimForChat(normalizedPhone, chatId);
+    if (claimed) {
+      const purpose = claimed.purpose === "register" ? "ثبت‌نام ویزیتور" : "بازیابی رمز عبور";
+      const sent: any = await this.sendMessage(
+        chatId,
+        `🔑 *کد تایید ${purpose}*\n\n\`${claimed.code}\`\n\n⏱ فقط ۲ دقیقه اعتبار دارد؛ در برنامه واردش کن.`,
+      );
+      if (sent && sent.ok === false) {
+        this.logger.error(
+          `تحویل کد ${purpose} به چت ${chatId} ناموفق بود: ${String(sent.description || sent.error_code || "").slice(0, 120)}`,
+        );
+      } else {
+        this.logger.log(`✅ کد ${purpose} به چت ${chatId} تحویل داده شد.`);
+      }
+    }
+
+    let matchedRole = "";
+    let matchedName = "";
+
+    try {
+      // الف: بررسی جدول مشتریان (فروشگاه‌ها)
+      const customer = await this.prisma.customer.findFirst({
+        where: {
+          OR: [
+            { phone: normalizedPhone },
+            { phone: normalizedPhone.replace(/^0/, "") },
+            { phone: "+98" + normalizedPhone.replace(/^0/, "") },
+          ],
+        },
+      });
+
+      if (customer) {
+        await this.prisma.customer.update({
+          where: { id: customer.id },
+          data: { baleChatId: String(chatId) },
+        });
+        matchedRole = "مشتری";
+        matchedName = customer.name;
+        this.logger.log(`✅ مشتری [${customer.name}] در دیتابیس به چت‌آیدی ${chatId} متصل شد.`);
+      }
+
+      // ب: بررسی جدول ویزیتورها و کاربران
+      const user = await this.prisma.user.findFirst({
+        where: {
+          OR: [{ phone: normalizedPhone }, { phone: normalizedPhone.replace(/^0/, "") }],
+        },
+      });
+
+      if (user) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { baleChatId: String(chatId) },
+        });
+        if (!matchedRole) {
+          matchedRole = "ویزیتور";
+          matchedName = `${user.firstName} ${user.lastName}`;
+        }
+        this.logger.log(
+          `✅ ویزیتور [${user.firstName} ${user.lastName}] به چت‌آیدی ${chatId} متصل شد.`,
+        );
+      }
+    } catch (dbErr: any) {
+      this.logger.warn(`خطا در تطبیق دیتابیس: ${dbErr.message}`);
+    }
+
+    let confirmationText = "";
+    if (matchedRole === "مشتری") {
+      confirmationText =
+        `✅ *فروشگاه محترم ${matchedName}؛*\n\n` +
+        `شماره موبایل شما (*${normalizedPhone}*) با موفقیت تایید و به سیستم ${APP.nameFa} متصل شد.\n` +
+        `از این پس فاکتورهای رسمی، ریز اقلام، مانده حساب و جشنواره‌های تخفیف مستقیماً به این صفحه ارسال خواهند شد. 🍦`;
+    } else if (matchedRole === "ویزیتور") {
+      confirmationText =
+        `✅ *ویزیتور گرامی (${matchedName})؛*\n\n` +
+        `اکانت بله شما با موفقیت متصل شد.\n` +
+        `تمامی فاکتورهای صادره، گزارش‌های فروش و کدهای ورود به این چت ارسال خواهند شد. 🚀`;
+    } else {
+      confirmationText = claimed
+        ? `✅ شماره *${normalizedPhone}* به این گفتگو متصل شد.\nکد تایید در پیام بالا ارسال شده است؛ آن را در برنامه وارد کن.`
+        : `✅ شماره موبایل شما (*${normalizedPhone}*) با موفقیت در سیستم تایید شد.\n\n` +
+          `به محض صدور فاکتور یا تعریف فروشگاه شما توسط ویزیتور، اعلان‌ها در این چت فعال خواهند شد.\n` +
+          `اگر در حال ساخت حساب جدیدی: حالا در برنامه «دریافت کد» را بزن تا کد ۵ رقمی همین‌جا بیاید. ✨`;
+    }
+
+    const removeKeyboard = { remove_keyboard: true };
+    await this.sendMessage(chatId, confirmationText, removeKeyboard);
   }
 
   /**

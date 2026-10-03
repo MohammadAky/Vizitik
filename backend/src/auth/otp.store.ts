@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { normalizePhone } from '../common/phone';
 
 export type OtpPurpose = 'register' | 'reset';
 
@@ -30,13 +31,9 @@ export class OtpStore {
   private readonly pending = new Map<string, OtpRecord>();
   private readonly chats = new Map<string, { chatId: string; at: number }>();
 
-  /** 0912..., 912... and 98912... are the same number to this store */
+  /** 0912..., 912..., 98912..., +98912... and ۰۹۱۲... are the same number to this store */
   private key(phone: string): string {
-    let p = String(phone || '').replace(/[^0-9]/g, '');
-    if (p.startsWith('0098')) p = p.slice(4);
-    if (p.startsWith('98') && p.length === 12) p = p.slice(2);
-    if (p.length === 10 && p.startsWith('9')) p = '0' + p;
-    return p;
+    return normalizePhone(phone);
   }
 
   private prune(): void {

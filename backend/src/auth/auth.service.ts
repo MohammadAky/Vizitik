@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 import { APP } from '../app.config';
 import { OtpStore } from './otp.store';
+import { normalizePhone } from '../common/phone';
 import {
   LoginDto,
   SendRegisterOtpDto,
@@ -33,7 +34,8 @@ export class AuthService {
    * ۱. ورود عادی با شماره موبایل و رمز عبور (بدون نیاز به کد تایید)
    */
   async login(dto: LoginDto) {
-    const phone = dto.phone.trim();
+    // ۰۹۱۲… و +۹۸۹۱۲… و ۹۸۹۱۲… همه یعنی یک شماره؛ از همان اول یکی می‌شود
+    const phone = normalizePhone(dto.phone);
     const user = await this.prisma.user.findUnique({
       where: { phone },
     });
@@ -75,7 +77,8 @@ export class AuthService {
    * ۲. ارسال کد تایید به بله صرفاً جهت «ثبت‌نام کاربر جدید»
    */
   async sendRegisterOtp(dto: SendRegisterOtpDto) {
-    const phone = dto.phone.trim();
+    // ۰۹۱۲… و +۹۸۹۱۲… و ۹۸۹۱۲… همه یعنی یک شماره؛ از همان اول یکی می‌شود
+    const phone = normalizePhone(dto.phone);
     if (!phone) {
       throw new BadRequestException('شماره تلفن الزامی است.');
     }
@@ -110,7 +113,8 @@ export class AuthService {
    * ۳. تایید کد و تکمیل ثبت‌نام کاربر جدید + ورود خودکار
    */
   async registerWithOtp(dto: RegisterWithOtpDto) {
-    const phone = dto.phone.trim();
+    // ۰۹۱۲… و +۹۸۹۱۲… و ۹۸۹۱۲… همه یعنی یک شماره؛ از همان اول یکی می‌شود
+    const phone = normalizePhone(dto.phone);
     const code = dto.code.trim();
 
     // بررسی کد OTP
@@ -163,7 +167,8 @@ export class AuthService {
    * ۴. ارسال کد تایید جهت «فراموشی و بازیابی رمز عبور»
    */
   async sendResetPasswordOtp(dto: SendResetPasswordOtpDto) {
-    const phone = dto.phone.trim();
+    // ۰۹۱۲… و +۹۸۹۱۲… و ۹۸۹۱۲… همه یعنی یک شماره؛ از همان اول یکی می‌شود
+    const phone = normalizePhone(dto.phone);
     if (!phone) {
       throw new BadRequestException('شماره تلفن الزامی است.');
     }
@@ -195,7 +200,8 @@ export class AuthService {
    * ۵. ریست رمز عبور با کد OTP
    */
   async resetPasswordWithOtp(dto: ResetPasswordDto) {
-    const phone = dto.phone.trim();
+    // ۰۹۱۲… و +۹۸۹۱۲… و ۹۸۹۱۲… همه یعنی یک شماره؛ از همان اول یکی می‌شود
+    const phone = normalizePhone(dto.phone);
     const code = dto.code.trim();
 
     this.validateStoredOtp(phone, code);
