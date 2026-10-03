@@ -82,8 +82,8 @@ try {
 
   const phone = normalizePhone(arg('phone'));
   const password = arg('password');
-  const firstName = arg('name', 'کاربر');
-  const lastName = arg('last', 'تست');
+  const firstName = arg('name', 'ویزیتور');
+  const lastName = arg('last', 'نمونه');
 
   if (!/^09\d{9}$/.test(phone)) {
     console.error(`شمارهٔ موبایل درست نیست: «${arg('phone') ?? ''}» (مثال: 09011818219)`);
