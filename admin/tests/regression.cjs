@@ -55,6 +55,24 @@ async function request(url, token) {
   assert.equal(hist[0].type, 'SELECT');
   assert.equal(hist[0].error, 'boom');
 
+  // Money columns are Prisma Decimals. The built (minified) client names the class
+  // "i", so plain() must not rely on constructor.name — it used to leak the
+  // object's own `constructor` key and print raw JS source in the panel.
+  const decimalLike = {
+    constructor: { name: 'i' },
+    toFixed: () => '25000.00',
+    toNumber: () => 25000,
+    toString() { return '25000.00'; }
+  };
+  assert.equal(run('plain')(decimalLike), '25000.00');
+  assert.equal(run('plain')({ toFixed() {}, toNumber() {}, toString: () => '12.5' }), '12.5');
+  assert.equal(run('plain')(function named() {}), '<function>');
+  assert.equal(typeof run('plain')(new Date('2026-01-02T03:04:05Z')), 'string');
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(run('plain')({ price: decimalLike, note: null }))),
+    { price: '25000.00', note: null }
+  );
+
   const css = fs.readFileSync(path.join(__dirname, '../css/admin.css'), 'utf8');
   assert.match(css, /\[hidden\]\s*\{\s*display:\s*none\s*!important/);
   const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
@@ -83,5 +101,5 @@ async function request(url, token) {
   const tablesRes = await request('/api/tables', 'test-only');
   assert.equal(JSON.parse(tablesRes.body).tables.map((t) => t.rows).join(','), '7,3');
 
-  console.log('PASS: routing/auth, malformed URL, static boundaries, date/limit/customer filters, SQL guards, export limit, history records, hidden rule, DOM IDs, exact table counts');
+  console.log('PASS: routing/auth, malformed URL, static boundaries, date/limit/customer filters, SQL guards, export limit, history records, hidden rule, DOM IDs, exact table counts, decimal-safe rows');
 })().catch(e => { console.error(e); process.exitCode = 1; });

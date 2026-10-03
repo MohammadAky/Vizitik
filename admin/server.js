@@ -17,7 +17,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 // Reuse the generated backend client in a checkout and in the server layout.
-const { PrismaClient } = require(require.resolve('@prisma/client', { paths: [path.join(__dirname, '../backend'), path.join(__dirname, '..')] }));
+const prismaModule = require(require.resolve('@prisma/client', { paths: [path.join(__dirname, '../backend'), path.join(__dirname, '..')] }));
+const { PrismaClient } = prismaModule;
+// Prisma.Decimal is decimal.js; the class name is minified away in the built
+// client ("i"), so it can never be recognised by constructor.name.
+const PrismaDecimal = (prismaModule.Prisma && prismaModule.Prisma.Decimal) || null;
 
 // ------------------------------------------------------------------
 // Environment: backend/.env is the single source of truth for the
@@ -116,6 +120,14 @@ function readBody(req, max, binary = false) {
   });
 }
 
+function isDecimal(v) {
+  if (!v || typeof v !== 'object') return false;
+  if (PrismaDecimal && typeof PrismaDecimal.isDecimal === 'function' && PrismaDecimal.isDecimal(v)) return true;
+  // Duck typing as a fallback: a Decimal exposes toFixed/toNumber (a Date or a
+  // Buffer does not), which survives minification and client upgrades.
+  return typeof v.toFixed === 'function' && typeof v.toNumber === 'function';
+}
+
 function plain(v) {
   if (v === null || v === undefined) return v;
   const t = typeof v;
@@ -123,8 +135,8 @@ function plain(v) {
   if (t === 'string' || t === 'number' || t === 'boolean') return v;
   if (v instanceof Date) return v.toISOString();
   if (v instanceof Uint8Array) return `<${v.length} bytes>`;
-  const ctor = v && v.constructor ? v.constructor.name : '';
-  if (ctor === 'Decimal' && typeof v.toString === 'function') return v.toString();
+  if (isDecimal(v)) return v.toString();
+  if (t === 'function') return '<function>';
   if (Array.isArray(v)) return v.map(plain);
   if (t === 'object') {
     const out = {};
