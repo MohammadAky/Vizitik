@@ -39,7 +39,6 @@
 bash scripts/setup-local.sh --run   # بار اول .env و کلیدهای تصادفی را می‌سازد، سپس متوقف می‌شود
                                     # DATABASE_URL را در backend/.env تنظیم کنید و دوباره اجرا کنید
 bash scripts/run-dev.sh             # بک‌اند :3000 · ادمین :3001 · PWA :5173 (با پراکسی /api)
-                                    # و یک ویزیتور آمادهٔ ارایه می‌سازد: 09011818219 / 123456 (--no-demo = بدون آن)
 ```
 
 **سرور Ubuntu/Debian** (checkout جدا از نصب، مثلاً `~/Vizitik` و `/opt/vizitik`)

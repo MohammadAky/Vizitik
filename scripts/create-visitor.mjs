@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 /**
- * create-visitor — یک کاربر ویزیتور بساز (یا رمزش را عوض کن) بدون گذر از کد بله.
+ * create-visitor - create (or re-password) a visitor account without the Bale OTP step.
  *
- * برای تست: با شماره و رمزی که می‌دهی می‌توانی مستقیم در اپ وارد شوی
- * (ورود با رمز عبور هیچ‌وقت کد نمی‌خواهد؛ کد فقط برای «ثبت‌نام» است).
+ * Signing IN never asks for a code (the code is only for SIGNING UP), so an account
+ * created here can be used immediately in the app.
  *
- * اجرا از ریشهٔ پروژه (همان‌جا که backend/.env هست):
+ * Run it from the project root (where backend/.env lives):
  *
  *   node scripts/create-visitor.mjs --phone 09011818219 --password 123456
- *   node scripts/create-visitor.mjs --phone 09121234567 --password s3cret --name "علی" --last "محمدی"
- *   node scripts/create-visitor.mjs --list                  # کاربرهای موجود
+ *   node scripts/create-visitor.mjs --phone 09121234567 --password s3cret --name "Ali" --last "Ahmadi"
+ *   node scripts/create-visitor.mjs --list
  *
- * روی سرور:
+ * On the server:
  *   cd /opt/vizitik && node scripts/create-visitor.mjs --phone ... --password ...
- * (نیاز به backend/node_modules دارد؛ اگر نبود: cd backend && npm ci --omit=dev)
+ * (needs backend/node_modules; if missing: cd backend && npm ci --omit=dev)
  */
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -48,13 +48,13 @@ function arg(name, fallback = undefined) {
 const hasFlag = (name) => process.argv.includes(`--${name}`);
 
 if (hasFlag('help') || hasFlag('h')) {
-  console.log('usage: node scripts/create-visitor.mjs --phone 09xxxxxxxxx --password <pass> [--name علی] [--last محمدی]\n' +
+  console.log('usage: node scripts/create-visitor.mjs --phone 09xxxxxxxxx --password <pass> [--name Ali] [--last Ahmadi]\n' +
               '       node scripts/create-visitor.mjs --list');
   process.exit(0);
 }
 
 if (!fs.existsSync(path.join(BACKEND, '.env'))) {
-  console.error('backend/.env پیدا نشد. اول: bash scripts/setup-local.sh');
+  console.error('backend/.env not found. Run bash scripts/setup-local.sh first.');
   process.exit(1);
 }
 // DATABASE_URL از backend/.env خوانده می‌شود (همان فایلی که بک‌اند می‌خواند)
@@ -70,11 +70,11 @@ try {
       select: { phone: true, firstName: true, lastName: true, role: true, isActive: true, baleChatId: true },
       orderBy: { createdAt: 'asc' },
     });
-    if (!users.length) console.log('هنوز کاربری ثبت نشده است.');
+    if (!users.length) console.log('No users yet.');
     for (const u of users) {
       console.log(
         `  ${u.phone}  ${u.firstName} ${u.lastName}  [${u.role}]` +
-          `${u.isActive ? '' : ' (غیرفعال)'}${u.baleChatId ? `  بله: ${u.baleChatId}` : '  بله: وصل نیست'}`,
+          `${u.isActive ? '' : ' (inactive)'}${u.baleChatId ? `  bale: ${u.baleChatId}` : '  bale: not linked'}`,
       );
     }
     process.exit(0);
@@ -82,15 +82,15 @@ try {
 
   const phone = normalizePhone(arg('phone'));
   const password = arg('password');
-  const firstName = arg('name', 'ویزیتور');
-  const lastName = arg('last', 'نمونه');
+  const firstName = arg('name', 'Visitor');
+  const lastName = arg('last', 'Demo');
 
   if (!/^09\d{9}$/.test(phone)) {
-    console.error(`شمارهٔ موبایل درست نیست: «${arg('phone') ?? ''}» (مثال: 09011818219)`);
+    console.error(`Not a valid mobile number: "${arg('phone') ?? ''}" (example: 09011818219)`);
     process.exit(2);
   }
   if (!password || password.length < 6) {
-    console.error('رمز عبور لازم است و باید حداقل ۶ کاراکتر باشد (--password).');
+    console.error('--password is required and must be at least 6 characters.');
     process.exit(2);
   }
 
@@ -104,11 +104,11 @@ try {
     select: { id: true, phone: true, firstName: true, lastName: true, role: true },
   });
 
-  console.log(`${existing ? 'به‌روزرسانی شد' : 'ساخته شد'}: ${user.firstName} ${user.lastName} — ${user.phone} [${user.role}]`);
-  console.log(`ورود: شماره ${user.phone} + همان رمزی که دادی (بدون کد بله).`);
-  console.log('اگر در اپ وارد شدی و بله وصل نیست: در ربات بله یک‌بار دکمهٔ «ارسال و تایید شماره موبایل» را بزن تا فاکتورها هم بیاید.');
+  console.log(`${existing ? 'Updated' : 'Created'}: ${user.firstName} ${user.lastName} - ${user.phone} [${user.role}]`);
+  console.log(`Sign in with ${user.phone} + that password (no Bale code needed).`);
+  console.log('Bale is still not linked: tap "send and verify my mobile number" once in the bot to receive invoices.');
 } catch (err) {
-  console.error('خطا:', err?.message || err);
+  console.error('error:', err?.message || err);
   process.exitCode = 1;
 } finally {
   await prisma.$disconnect();
