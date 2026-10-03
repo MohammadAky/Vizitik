@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, BadRequestException, NotFoundException, Inject } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException, BadRequestException, NotFoundException, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { JwtService } from '@nestjs/jwt';
 // bcryptjs یک پیاده‌سازیِ خالصِ جاوااسکریپت و سازگار با bcrypt است:
@@ -21,6 +21,8 @@ import {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(JwtService) private readonly jwtService: JwtService,
@@ -516,37 +518,70 @@ export class AuthService {
       await this.sendBaleText(process.env.BALE_ADMIN_CHAT_ID, code, `${actionTitle} (کپی مدیر - شماره ${phone})`);
     }
 
-    if (targetChat && baleToken) {
-      try {
-        const text = `🍦 *${APP.nameFa} — ${actionTitle}*\n\n` +
-                     `کد تایید شما:\n` +
-                     `👉 \`${code}\` 👈\n\n` +
-                     `⏱ این کد به مدت ۲ دقیقه معتبر است.\n` +
-                     `⚠️ این پیام را در اختیار دیگران قرار ندهید.`;
+    if (!targetChat) {
+      // the visitor has not pressed «ارسال و تایید شماره موبایل» in the bot yet, so
+      // there is no chat to write to. The code stays pending and the bot hands it over
+      // the moment the number is shared - say so instead of pretending it was sent.
+      this.logger.warn(
+        `کد «${actionTitle}» ساخته شد ولی چت بله شماره ${phone} شناخته‌شده نیست؛ در ربات منتظر می‌ماند.`,
+      );
+      return false;
+    }
+    if (!baleToken) {
+      this.logger.error('BALE_BOT_TOKEN خالی است؛ ارسال کد به بله ممکن نیست (backend/.env را پر کنید).');
+      return false;
+    }
 
-        await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: targetChat,
-            text,
-            parse_mode: 'Markdown',
-          }),
-        });
-      } catch (err) {
-        console.error('Bale message delivery failed:', err);
+    try {
+      const apiBase = process.env.BALE_API_BASE || 'https://tapi.bale.ai';
+      const text = `🍦 *${APP.nameFa} — ${actionTitle}*\n\n` +
+                   `کد تایید شما:\n` +
+                   `👉 \`${code}\` 👈\n\n` +
+                   `⏱ این کد به مدت ۲ دقیقه معتبر است.\n` +
+                   `⚠️ این پیام را در اختیار دیگران قرار ندهید.`;
+
+      const res = await fetch(`${apiBase}/bot${baleToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: targetChat,
+          text,
+          parse_mode: 'Markdown',
+        }),
+      });
+
+      // بله حتی وقتی پیام را رد می‌کند با HTTP 200 جواب می‌دهد و ok را false می‌گذارد
+      // (مثل «bot was blocked by the user»)، پس فقط نبودِ استثنا دلیلِ ارسال نیست.
+      const answer: any = await res.json().catch(() => ({}));
+      if (!res.ok || (answer && answer.ok === false)) {
+        const reason = `${res.status} ${answer?.description || answer?.error_code || ''}`.trim();
+        this.logger.error(
+          `ارسال کد «${actionTitle}» به چت ${targetChat} ناموفق بود: ${AuthService.redact(reason)}`,
+        );
         return false;
       }
+
+      this.logger.log(`کد «${actionTitle}» به چت ${targetChat} تحویل داده شد.`);
       return true;
+    } catch (err: any) {
+      this.logger.error(
+        `ارسال کد «${actionTitle}» به چت ${targetChat} با خطای شبکه شکست خورد: ${AuthService.redact(err?.message || 'network error')}`,
+      );
+      return false;
     }
-    return false;
+  }
+
+  /** never let a bot token end up in a log line */
+  private static redact(message: string): string {
+    return String(message || '').replace(/bot\d+:[A-Za-z0-9_-]+/g, 'bot:<redacted>').slice(0, 200);
   }
 
   /** small helper for the optional admin copy */
   private async sendBaleText(chatId: string, code: string, label: string) {
     const baleToken = process.env.BALE_BOT_TOKEN ?? '';
     if (!baleToken || !chatId) return;
-    await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
+    const apiBase = process.env.BALE_API_BASE || 'https://tapi.bale.ai';
+    await fetch(`${apiBase}/bot${baleToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text: `${label}\nکد: ${code}`, disable_web_page_preview: true }),

@@ -7,7 +7,8 @@ import { APP, BOT } from "../app.config";
 export class BaleService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BaleService.name);
   private readonly baleToken = process.env.BALE_BOT_TOKEN ?? "";
-  private readonly apiUrl = `https://tapi.bale.ai/bot${this.baleToken}`;
+  private readonly apiBase = process.env.BALE_API_BASE || "https://tapi.bale.ai";
+  private readonly apiUrl = `${this.apiBase}/bot${this.baleToken}`;
   private isPolling = false;
   private lastUpdateId = 0;
 
@@ -64,7 +65,16 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
         body: JSON.stringify(payload),
       });
 
-      return await res.json().catch(() => ({}));
+      const answer: any = await res.json().catch(() => ({}));
+      // Bale reports a refused message with HTTP 200 and ok:false («bot was blocked by
+      // the user», «chat not found», ...), so a returned body is not proof of delivery.
+      if (!res.ok || (answer && answer.ok === false)) {
+        const reason = `${res.status} ${answer?.description || answer?.error_code || ""}`.trim();
+        this.logger.warn(
+          `بله پیام به چت ${chatId} را نپذیرفت: ${reason.replace(/bot\d+:[^\s"]+/g, "bot:<redacted>")}`,
+        );
+      }
+      return answer;
     } catch (err: any) {
       this.logger.error(`خطا در ارسال پیام به چت ${chatId}: ${err.message}`);
       return null;
@@ -415,11 +425,17 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       const claimed = this.otp.claimForChat(normalizedPhone, chatId);
       if (claimed) {
         const purpose = claimed.purpose === "register" ? "ثبت‌نام ویزیتور" : "بازیابی رمز عبور";
-        await this.sendMessage(
+        const sent: any = await this.sendMessage(
           chatId,
           `🔑 *کد تایید ${purpose}*\n\n\`${claimed.code}\`\n\n⏱ فقط ۲ دقیقه اعتبار دارد؛ در برنامه واردش کن.`,
         );
-        this.logger.log(`✅ کد ${purpose} به چت ${chatId} تحویل داده شد.`);
+        if (sent && sent.ok === false) {
+          this.logger.error(
+            `تحویل کد ${purpose} به چت ${chatId} ناموفق بود: ${String(sent.description || sent.error_code || "").slice(0, 120)}`,
+          );
+        } else {
+          this.logger.log(`✅ کد ${purpose} به چت ${chatId} تحویل داده شد.`);
+        }
       }
 
       let matchedRole = "";
