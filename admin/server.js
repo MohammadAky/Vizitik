@@ -918,6 +918,15 @@ if (require.main === module) {
     console.error('ADMIN_TOKEN is empty - refusing to start. Set it in backend/.env');
     process.exit(1);
   }
+  // The panel can run any SQL statement. It listens on 127.0.0.1, but nginx (and with it
+  // the internet) can reach the admin domain, so a 6-digit token is a guessable door.
+  if (TOKEN.length < 12) {
+    console.warn(
+      `[admin] هشدار: ADMIN_TOKEN فقط ${TOKEN.length} کاراکتر است. این پنل هر دستور SQL را اجرا می‌کند؛ ` +
+      'اگر آدرس پنل از اینترنت باز است (admin.domain)، توکن بلند تصادفی بگذارید: ' +
+      "openssl rand -hex 32 (در backend/.env) و سرویس را ری‌استارت کنید.",
+    );
+  }
   server.on('error', err => { console.error('[admin] listen failed:', err); process.exit(1); });
   server.listen(PORT, HOST, () => console.log(`vizitik admin listening on http://${HOST}:${PORT}`));
   for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, () => {

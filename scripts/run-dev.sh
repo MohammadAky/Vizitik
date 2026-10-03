@@ -6,6 +6,10 @@
 #    backend      -> http://localhost:3000   (NestJS:  npm run start:dev)
 #    admin panel  -> http://localhost:3001   (Node:    node server.js)
 #    PWA (Vite)   -> http://localhost:5173   (frontend-app: npm run dev)
+#    legacy PHP   -> http://localhost:8000   (frontend/: php -S, if php exists)
+#
+#  At the end it prints every panel URL, the admin token hint and the LAN address
+#  (so the visitor app can be opened on a phone in the same network).
 #
 #  One-time setup first:  bash scripts/setup-local.sh
 #  Stop everything with Ctrl+C (a failure in any child stops all of them).
@@ -38,12 +42,41 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# legacy PHP site (frontend/): optional, only when php is on PATH
+PHP_PORT="$(read_setting PHP_PORT)"; PHP_PORT="${PHP_PORT:-8000}"
+HAVE_PHP=0
+if command -v php >/dev/null 2>&1; then
+  (cd frontend && exec php -S 0.0.0.0:"$PHP_PORT") & pids+=("$!")
+  HAVE_PHP=1
+fi
+
 (cd backend && exec npm run start:dev) & pids+=("$!")
 (cd admin && exec node server.js) & pids+=("$!")
 (cd frontend-app && exec npm run dev -- --host 0.0.0.0) & pids+=("$!")
 
-echo "backend      : http://localhost:$PORT"
-echo "admin panel  : http://localhost:$ADMIN_PORT"
-echo "PWA (vite)   : http://localhost:5173  (/api proxied to $PORT)"
-echo 'Ctrl+C stops all three.'
+# آدرس شبکهٔ محلی، برای تست از موبایل (اپ ویزیتور روی گوشی)
+LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+
+cat <<EOF
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ویزیتیک بالا آمد — همهٔ آدرس‌ها
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  API (بک‌اند)        http://localhost:$PORT         (تست: /api/health)
+  پنل ادمین (SQL)     http://localhost:$ADMIN_PORT
+  اپ ویزیتور (PWA)    http://localhost:5173         (/api → :$PORT)
+$( [ "$HAVE_PHP" = 1 ] && echo "  سایت قدیمی (PHP)    http://localhost:$PHP_PORT" || echo "  سایت قدیمی (PHP)    —            (php نصب نیست: sudo apt install php-cli)" )
+
+  توکن پنل ادمین    : grep '^ADMIN_TOKEN' backend/.env
+$([ -n "$LAN_IP" ] && cat <<LAN
+
+  از موبایل در همین شبکه (وای‌فای):
+    اپ ویزیتور        http://$LAN_IP:5173
+    پنل ادمین         http://$LAN_IP:$ADMIN_PORT
+$( [ "$HAVE_PHP" = 1 ] && echo "    سایت قدیمی       http://$LAN_IP:$PHP_PORT" )
+LAN
+)
+  توقف همه          : Ctrl+C
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EOF
 wait

@@ -85,7 +85,7 @@ frontend-app/  PWA آفلاین‌محور (React + Vite، IndexedDB، sync)
 frontend/      رابط وب قدیمی PHP — از خود checkout سرو می‌شود و در نصب سرور کپی نمی‌شود
 admin/         پنل ادمین Node + Prisma (SQL، کاتالوگ، قیمت اختصاصی، سفارش، مشتری)
 landing/       صفحه‌ی معرفی استاتیک
-scripts/       setup-local · run-dev · setup-server · update + تست‌های رگرسیون
+scripts/       setup-local · run-dev (لینک همهٔ پنل‌ها) · setup-server · update · create-visitor + تست‌ها
 docs/          استقرار، SSL کلودفلر، نقشه‌ی راه
 documents/     دامپ SQL اولیه (hesabchin.sql)
 ```
