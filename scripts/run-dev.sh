@@ -45,6 +45,21 @@ export HOST=0.0.0.0 BIND_HOST=0.0.0.0
 # Vite proxies /api to the backend so the PWA talks to a same-origin API in dev.
 export DEV_API_TARGET="http://127.0.0.1:$PORT"
 
+# A run that was closed badly (window closed, process killed) leaves its children
+# behind; the new run then talks to the old server and the URL block lands above the
+# backend's own logs. Say it out loud instead of pretending.
+busy_ports=()
+port_busy() { command -v curl >/dev/null 2>&1 && curl -s -m 1 -o /dev/null "http://127.0.0.1:$1" 2>/dev/null; }
+for _p in "$PORT" "$ADMIN_PORT" 5173; do port_busy "$_p" && busy_ports+=("$_p"); done
+if [[ ${#busy_ports[@]} -gt 0 ]]; then
+  echo
+  echo "WARNING: already answering on port(s): ${busy_ports[*]}"
+  echo "         That is an older run-dev (or a manual server) still alive. Stop it first"
+  echo "         (Ctrl+C in its window, or: pkill -f 'nest start|node server.js|vite'),"
+  echo "         otherwise this run will not own those ports."
+  echo
+fi
+
 pids=()
 cleanup() {
   echo
