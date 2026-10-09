@@ -57,7 +57,7 @@
 روی سرور با `mariadb-dump` (یا `mysqldump`) بگیر و همان‌جا هم نگه ندار:
 
 ```bash
-mariadb-dump --single-transaction --quick --skip-lock-tables -u vizitik -p hesabchin | gzip > ~/vizitik-$(date +%F).sql.gz
+mariadb-dump --single-transaction --quick --skip-lock-tables -u vizitik -p vizitik_db | gzip > ~/vizitik-$(date +%F).sql.gz
 ```
 
 خروجی SQL پنل (`/api/export`) و خروجی CSV/JSON همچنان برای گرفتن گزارش است، نه بکاپ کامل.

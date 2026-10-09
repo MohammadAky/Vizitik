@@ -2,7 +2,7 @@
 
 ## قبل از هر کاری روی سرور قدیمی
 
-**`documents/hesabchin.sql` حاوی `DROP TABLE` است و فقط داده/ساختار نمونه است، نه migration.**
+**`documents/vizitik.sql` حاوی `DROP TABLE` است و فقط داده/ساختار نمونه است، نه migration.**
 نسخهٔ قبلی نصب آن را در هر اجرا وارد می‌کرد. نصب جدید هیچ SQL نمونه‌ای وارد نمی‌کند،
 هیچ دیتابیسی را reset نمی‌کند و `.env` موجود را حفظ می‌کند.
 
@@ -117,7 +117,7 @@ sudo bash scripts/update.sh --no-pull
 ```bash
 # روی سرور؛ رمز را تعاملی بده، خروجی را فشرده و بیرون از سرور هم نگه دار
 mariadb-dump --single-transaction --quick --skip-lock-tables \
-  -u vizitik -p hesabchin | gzip > ~/vizitik-$(date +%F-%H%M).sql.gz
+  -u vizitik -p vizitik_db | gzip > ~/vizitik-$(date +%F-%H%M).sql.gz
 ```
 
 - کنار SQL، یک کپی امن از `backend/.env` هم نگه دار (شامل `JWT_SECRET` و `DATABASE_URL`).

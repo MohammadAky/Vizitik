@@ -1,5 +1,9 @@
 # نقشهٔ جامع: تبدیل فرانت به اپلیکیشن PWA آفلاین + استقرار بک‌اند روی سرور لینوکس
 
+> **وضعیت: تکمیل‌شده.** PWA در `frontend-app/` پیاده‌سازی شده و نصب/آفلاین/Sync کار می‌کند؛
+> استقرار سرور هم از `scripts/setup-server.sh` و `scripts/update.sh` می‌رود (راهنما:
+> [DEPLOY-UBUNTU.md](DEPLOY-UBUNTU.md)). این سند به‌عنوان تاریخچهٔ تصمیمات باقی می‌ماند.
+
 > نسخه: ۱۴۰۵/۰۶ — مبتنی بر تصمیمات مالک:
 > - **نوع اپ:** PWA نصب‌شدنی از مرورگر (نه اپ نیتیو)
 > - **آفلاین:** بحرانی — باید بدون اینترنت هم فاکتور زد
@@ -13,8 +17,8 @@
 | بخش | واقعیت فعلی |
 | :-- | :-- |
 | بک‌اند | NestJS (TypeScript) روی پورت `3000`، احراز JWT، `enableCors()`، ربات بله داخل همان پروسه |
-| دیتابیس | **MySQL/MariaDB** — اسکیما `hesabchin`، خروجی کامل در `documents/hesabchin.sql`، اسکیمای Prisma `provider = "mysql"` ✔ |
-| `.env.example` و README | اشتباهاً Supabase/Postgres نوشته شده → **منسوخ و گمراه‌کننده** |
+| دیتابیس | **MySQL/MariaDB** — اسکیما `vizitik_db`، خروجی کامل در `documents/vizitik.sql`، اسکیمای Prisma `provider = "mysql"` ✔ |
+| `.env.example` و README | ✔ اصلاح شده — همه‌جا MySQL/`vizitik_db` (قبلاً اشتباً Supabase/Postgres نوشته شده بود) |
 | فرانت | ~۱۵ صفحهٔ PHP **سمت‌سرور رندر**؛ داده با `apiCall()`/curl از بک‌اند گرفته و HTML روی سرور ساخته می‌شود |
 | چرا آفلاین نمی‌شود | چون HTML هر بار توسط PHP ساخته می‌شود، چیزی برای کش/اجرای آفلاین در موبایل نیست |
 
@@ -36,7 +40,7 @@
 سرور لینوکس (دسترسی root)
  ├── Nginx (ریورس‌پروکسی + TLS/Let's Encrypt برای دامنه)
  ├── Node (NestJS backend، بیلد dist/main.js) به‌عنوان سرویس systemd/PM2
- └── MariaDB/MySQL محلی (دیتابیس `hesabchin`، ایمپورت از documents/hesabchin.sql)
+ └── MariaDB/MySQL محلی (دیتابیس `vizitik_db`، ایمپورت از documents/vizitik.sql)
 ```
 
 **قاعدهٔ طلایی طراحی:**
@@ -67,15 +71,15 @@ mysql_secure_installation   # رمز root دیتابیس را بگذار
 
 # ساختن کاربر اپ و دیتابیس
 mysql -u root -p
-CREATE DATABASE IF NOT EXISTS hesabchin CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS vizitik_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER 'vizitik'@'localhost' IDENTIFIED BY 'YOUR_STRONG_PASSWORD';
-GRANT ALL PRIVILEGES ON hesabchin.* TO 'vizitik'@'localhost';
+GRANT ALL PRIVILEGES ON vizitik_db.* TO 'vizitik'@'localhost';
 FLUSH PRIVILEGES;
 EXIT
 ```
 ایمپورت دامپ موجود (ساختار + دادهٔ اولیه):
 ```bash
-mysql -u vizitik -p hesabchin < documents/hesabchin.sql
+mysql -u vizitik -p vizitik_db < documents/vizitik.sql
 ```
 
 > ✅ اگر دادهٔ واقعیِ پروداکشن هنوز روی Supabase/MySQL جای دیگر است، بعداً جداگانه dump و import می‌کنیم. (نقطهٔ تصمیم: قبل از کات‌اور confirm کن.)
@@ -90,7 +94,7 @@ npx prisma generate
 
 # فایل .env — مقادیر درست (MySQL محلی، نه Supabase!)
 cat > .env <<'EOF'
-DATABASE_URL="mysql://vizitik:YOUR_STRONG_PASSWORD@localhost:3306/hesabchin"
+DATABASE_URL="mysql://vizitik:YOUR_STRONG_PASSWORD@localhost:3306/vizitik_db"
 JWT_SECRET="change-me-to-a-long-random-string"
 JWT_EXPIRES_IN="30d"
 PORT=3000
@@ -222,12 +226,12 @@ frontend-app/
 | `settings.php` / `about.php` / `help.php` | `settings` و… | ساده |
 
 ### گام ۳.۵ — کارهایی که در همین محیطِ توسعه الان می‌توانم انجام دهم
-(هر بار در یک فاز کوچک، تست‌شده و کامیت‌شده — نه یک‌باره):
-- [ ] اسکلت `frontend-app` با Vite + React + RTL + وزیرمتن + منیفست و SW قابل نصب
-- [ ] کلاینت API با JWT ذخیره در IndexedDB + صفحهٔ login/register
-- [ ] شل اپ با ناوبری bottom-tab (همان مدل فعلی)
-- [ ] لایهٔ IndexedDB و فاز «بارگیری صبحگاهی» (van-loading) — اولین نقطهٔ داده
-- [ ] سپس فاز به‌فاز: dashboard ← new-order/payment (هستهٔ آفلاین) ← orders ← collections ← products/settings
+(هر بار در یک فاز کوچک، تست‌شده و کامیت‌شده — نه یک‌باره:) — **همه انجام شد:**
+- [x] اسکلت `frontend-app` با Vite + React + RTL + وزیرمتن + منیفست و SW قابل نصب
+- [x] کلاینت API با JWT ذخیره در IndexedDB + صفحهٔ login/register
+- [x] شل اپ با ناوبری bottom-tab (همان مدل فعلی)
+- [x] لایهٔ IndexedDB و فاز «بارگیری صبحگاهی» (van-loading) — اولین نقطهٔ داده
+- [x] سپس فاز به‌فاز: dashboard ← new-order/payment (هستهٔ آفلاین) ← orders ← collections ← products/settings
 
 > هر فاز با بک‌اندِ واقعی تست می‌شود. تا وقتی سرور بالا نیامده، از `http://localhost:3000` برای توسعه استفاده می‌کنیم.
 

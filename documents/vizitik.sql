@@ -1,8 +1,8 @@
-CREATE DATABASE IF NOT EXISTS `hesabchin`
+CREATE DATABASE IF NOT EXISTS `vizitik_db`
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 
-USE `hesabchin`;
+USE `vizitik_db`;
 
 SET FOREIGN_KEY_CHECKS = 0;
 

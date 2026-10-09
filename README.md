@@ -80,16 +80,16 @@ frontend-app/  PWA آفلاین‌محور (React + Vite، IndexedDB، sync)
 frontend/      رابط وب قدیمی PHP — از خود checkout سرو می‌شود و در نصب سرور کپی نمی‌شود
 admin/         پنل ادمین Node + Prisma (SQL، کاتالوگ، قیمت اختصاصی، سفارش، مشتری)
 landing/       صفحه‌ی معرفی استاتیک
-scripts/       setup-local · run-dev (لینک همهٔ پنل‌ها) · dev-windows (ویندوز) · setup-server · update
+scripts/       setup-local · run-dev (لینک همهٔ پنل‌ها) · setup-server · update
 docs/          استقرار، SSL کلودفلر، نقشه‌ی راه
-documents/     دامپ SQL اولیه (hesabchin.sql)
+documents/     دامپ SQL اولیه (vizitik.sql)
 ```
 
 ---
 
 ## نکات مهم
 
-- `documents/hesabchin.sql` شامل `DROP TABLE` است؛ آن را روی دیتابیس موجود اجرا نکنید. نصب و
+- `documents/vizitik.sql` شامل `DROP TABLE` است؛ آن را روی دیتابیس موجود اجرا نکنید. نصب و
   آپدیت آن را ایمپورت نمی‌کنند و هیچ فایل `.env` موجودی بازنویسی نمی‌شود.
 - **بکاپ/بازیابی خودکار جزو پروژه نیست.** پیش از تغییرات حساس خودتان با `mariadb-dump` بکاپ
   بگیرید و کپی رمزگذاری‌شده را بیرون از سرور نگه دارید.
@@ -112,7 +112,7 @@ documents/     دامپ SQL اولیه (hesabchin.sql)
 | [docs/DEPLOY-UBUNTU.md](docs/DEPLOY-UBUNTU.md) | نصب، آپدیت، بکاپ و بازیابی امن، تست‌ها |
 | [docs/CLOUDFLARE-SSL.md](docs/CLOUDFLARE-SSL.md) | گواهی SSL با DNS-01 کلودفلر |
 | [admin/README.md](admin/README.md) | پنل ادمین: endpoint ها، امنیت، خروجی‌گیری |
-| [docs/MOBILE_PWA_ROADMAP.md](docs/MOBILE_PWA_ROADMAP.md) | نقشه‌ی راه اپ موبایل |
+| [docs/MOBILE_PWA_ROADMAP.md](docs/MOBILE_PWA_ROADMAP.md) | تاریخچهٔ تصمیمات نقشهٔ راه PWA (تکمیل‌شده) |
 | [backend/.env.example](backend/.env.example) | توضیح تک‌تک متغیرهای محیطی |
 
 ## مجوز
