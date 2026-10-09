@@ -41,14 +41,6 @@ bash scripts/setup-local.sh --run   # بار اول .env و کلیدهای تص�
 bash scripts/run-dev.sh             # بک‌اند :3000 · ادمین :3001 · PWA :5173 (با پراکسی /api)
 ```
 
-**لوکال روی ویندوز** (بدون Git Bash؛ اسکریپت‌های سرور دست‌نخورده می‌مانند)
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev-windows.ps1
-# فقط نصب و آماده‌سازی، بدون اجرا:
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev-windows.ps1 -SetupOnly
-```
-
 **سرور Ubuntu/Debian** (checkout جدا از نصب، مثلاً `~/Vizitik` و `/opt/vizitik`)
 
 ```bash
