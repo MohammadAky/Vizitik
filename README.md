@@ -33,12 +33,20 @@
 
 ## راه‌اندازی سریع
 
-**لوکال** (پیش‌نیاز: Node 22+، Python 3، MySQL/MariaDB روشن)
+**لوکال** (پیش‌نیاز: Node 22+، MySQL/MariaDB روشن)
 
 ```bash
 bash scripts/setup-local.sh --run   # بار اول .env و کلیدهای تصادفی را می‌سازد، سپس متوقف می‌شود
                                     # DATABASE_URL را در backend/.env تنظیم کنید و دوباره اجرا کنید
 bash scripts/run-dev.sh             # بک‌اند :3000 · ادمین :3001 · PWA :5173 (با پراکسی /api)
+```
+
+**لوکال روی ویندوز** (بدون Git Bash؛ اسکریپت‌های سرور دست‌نخورده می‌مانند)
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev-windows.ps1
+# فقط نصب و آماده‌سازی، بدون اجرا:
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev-windows.ps1 -SetupOnly
 ```
 
 **سرور Ubuntu/Debian** (checkout جدا از نصب، مثلاً `~/Vizitik` و `/opt/vizitik`)
@@ -64,11 +72,6 @@ sudo bash scripts/update.sh               # pull + فقط درخت‌های تغ
 ## تست‌ها
 
 ```bash
-(cd backend && npm ci --include=dev && npx prisma generate && npm run build)
-python3 scripts/tests/setup-safety.py
-python3 scripts/tests/update-regression.py
-python3 scripts/tests/update-rollback.py
-python3 scripts/tests/backend-typecheck.py
 node admin/tests/regression.cjs
 ```
 
@@ -85,7 +88,7 @@ frontend-app/  PWA آفلاین‌محور (React + Vite، IndexedDB، sync)
 frontend/      رابط وب قدیمی PHP — از خود checkout سرو می‌شود و در نصب سرور کپی نمی‌شود
 admin/         پنل ادمین Node + Prisma (SQL، کاتالوگ، قیمت اختصاصی، سفارش، مشتری)
 landing/       صفحه‌ی معرفی استاتیک
-scripts/       setup-local · run-dev (لینک همهٔ پنل‌ها) · setup-server · update · create-visitor + تست‌ها
+scripts/       setup-local · run-dev (لینک همهٔ پنل‌ها) · dev-windows (ویندوز) · setup-server · update
 docs/          استقرار، SSL کلودفلر، نقشه‌ی راه
 documents/     دامپ SQL اولیه (hesabchin.sql)
 ```

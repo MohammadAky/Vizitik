@@ -31,8 +31,7 @@ landing/
 
 ```bash
 cd landing
-python3 -m http.server 8080
-# یا: npx serve .
+npx serve .
 ```
 
 ## استقرار

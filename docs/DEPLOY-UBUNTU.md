@@ -148,14 +148,10 @@ dump جدید شامل `CREATE DATABASE`/`USE` نیست؛ dump قدیمی را �
 
 ## ۶. تست‌ها و وضعیت اعتبارسنجی
 
-تست‌های واحد و رگرسیون با دیتابیس/دستورات سیستم شبیه‌سازی‌شده:
+تست‌های واحد و رگرسیون:
 
 ```bash
-(cd backend && npm ci --include=dev && npx prisma generate && npm run build)
-python3 scripts/tests/setup-safety.py
-python3 scripts/tests/update-regression.py
-python3 scripts/tests/update-rollback.py
-python3 scripts/tests/backend-typecheck.py
+node admin/tests/regression.cjs
 ```
 
 تست واقعی **مخرب برای دیتابیس تست** است و فقط نام `vizitik_test` را می‌پذیرد:

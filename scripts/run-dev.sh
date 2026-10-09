@@ -142,7 +142,7 @@ cat <<EOF
 $PHP_LINE
 
   Admin token         : grep '^ADMIN_TOKEN' backend/.env
-  Visitor account     : node scripts/create-visitor.mjs --phone 09... --password ...
+  First account       : «ثبت‌نام ویزیتور جدید» in the app (the code goes to the Bale bot)
 $PHONE_BLOCK
   Stop everything     : Ctrl+C
 ======================================================================
