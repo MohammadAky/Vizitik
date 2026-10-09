@@ -51,8 +51,10 @@ npm run start:dev
 ## 🗂️ ماژول‌ها و مسیرهای API (Endpoints)
 
 ### ۱. احراز هویت (`/api/auth`)
-- `POST /api/auth/register` : ثبت‌نام ویزیتور جدید (نام، نام خانوادگی، موبایل، رمز عبور)
+- `POST /api/auth/send-register-otp` : ارسال کد تایید ۵ رقمی به گفتگوی بله برای ثبت‌نام
+- `POST /api/auth/register-with-otp` : ثبت‌نام ویزیتور جدید با کد تایید + ورود خودکار
 - `POST /api/auth/login` : ورود ویزیتور و دریافت توکن JWT (اعتبار ۳۰ روزه)
+- `POST /api/auth/send-reset-otp` · `POST /api/auth/reset-password-with-otp` : بازیابی رمز با کد بله
 
 ### ۲. محصولات (`/api/products`) `[نیاز به توکن Bearer]`
 - `GET /api/products` : دریافت لیست تمام بستنی‌ها با قیمت‌های اختصاصی هر ویزیتور

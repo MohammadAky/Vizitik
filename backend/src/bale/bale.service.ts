@@ -48,13 +48,17 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * ارسال پیام متنی به چت در بله
+   *
+   * بدون parse_mode: بله (مثل تلگرام) اگر یک `_` یا `*` تنها مانده باشد کل پیام را
+   * رد می‌کند و هیچ چیزی به دست کاربر نمی‌رسد. شمارهٔ فاکتور عمداً با زیرخط ساخته
+   * می‌شود (`#1405_000012`) و نام فروشگاه و محصول را هم کنترلی نداریم، پس همهٔ
+   * پیام‌های ربات متن ساده‌اند و ساختارشان از خط جدید و نشانه‌های ▪️ می‌آید.
    */
   async sendMessage(chatId: string | number, text: string, replyMarkup: any = null) {
     try {
       const payload: any = {
         chat_id: String(chatId),
         text,
-        parse_mode: "Markdown",
       };
       if (replyMarkup) {
         payload.reply_markup = replyMarkup;
@@ -156,7 +160,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (remainingCredit > 0) {
-        paymentMethodsList += `\n▫️ مانده نسیه فاکتور: *${remainingCreditStr} تومان*`;
+        paymentMethodsList += `\n▪️ مانده نسیه فاکتور: ${remainingCreditStr} تومان`;
       }
 
       // لیست اقلام سفارش
@@ -180,45 +184,43 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       const latestBalance =
         customer.ledgerEntries.length > 0 ? Number(customer.ledgerEntries[0].balanceAfter) : 0;
       const latestBalanceStr = latestBalance.toLocaleString("fa-IR");
-      const debtSection = `\n📊 *وضعیت حساب شما:*\n▫️ مانده کل بدهی نزد ${APP.nameFa}: *${latestBalanceStr} تومان*\n`;
+      const debtSection = `\nوضعیت حساب شما\n▪️ مانده کل بدهی نزد ${APP.nameFa}: ${latestBalanceStr} تومان\n`;
 
-      const updatePrefix = options.isUpdate ? "✏️ *[اصلاحیه فاکتور]*\n" : "";
+      const updatePrefix = options.isUpdate ? "اصلاحیه فاکتور\n\n" : "";
 
       // ۱. پیام اختصاصی برای مشتری / فروشگاه
       const customerMessage =
-        `${updatePrefix}🧾 *فاکتور رسمی ${APP.nameFa}*\n\n` +
-        `🏪 *فروشگاه:* ${customer.name}\n` +
-        `🔢 *شماره فاکتور:* #${invNo.replace(/-/g, "_")}\n` +
-        `📅 *زمان ثبت:* ${orderDateStr}\n` +
-        `👤 *ویزیتور:* #${visitor.firstName}_${visitor.lastName} (${visitor.phone})\n\n` +
-        (itemsListText ? `📋 *اقلام فاکتور:*\n${itemsListText}\n\n` : "") +
-        `💵 *جمع ناخالص:* ${subtotalStr} تومان\n` +
-        (Number(order.totalDiscountAmount) > 0 ? `🎁 *مجموع تخفیف:* ${discountStr} تومان\n` : "") +
-        `💰 *مبلغ نهایی قابل پرداخت:* *${finalStr} تومان*\n\n` +
-        `💳 *روش تسویه و پرداخت:*\n${paymentMethodsList}\n` +
+        `${updatePrefix}فاکتور رسمی ${APP.nameFa}\n\n` +
+        `فروشگاه: ${customer.name}\n` +
+        `شماره فاکتور: #${invNo.replace(/-/g, "_")}\n` +
+        `زمان ثبت: ${orderDateStr}\n` +
+        `ویزیتور: #${visitor.firstName}_${visitor.lastName} (${visitor.phone})\n\n` +
+        (itemsListText ? `اقلام فاکتور:\n${itemsListText}\n\n` : "") +
+        `جمع ناخالص: ${subtotalStr} تومان\n` +
+        (Number(order.totalDiscountAmount) > 0 ? `مجموع تخفیف: ${discountStr} تومان\n` : "") +
+        `مبلغ نهایی قابل پرداخت: ${finalStr} تومان\n\n` +
+        `روش تسویه و پرداخت:\n${paymentMethodsList}\n` +
         debtSection +
-        `\n— — —\n` +
-        `🤝 *هم‌توزیع‌کننده‌ها را هم به ${APP.nameFa} دعوت کنید*\n` +
-        `اگر ویزیتور یا پخش‌کننده‌ی دیگری را می‌شناسید که به این فروشگاه یا محله‌های دیگر سر می‌زند، این ربات را به او معرفی کنید تا سفارش، فاکتور و حسابِ او هم دقیق و منظم در *${APP.nameFa}* ثبت و همین‌جا در بله ارسال شود.\n` +
+        `\nاگر ویزیتور یا پخش‌کنندهٔ دیگری را می‌شناسید، این ربات را به او معرفی کنید تا سفارش و حساب او نیز در ${APP.nameFa} ثبت شود.\n` +
         `ربات: ${BOT.link}`;
 
       // ۲. پیام اختصاصی برای ویزیتور — با کلیهٔ اطلاعات فاکتور، دقیقاً مثل پیام مشتری
       const visitorMessage =
-        `${updatePrefix}📋 *فاکتور فروش — گزارش خودکار ویزیتور*\n\n` +
-        `🏪 *فروشگاه:* ${customer.name}\n` +
-        (customer.phone ? `📞 *تلفن فروشگاه:* ${customer.phone}\n` : ``) +
-        `🔢 *شماره فاکتور:* #${invNo.replace(/-/g, "_")}\n` +
-        `📅 *زمان ثبت:* ${orderDateStr}\n` +
-        `👤 *ویزیتور:* #${visitor.firstName}_${visitor.lastName} (${visitor.phone})\n\n` +
-        (itemsListText ? `📦 *اقلام فاکتور:*\n${itemsListText}\n\n` : "") +
-        `💵 *جمع ناخالص:* ${subtotalStr} تومان\n` +
-        (Number(order.totalDiscountAmount) > 0 ? `🎁 *مجموع تخفیف:* ${discountStr} تومان\n` : "") +
-        `💰 *مبلغ نهایی قابل پرداخت:* *${finalStr} تومان*\n\n` +
-        `💳 *روش تسویه و پرداخت:*\n${paymentMethodsList}\n\n` +
-        `📊 *مانده کل حساب فروشگاه:* ${latestBalanceStr} تومان\n` +
+        `${updatePrefix}گزارش خودکار فاکتور فروش\n\n` +
+        `فروشگاه: ${customer.name}\n` +
+        (customer.phone ? `تلفن فروشگاه: ${customer.phone}\n` : ``) +
+        `شماره فاکتور: #${invNo.replace(/-/g, "_")}\n` +
+        `زمان ثبت: ${orderDateStr}\n` +
+        `ویزیتور: #${visitor.firstName}_${visitor.lastName} (${visitor.phone})\n\n` +
+        (itemsListText ? `اقلام فاکتور:\n${itemsListText}\n\n` : "") +
+        `جمع ناخالص: ${subtotalStr} تومان\n` +
+        (Number(order.totalDiscountAmount) > 0 ? `مجموع تخفیف: ${discountStr} تومان\n` : "") +
+        `مبلغ نهایی قابل پرداخت: ${finalStr} تومان\n\n` +
+        `روش تسویه و پرداخت:\n${paymentMethodsList}\n\n` +
+        `مانده کل حساب فروشگاه: ${latestBalanceStr} تومان\n` +
         (customer.baleChatId ?
-          `📲 *فاکتور به صورت خودکار برای فروشگاه در بله ارسال شد.*`
-        : `⚠️ *فروشگاه هنوز در ربات بله متصل نشده است.*`);
+          `این فاکتور به صورت خودکار برای فروشگاه نیز ارسال شد.`
+        : `فروشگاه هنوز به ربات بله متصل نشده است.`);
 
       let customerSent = false;
       let visitorSent = false;
@@ -394,9 +396,10 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
     // ۱. در صورت ارسال /start یا متن
     if (text && !message.contact) {
       const welcomeText =
-        `سلام *${fromName}* عزیز؛ 🍦\n` +
-        `به ربات رسمی *${APP.nameFa}* (سامانه توزیع مویرگی و پخش گرم) خوش آمدید.\n\n` +
-        `برای اتصال خودکار شماره تلفن شما و دریافت لحظه‌ای فاکتورها، صورت‌حساب و تخفیف‌ها، لطفاً دکمه زیر را لمس نمایید:`;
+        `سلام ${fromName} عزیز،\n` +
+        `به ربات ${APP.nameFa} خوش آمدید.\n\n` +
+        `با تأیید شمارهٔ موبایل، فاکتور، صورت‌حساب و اعلان‌های تخفیف شما از این پس در همین گفتگو ارسال می‌شود.\n\n` +
+        `برای شروع، دکمهٔ زیر را بزنید:`;
 
       const contactKeyboard = {
         keyboard: [
@@ -438,18 +441,26 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
     // همین‌جا و فقط به همین چت تحویل داده می‌شود (به چت مدیر هرگز فرستاده نمی‌شود)
     this.otp.rememberChat(normalizedPhone, chatId);
     const claimed = this.otp.claimForChat(normalizedPhone, chatId);
+    // فقط وقتی پاسخ bale ok:true باشد کد به چت رسیده است؛ ادعای «ارسال شد»
+    // باید به همین متغیر گره بخورد، نه به خودِ claim (که قبل از ارسال اتفاق می‌افتد)
+    let otpDelivered = false;
     if (claimed) {
       const purpose = claimed.purpose === "register" ? "ثبت‌نام ویزیتور" : "بازیابی رمز عبور";
       const sent: any = await this.sendMessage(
         chatId,
-        `🔑 *کد تایید ${purpose}*\n\n\`${claimed.code}\`\n\n⏱ فقط ۲ دقیقه اعتبار دارد؛ در برنامه واردش کن.`,
+        `کد تایید ${APP.nameFa}\n${purpose}\n\nکد: ${claimed.code}\n\nاین کد تا ۲ دقیقه معتبر است؛ آن را در اختیار دیگران قرار ندهید.`,
       );
-      if (sent && sent.ok === false) {
-        this.logger.error(
-          `تحویل کد ${purpose} به چت ${chatId} ناموفق بود: ${String(sent.description || sent.error_code || "").slice(0, 120)}`,
-        );
-      } else {
+      // only ok:true is delivery: Bale refuses with HTTP 200 + ok:false, and a
+      // network failure comes back as null - either way the code must stay
+      // claimable so sharing the number again can still hand it over
+      if (sent && sent.ok === true) {
+        otpDelivered = true;
         this.logger.log(`✅ کد ${purpose} به چت ${chatId} تحویل داده شد.`);
+      } else {
+        this.otp.releaseClaim(normalizedPhone);
+        this.logger.error(
+          `تحویل کد ${purpose} به چت ${chatId} ناموفق بود: ${String(sent?.description || sent?.error_code || "خطای شبکه").slice(0, 120)}`,
+        );
       }
     }
 
@@ -505,20 +516,23 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
     let confirmationText = "";
     if (matchedRole === "مشتری") {
       confirmationText =
-        `✅ *فروشگاه محترم ${matchedName}؛*\n\n` +
-        `شماره موبایل شما (*${normalizedPhone}*) با موفقیت تایید و به سیستم ${APP.nameFa} متصل شد.\n` +
-        `از این پس فاکتورهای رسمی، ریز اقلام، مانده حساب و جشنواره‌های تخفیف مستقیماً به این صفحه ارسال خواهند شد. 🍦`;
+        `اتصال شماره تأیید شد\n` +
+        `فروشگاه: ${matchedName}\n` +
+        `شماره: ${normalizedPhone}\n\n` +
+        `از این پس فاکتور، ماندهٔ حساب و اعلان‌های تخفیف شما در همین گفتگو ارسال می‌شود.`;
     } else if (matchedRole === "ویزیتور") {
       confirmationText =
-        `✅ *ویزیتور گرامی (${matchedName})؛*\n\n` +
-        `اکانت بله شما با موفقیت متصل شد.\n` +
-        `تمامی فاکتورهای صادره، گزارش‌های فروش و کدهای ورود به این چت ارسال خواهند شد. 🚀`;
+        `اتصال شماره تأیید شد\n` +
+        `ویزیتور: ${matchedName}\n` +
+        `شماره: ${normalizedPhone}\n\n` +
+        `از این پس فاکتورها، گزارش فروش و کدهای ورود شما در همین گفتگو ارسال می‌شود.`;
     } else {
-      confirmationText = claimed
-        ? `✅ شماره *${normalizedPhone}* به این گفتگو متصل شد.\nکد تایید در پیام بالا ارسال شده است؛ آن را در برنامه وارد کن.`
-        : `✅ شماره موبایل شما (*${normalizedPhone}*) با موفقیت در سیستم تایید شد.\n\n` +
-          `به محض صدور فاکتور یا تعریف فروشگاه شما توسط ویزیتور، اعلان‌ها در این چت فعال خواهند شد.\n` +
-          `اگر در حال ساخت حساب جدیدی: حالا در برنامه «دریافت کد» را بزن تا کد ۵ رقمی همین‌جا بیاید. ✨`;
+      confirmationText = otpDelivered
+        ? `شماره ${normalizedPhone} در این گفتگو تأیید شد.\n` +
+          `کد تایید در پیام بالا برای شما ارسال شد؛ آن را در برنامه وارد کنید.`
+        : `شماره ${normalizedPhone} در این گفتگو تأیید شد.\n\n` +
+          `اگر ثبت‌نام یا بازیابی رمز را در برنامه آغاز کرده‌اید، اکنون «دریافت کد» را بزنید تا کد پنج‌رقمی به همین گفتگو ارسال شود.\n\n` +
+          `در غیر این صورت، به محض تعریف فروشگاه توسط ویزیتور، اعلان‌های شما در این گفتگو فعال می‌شود.`;
     }
 
     const removeKeyboard = { remove_keyboard: true };
@@ -673,7 +687,7 @@ export class BaleService implements OnModuleInit, OnModuleDestroy {
       const debtStr = debt > 0 ? `${debt.toLocaleString("fa-IR")} تومان` : "۰ تومان (تسویه)";
 
       const personalizedText =
-        `📢 *پیام اطلاع‌رسانی ${APP.nameFa}*\n\n` +
+        `پیام اطلاع‌رسانی ${APP.nameFa}\n\n` +
         templateText
           .replace(/{نام_فروشگاه}/g, cust.name)
           .replace(/{نام_ویزیتور}/g, visitorTag)

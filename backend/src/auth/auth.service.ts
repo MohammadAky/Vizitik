@@ -91,21 +91,18 @@ export class AuthService {
       throw new BadRequestException('این شماره تلفن قبلاً ثبت شده است. لطفاً وارد شوید یا از فراموشی رمز استفاده کنید.');
     }
 
-    // تولید کد ۵ رقمی
-    const issued = this.otp.issue(phone, 'register');
-    const otpCode = issued.code;
-
     // مقصد کد: گفتگوی بله‌ای که این شماره را تأیید کرده است (یا chatId که کلاینت فرستاده)
     const chatId = dto.baleChatId || this.otp.chatFor(phone);
-    const delivered = await this.dispatchBaleMessage(phone, otpCode, 'ثبت‌نام ویزیتور جدید', chatId);
+    const { code, delivered } = await this.issueAndSend(phone, 'register', chatId, 'ثبت‌نام ویزیتور جدید');
 
     return {
       success: true,
       delivery: delivered ? 'bale' : 'waiting-in-bot',
       message: delivered
         ? 'کد تایید ۵ رقمی در گفتگوی بله برای شما ارسال شد.'
-        : 'برای دریافت کد، در ربات بله /start بزن و دکمهٔ «ارسال و تایید شماره موبایل» را لمس کن؛ کد ۵ رقمی همان‌جا در گفتگو ظاهر می‌شود. اگر شماره را قبلاً فرستاده‌ای، کافی است دوباره «دریافت کد» را بزنی.',
-      ...(process.env.NODE_ENV !== 'production' ? { debugCode: otpCode } : {}),
+        : 'برای دریافت کد، در ربات بله دستور /start را بزنید و دکمهٔ «ارسال و تایید شماره موبایل» را انتخاب کنید؛ کد پنج‌رقمی در همان گفتگو برای شما ارسال می‌شود. اگر شماره را قبلاً فرسته‌اید، کافی است دوباره «دریافت کد» را بزنید.',
+      // فقط وقتی کد واقعاً رفته باشد معنا دارد؛ برای درخواستِ در انتظار کدی وجود ندارد
+      ...(delivered && process.env.NODE_ENV !== 'production' ? { debugCode: code } : {}),
     };
   }
 
@@ -180,19 +177,16 @@ export class AuthService {
       throw new NotFoundException('کاربری با این شماره تلفن در سامانه یافت نشد.');
     }
 
-    const issued = this.otp.issue(phone, 'reset');
-    const otpCode = issued.code;
-
     const chatId = (user as any)?.baleChatId || this.otp.chatFor(phone);
-    const delivered = await this.dispatchBaleMessage(phone, otpCode, 'بازیابی رمز عبور', chatId);
+    const { code, delivered } = await this.issueAndSend(phone, 'reset', chatId, 'بازیابی رمز عبور');
 
     return {
       success: true,
       delivery: delivered ? 'bale' : 'waiting-in-bot',
       message: delivered
         ? 'کد تایید بازیابی رمز عبور در گفتگوی بله شما ارسال شد.'
-        : 'این شماره به گفتگوی بله متصل نیست. در ربات بله /start بزن و دکمهٔ «ارسال و تایید شماره موبایل» را لمس کن، سپس دوباره «دریافت کد» را بزن تا کد همان‌جا ارسال شود.',
-      ...(process.env.NODE_ENV !== 'production' ? { debugCode: otpCode } : {}),
+        : 'این شماره به گفتگوی بله متصل نیست. در ربات بله دستور /start را بزنید و دکمهٔ «ارسال و تایید شماره موبایل» را انتخاب کنید، سپس دوباره «دریافت کد» را بزنید تا کد در همان گفتگو ارسال شود.',
+      ...(delivered && process.env.NODE_ENV !== 'production' ? { debugCode: code } : {}),
     };
   }
 
@@ -303,8 +297,9 @@ export class AuthService {
     // ۱. اگر کاربر /start زد یا پیامی فرستاد
     if (message.text && !message.contact) {
       const welcomeText =
-        `🍦 *به سامانه اطلاع‌رسانی و پخش ${APP.nameFa} خوش آمدید*\n\n` +
-        `برای اتصال خودکار شماره شما و دریافت لحظه‌ای فاکتورها، مانده حساب و جشنواره‌های تخفیف، لطفاً دکمه «📱 ارسال شماره موبایل» زیر را لمس نمایید:`;
+        `به ربات ${APP.nameFa} خوش آمدید.\n\n` +
+        `با تأیید شمارهٔ موبایل، فاکتور، صورت‌حساب و اعلان‌های تخفیف شما از این پس در همین گفتگو ارسال می‌شود.\n\n` +
+        `برای شروع، دکمهٔ زیر را بزنید:`;
 
       await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
         method: 'POST',
@@ -312,7 +307,6 @@ export class AuthService {
         body: JSON.stringify({
           chat_id: chatId,
           text: welcomeText,
-          parse_mode: 'Markdown',
           reply_markup: {
             keyboard: [
               [
@@ -333,12 +327,9 @@ export class AuthService {
 
     // ۲. دریافت شماره موبایل اشتراک‌گذاری شده از طرف کاربر
     if (message.contact) {
-      let phone = String(message.contact.phone_number || '').replace(/[^0-9]/g, '');
-      if (phone.startsWith('98') && phone.length === 12) {
-        phone = '0' + phone.substring(2);
-      } else if (phone.length === 10 && phone.startsWith('9')) {
-        phone = '0' + phone;
-      }
+      // همان نرمال‌سازیِ همه‌جا: شکل‌های 0098… / +98… / 98… باید به کلیدِ یکسانی
+      // برسند، وگرنه کدی که برنامه برای این شماره ساخته هرگز پیدا نمی‌شود
+      const phone = normalizePhone(message.contact.phone_number);
 
       let matchedRole = '';
       let matchedName = '';
@@ -348,15 +339,19 @@ export class AuthService {
       const claimed = this.otp.claimForChat(phone, chatId);
       if (claimed) {
         const purpose = claimed.purpose === 'register' ? 'ثبت‌نام ویزیتور' : 'بازیابی رمز عبور';
-        await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
+        const res = await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: chatId,
-            text: `🔑 *کد تایید ${purpose}*\n\n\`${claimed.code}\`\n\n⏱ فقط ۲ دقیقه اعتبار دارد؛ در برنامه واردش کن.`,
-            parse_mode: 'Markdown',
+            text: `کد تایید ${APP.nameFa}\n${purpose}\n\nکد: ${claimed.code}\n\nاین کد تا ۲ دقیقه معتبر است؛ آن را در اختیار دیگران قرار ندهید.`,
           }),
-        }).catch(() => {});
+        }).catch(() => null);
+        const answer: any = await res?.json?.().catch(() => null);
+        if (!(res?.ok && answer && answer.ok === true)) {
+          // بله پاسخ رد را با HTTP 200 و ok:false می‌فرستد؛ کد باید دوباره قابل تحویل بماند
+          this.otp.releaseClaim(phone);
+        }
       }
 
       // بررسی در جدول مشتریان (فروشگاه‌ها)
@@ -403,18 +398,20 @@ export class AuthService {
       let replyMsg = '';
       if (matchedRole === 'مشتری') {
         replyMsg =
-          `✅ *فروشگاه محترم ${matchedName}؛*\n\n` +
-          `شماره شما (${phone}) با موفقیت تایید و به سیستم ${APP.nameFa} متصل شد.\n` +
-          `از این پس صورت‌حساب‌ها، مانده حساب و جشنواره‌های تخفیف مستقیماً به این صفحه ارسال خواهند شد. 🍦`;
+          `اتصال شماره تأیید شد\n` +
+          `فروشگاه: ${matchedName}\n` +
+          `شماره: ${phone}\n\n` +
+          `از این پس فاکتور، ماندهٔ حساب و اعلان‌های تخفیف شما در همین گفتگو ارسال می‌شود.`;
       } else if (matchedRole === 'ویزیتور') {
         replyMsg =
-          `✅ *ویزیتور گرامی (${matchedName})؛*\n\n` +
-          `اکانت بله شما با موفقیت به سیستم متصل شد.\n` +
-          `تمامی فاکتورها، گزارش‌های فروش و کدهای ورود به این چت ارسال خواهند شد. 🚀`;
+          `اتصال شماره تأیید شد\n` +
+          `ویزیتور: ${matchedName}\n` +
+          `شماره: ${phone}\n\n` +
+          `از این پس فاکتورها، گزارش فروش و کدهای ورود شما در همین گفتگو ارسال می‌شود.`;
       } else {
         replyMsg =
-          `✅ شماره موبایل شما (${phone}) در سامانه تایید شد.\n` +
-          `به محض صدور فاکتور یا ثبت فروشگاه توسط ویزیتور، اعلان‌ها برای شما فعال خواهند شد.`;
+          `شماره ${phone} در این گفتگو تأیید شد.\n\n` +
+          `به محض تعریف فروشگاه شما توسط ویزیتور، اعلان‌های شما در این گفتگو فعال می‌شود.`;
       }
 
       await fetch(`https://tapi.bale.ai/bot${baleToken}/sendMessage`, {
@@ -423,7 +420,6 @@ export class AuthService {
         body: JSON.stringify({
           chat_id: chatId,
           text: replyMsg,
-          parse_mode: 'Markdown',
           reply_markup: {
             remove_keyboard: true,
           },
@@ -447,11 +443,55 @@ export class AuthService {
         : 'کد تایید منقضی شده یا درخواستی ثبت نشده است. لطفاً مجدداً درخواست کد دهید.');
     }
 
+    // درخواست ثبت شده ولی کدی هنوز ساخته و ارسال نشده (چت بله هنوز وصل نیست)
+    if (!stored.code) {
+      throw new BadRequestException(
+        'کدی برای این شماره ارسال نشده است؛ نخست شماره را در ربات بله تأیید کنید و سپس دوباره «دریافت کد» را بزنید.',
+      );
+    }
+
     if (stored.code !== code) {
       throw new BadRequestException('کد تایید وارد شده نادرست است.');
     }
 
     this.otp.consume(phone);
+  }
+
+  /**
+   * کل مسیرِ ارسالِ یک کد: درخواست ثبت می‌شود، و فقط اگر چتی برای این شماره
+   * شناخته‌شده باشد کدِ پنج‌رقمی ساخته و فرستاده می‌شود.
+   *
+   * کد لحظهٔ ارسال به دنیا می‌آید، نه لحظهٔ درخواست — پس عمر دو دقیقه‌اش دقیقاً
+   * از وقتی شروع می‌شود که به دست صاحب شماره رسیده است. تا قبل از آن فقط یک
+   * «درخواست» منتظر می‌ماند و هیچ کدی وجود ندارد که منقضی یا لو برود.
+   *
+   * اگر ارسال شکست بخورد کد دور ریخته می‌شود و درخواست باز می‌ماند تا بار دیگر
+   * که شماره در ربات تایید شد، کدِ تازه‌ای برایش ساخته شود.
+   */
+  private async issueAndSend(
+    phone: string,
+    purpose: 'register' | 'reset',
+    chatId: string | null | undefined,
+    actionTitle: string,
+  ): Promise<{ code: string | null; delivered: boolean }> {
+    this.otp.issue(phone, purpose);
+
+    if (!chatId) {
+      this.logger.warn(
+        `کد «${actionTitle}» برای شماره ${phone} ساخته نشد: هنوز چت بله‌ای برای این شماره شناخته‌شده نیست؛ درخواست در ربات منتظر می‌ماند.`,
+      );
+      return { code: null, delivered: false };
+    }
+
+    const rec = this.otp.claimForChat(phone, chatId);
+    if (!rec) return { code: null, delivered: false };
+
+    const delivered = await this.dispatchBaleMessage(phone, rec.code, actionTitle, chatId);
+    if (!delivered) {
+      this.otp.releaseClaim(phone);
+      return { code: null, delivered: false };
+    }
+    return { code: rec.code, delivered: true };
   }
 
   /**
@@ -474,10 +514,11 @@ export class AuthService {
         timeZone: 'Asia/Tehran',
       }).format(new Date());
 
-      const text = `🍦 *سامانه جامع پخش گرم ${APP.nameFa}*\n\n` +
-                   `🚀 *سرور بک‌اند آنلاین شد!*\n` +
-                   `⏱ *زمان:* ${nowStr}\n` +
-                   `✅ *وضعیت:* آماده صدور فاکتور و ثبت وصولی`;
+      const text = `${APP.nameFa}\n` +
+                   `سامانهٔ فروش و توزیع مویرگی\n\n` +
+                   `سرویس با موفقیت در دسترس قرار گرفت.\n` +
+                   `زمان: ${nowStr}\n` +
+                   `وضعیت: آماده ثبت سفارش، صدور فاکتور و وصول مطالبات`;
 
       const adminChatId = process.env.BALE_ADMIN_CHAT_ID || '';
       const targetChatIds = new Set<string>();
@@ -497,8 +538,10 @@ export class AuthService {
             body: JSON.stringify({
               chat_id: chatId,
               text,
-              parse_mode: 'Markdown',
             }),
+            // راه‌اندازی سرور نباید به دسترسی به بله گره بخورد؛ بدون این، دسترسی
+            // نداشتن به bale.ai (اینترنت قطع یا فیلتر) بالا آمدن سرور را معطل می‌کرد
+            signal: AbortSignal.timeout(6000),
           });
         } catch (e) {
           console.error(`خطا در ارسال پیام آنلاین شدن به ${chatId}:`, e);
@@ -540,11 +583,9 @@ export class AuthService {
 
     try {
       const apiBase = process.env.BALE_API_BASE || 'https://tapi.bale.ai';
-      const text = `🍦 *${APP.nameFa} — ${actionTitle}*\n\n` +
-                   `کد تایید شما:\n` +
-                   `👉 \`${code}\` 👈\n\n` +
-                   `⏱ این کد به مدت ۲ دقیقه معتبر است.\n` +
-                   `⚠️ این پیام را در اختیار دیگران قرار ندهید.`;
+      // plain text, no parse_mode: an unbalanced _ or * would make bale drop the whole code
+      const text = `کد تایید ${APP.nameFa}\n${actionTitle}\n\nکد: ${code}\n\n` +
+                   `این کد تا ۲ دقیقه معتبر است؛ آن را در اختیار دیگران قرار ندهید.`;
 
       const res = await fetch(`${apiBase}/bot${baleToken}/sendMessage`, {
         method: 'POST',
@@ -552,8 +593,11 @@ export class AuthService {
         body: JSON.stringify({
           chat_id: targetChat,
           text,
-          parse_mode: 'Markdown',
         }),
+        // the app gives up after 8s, so a hung Bale request must not outlive it:
+        // answer "not delivered" in time instead of letting the visitor stare at
+        // a spinner while the real answer never arrives
+        signal: AbortSignal.timeout(6000),
       });
 
       // بله حتی وقتی پیام را رد می‌کند با HTTP 200 جواب می‌دهد و ok را false می‌گذارد
